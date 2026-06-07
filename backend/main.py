@@ -252,9 +252,9 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
             "https://node.mainnet.casper.network/rpc"
         ]
         
-        # Wait for deploy to be executed (max 60 attempts * 3s = 180s)
+        # Wait for deploy to be executed (max 30 attempts * 3s = 90s - same as ScreenerLand)
         deploy_info = None
-        max_attempts = 60
+        max_attempts = 30
         delay_ms = 3000
         
         for attempt in range(1, max_attempts + 1):
@@ -313,11 +313,12 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
                 await asyncio.sleep(delay_ms / 1000)
         
         if not deploy_info or not deploy_info.get("execution_results"):
-            print("❌ Deploy not executed after 180 seconds")
+            print("❌ Deploy not executed after 90 seconds")
             return {
-                "error": "Payment not confirmed yet. Mainnet confirmation is taking longer than expected - wait 1 minute and try again.",
+                "error": "Payment not confirmed yet. Mainnet confirmation is taking longer than expected - wait 1 minute and refresh the page to check again.",
                 "pending": True,
-                "deployHash": clean_deploy
+                "deployHash": clean_deploy,
+                "message": "Your payment was sent successfully but blockchain confirmation is taking longer than expected. Please wait and refresh the page."
             }
         
         # Check execution result
@@ -525,6 +526,145 @@ async def recover_payment(request: Request, deployHash: str, wallet: str, amount
         raise
     except Exception as e:
         print(f"❌ Recovery error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/payment/recover-batch")
+@limiter.limit("3/minute")
+async def recover_batch_payments(
+    request: Request, 
+    wallet: str, 
+    deployHashes: list[str],
+    tokensPerDeploy: int = 100,
+    csrpPerDeploy: float = 10.0
+):
+    """Recover multiple payments at once - for when multiple payments timed out"""
+    try:
+        import httpx
+        from db import process_payment_manual
+        
+        print(f"🔍 Batch recovery for wallet: {wallet[:20]}...")
+        print(f"📦 {len(deployHashes)} deploys to check")
+        
+        # RPC nodes
+        rpc_nodes = [
+            "https://rpc.casper.network/rpc",
+            "https://node.mainnet.casper.network/rpc"
+        ]
+        
+        results = {
+            "credited": [],
+            "already_credited": [],
+            "failed": [],
+            "pending": []
+        }
+        
+        for deployHash in deployHashes:
+            try:
+                clean_deploy = deployHash.lower().replace("hash-", "").replace("deploy-", "")
+                print(f"\n🔍 Checking deploy: {clean_deploy[:20]}...")
+                
+                # Fetch from blockchain
+                deploy_info = None
+                for rpc_url in rpc_nodes:
+                    try:
+                        async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+                            response = await client.post(
+                                rpc_url,
+                                json={
+                                    "jsonrpc": "2.0",
+                                    "method": "info_get_deploy",
+                                    "params": {"deploy_hash": clean_deploy},
+                                    "id": 1
+                                }
+                            )
+                            
+                            if response.status_code == 200 and response.content:
+                                try:
+                                    result = response.json()
+                                    if result.get("result") and result["result"].get("deploy"):
+                                        deploy_info = result["result"]["deploy"]
+                                        break
+                                except:
+                                    continue
+                    except:
+                        continue
+                
+                if not deploy_info:
+                    results["failed"].append({
+                        "deployHash": clean_deploy,
+                        "reason": "Not found on blockchain"
+                    })
+                    continue
+                
+                # Check execution
+                execution_results = deploy_info.get("execution_results", [])
+                if not execution_results:
+                    results["pending"].append({
+                        "deployHash": clean_deploy,
+                        "reason": "Not yet executed"
+                    })
+                    continue
+                
+                # Check if success
+                result_data = execution_results[0].get("result", {})
+                if "Failure" in result_data:
+                    results["failed"].append({
+                        "deployHash": clean_deploy,
+                        "reason": result_data["Failure"].get("error_message", "Failed on blockchain")
+                    })
+                    continue
+                
+                # Try to credit
+                try:
+                    await process_payment_manual(
+                        wallet, 
+                        clean_deploy, 
+                        csrpPerDeploy, 
+                        tokensPerDeploy, 
+                        "Starter"
+                    )
+                    results["credited"].append({
+                        "deployHash": clean_deploy,
+                        "tokens": tokensPerDeploy
+                    })
+                    print(f"✅ Credited {tokensPerDeploy} tokens for {clean_deploy[:20]}")
+                    
+                except Exception as credit_err:
+                    if "already processed" in str(credit_err).lower():
+                        results["already_credited"].append({
+                            "deployHash": clean_deploy,
+                            "tokens": tokensPerDeploy
+                        })
+                        print(f"⚠️ Already credited: {clean_deploy[:20]}")
+                    else:
+                        results["failed"].append({
+                            "deployHash": clean_deploy,
+                            "reason": str(credit_err)
+                        })
+                        
+            except Exception as e:
+                results["failed"].append({
+                    "deployHash": deployHash,
+                    "reason": str(e)
+                })
+        
+        total_credited = sum(r["tokens"] for r in results["credited"])
+        
+        return {
+            "success": True,
+            "summary": {
+                "total_checked": len(deployHashes),
+                "credited": len(results["credited"]),
+                "already_credited": len(results["already_credited"]),
+                "failed": len(results["failed"]),
+                "pending": len(results["pending"]),
+                "total_tokens_credited": total_credited
+            },
+            "details": results
+        }
+        
+    except Exception as e:
+        print(f"❌ Batch recovery error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
