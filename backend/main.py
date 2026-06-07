@@ -331,17 +331,25 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
         error_message = None
         
         if deploy_info.get("execution_info"):
-            # New format (testnet uses this)
-            execution_result = deploy_info["execution_info"].get("execution_result", {})
-            if execution_result.get("Version2"):
-                error_message = execution_result["Version2"].get("error_message")
+            # New format (execution_info can be dict or None)
+            exec_info = deploy_info.get("execution_info")
+            if exec_info and isinstance(exec_info, dict):
+                execution_result = exec_info.get("execution_result", {})
+                if execution_result and isinstance(execution_result, dict):
+                    version2 = execution_result.get("Version2", {})
+                    if version2 and isinstance(version2, dict):
+                        error_message = version2.get("error_message")
         elif deploy_info.get("execution_results"):
             # Old format
-            execution_results = deploy_info["execution_results"]
+            execution_results = deploy_info.get("execution_results", [])
             if execution_results and len(execution_results) > 0:
-                result = execution_results[0].get("result", {})
-                if "Failure" in result:
-                    error_message = result["Failure"].get("error_message", "Unknown error")
+                first_result = execution_results[0]
+                if first_result and isinstance(first_result, dict):
+                    result = first_result.get("result", {})
+                    if result and isinstance(result, dict) and "Failure" in result:
+                        failure = result.get("Failure", {})
+                        if failure and isinstance(failure, dict):
+                            error_message = failure.get("error_message", "Unknown error")
         
         # Check if deploy failed
         if error_message:
