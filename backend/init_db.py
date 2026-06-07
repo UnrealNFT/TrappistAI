@@ -1,65 +1,94 @@
 """
-Initialize SQLite database for TrappistAI
+Initialize database for TrappistAI
+Compatible with both SQLite and PostgreSQL
 """
-import sqlite3
-from datetime import datetime
+import os
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import StaticPool
+from dotenv import load_dotenv
 
-# Connect to database
-conn = sqlite3.connect('trappistai.db')
-cursor = conn.cursor()
+load_dotenv()
 
-# Create users table
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    wallet_address TEXT UNIQUE NOT NULL,
-    tokens INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-''')
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./trappistai.db")
 
-# Create payments table
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS payments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    wallet_address TEXT NOT NULL,
-    transaction_hash TEXT UNIQUE NOT NULL,
-    amount_cspr REAL NOT NULL,
-    tokens_purchased INTEGER NOT NULL,
-    package_name TEXT,
-    network TEXT DEFAULT 'mainnet',
-    status TEXT DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    confirmed_at TIMESTAMP
-)
-''')
+# Create engine
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
+    # SQLite uses INTEGER PRIMARY KEY AUTOINCREMENT
+    id_col = "INTEGER PRIMARY KEY AUTOINCREMENT"
+    timestamp_default = "CURRENT_TIMESTAMP"
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20
+    )
+    # PostgreSQL uses SERIAL PRIMARY KEY
+    id_col = "SERIAL PRIMARY KEY"
+    timestamp_default = "NOW()"
 
-# Create generations table
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS generations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    wallet_address TEXT NOT NULL,
-    type TEXT NOT NULL,
-    prompt TEXT,
-    tokens_spent INTEGER NOT NULL,
-    result TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-''')
+print(f"🔧 Initializing database: {DATABASE_URL.split('@')[0]}...")
 
-# Create indexes
-cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address)')
-cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_wallet ON payments(wallet_address)')
-cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_tx ON payments(transaction_hash)')
-cursor.execute('CREATE INDEX IF NOT EXISTS idx_generations_wallet ON generations(wallet_address)')
+with engine.connect() as conn:
+    # Create users table
+    conn.execute(text(f'''
+    CREATE TABLE IF NOT EXISTS users (
+        id {id_col},
+        wallet_address TEXT UNIQUE NOT NULL,
+        tokens INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT {timestamp_default},
+        updated_at TIMESTAMP DEFAULT {timestamp_default}
+    )
+    '''))
+    
+    # Create payments table
+    conn.execute(text(f'''
+    CREATE TABLE IF NOT EXISTS payments (
+        id {id_col},
+        wallet_address TEXT NOT NULL,
+        transaction_hash TEXT UNIQUE NOT NULL,
+        amount_cspr REAL NOT NULL,
+        tokens_purchased INTEGER NOT NULL,
+        package_name TEXT,
+        network TEXT DEFAULT 'mainnet',
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT {timestamp_default},
+        confirmed_at TIMESTAMP
+    )
+    '''))
+    
+    # Create generations table
+    conn.execute(text(f'''
+    CREATE TABLE IF NOT EXISTS generations (
+        id {id_col},
+        wallet_address TEXT NOT NULL,
+        type TEXT NOT NULL,
+        prompt TEXT,
+        tokens_spent INTEGER NOT NULL,
+        result TEXT,
+        created_at TIMESTAMP DEFAULT {timestamp_default}
+    )
+    '''))
+    
+    conn.commit()
+    
+    # Create indexes for better performance
+    conn.execute(text('CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address)'))
+    conn.execute(text('CREATE INDEX IF NOT EXISTS idx_payments_wallet ON payments(wallet_address)'))
+    conn.execute(text('CREATE INDEX IF NOT EXISTS idx_payments_tx ON payments(transaction_hash)'))
+    conn.execute(text('CREATE INDEX IF NOT EXISTS idx_generations_wallet ON generations(wallet_address)'))
+    
+    conn.commit()
 
-conn.commit()
-conn.close()
-
-print("✅ SQLite database initialized successfully!")
-print("📁 Database file: trappistai.db")
+db_type = "PostgreSQL" if not DATABASE_URL.startswith("sqlite") else "SQLite"
+print(f"✅ {db_type} database initialized successfully!")
 print("\nTables created:")
 print("  • users")
 print("  • payments")
 print("  • generations")
+print("  • indexes for performance")
