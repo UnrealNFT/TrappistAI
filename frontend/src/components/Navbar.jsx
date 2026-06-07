@@ -21,7 +21,7 @@ export default function Navbar({ wallet, balance, onConnect, onDisconnect, onRef
           <Link to="/generate" className="text-white/90 hover:text-white transition">
             Generate
           </Link>
-          <Link to="/buy" className="text-white/90 hover:text-white transition">
+          <Link to="/buy-credits" className="text-white/90 hover:text-white transition">
             Buy Credits
           </Link>
         </div>
