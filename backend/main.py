@@ -168,9 +168,9 @@ async def send_deploy(request: Request, data: SendDeployRequest):
         print(f"Deploy chain_name: {actual_deploy.get('header', {}).get('chain_name', 'N/A')}")
         print(f"Deploy approvals count: {len(actual_deploy.get('approvals', []))}")
         
-        # RPC nodes (mainnet)
+        # RPC nodes (mainnet) - same as ScreenerLand
         rpc_nodes = [
-            "https://rpc.mainnet.casperlabs.io/rpc",
+            "https://rpc.casper.network/rpc",
             "https://node.mainnet.casper.network/rpc"
         ]
         
@@ -236,9 +236,9 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
         # Clean hashes
         clean_deploy = data.deployHash.lower().replace("hash-", "").replace("deploy-", "")
         
-        # RPC nodes
+        # RPC nodes (same as ScreenerLand)
         rpc_nodes = [
-            "https://rpc.mainnet.casperlabs.io/rpc",
+            "https://rpc.casper.network/rpc",
             "https://node.mainnet.casper.network/rpc"
         ]
         
@@ -415,9 +415,9 @@ async def recover_payment(request: Request, deployHash: str, wallet: str, amount
         # Clean hash
         clean_deploy = deployHash.lower().replace("hash-", "").replace("deploy-", "")
         
-        # RPC nodes
+        # RPC nodes (same as ScreenerLand)
         rpc_nodes = [
-            "https://rpc.mainnet.casperlabs.io/rpc",
+            "https://rpc.casper.network/rpc",
             "https://node.mainnet.casper.network/rpc"
         ]
         
