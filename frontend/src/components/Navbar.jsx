@@ -1,10 +1,21 @@
 import { Link } from 'react-router-dom'
-import { RefreshCw, Coins } from 'lucide-react'
-import { ClickUI, ThemeModeType } from '@make-software/csprclick-ui'
-import { useState } from 'react'
+import { RefreshCw, Coins, Wallet, LogOut } from 'lucide-react'
+import { useClickRef } from '@make-software/csprclick-ui'
 
 export default function Navbar({ wallet, balance, onRefreshBalance }) {
-  const [themeMode] = useState(ThemeModeType.dark)
+  const clickRef = useClickRef()
+
+  const handleConnect = () => {
+    if (clickRef) {
+      clickRef.signIn()
+    }
+  }
+
+  const handleDisconnect = () => {
+    if (clickRef) {
+      clickRef.signOut()
+    }
+  }
 
   return (
     <nav className="bg-white/10 backdrop-blur-md border-b border-white/20 sticky top-0 z-50">
@@ -32,7 +43,7 @@ export default function Navbar({ wallet, balance, onRefreshBalance }) {
 
         {/* Wallet */}
         <div className="flex items-center space-x-3">
-          {wallet && (
+          {wallet ? (
             <>
               {/* Balance */}
               <div className="flex items-center space-x-2 bg-white/20 px-4 py-2 rounded-lg">
@@ -52,13 +63,26 @@ export default function Navbar({ wallet, balance, onRefreshBalance }) {
                   {wallet.slice(0, 6)}...{wallet.slice(-4)}
                 </span>
               </div>
-            </>
-          )}
 
-          {/* CSPR.click UI Component */}
-          <div className="cspr-click-wrapper">
-            <ClickUI themeMode={themeMode} />
-          </div>
+              {/* Disconnect Button */}
+              <button
+                onClick={handleDisconnect}
+                className="p-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg transition"
+                title="Disconnect Wallet"
+              >
+                <LogOut className="w-5 h-5 text-white" />
+              </button>
+            </>
+          ) : (
+            /* Connect Button */
+            <button
+              onClick={handleConnect}
+              className="flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-2 rounded-lg hover:scale-105 transition"
+            >
+              <Wallet className="w-5 h-5 text-white" />
+              <span className="text-white font-semibold">Connect Wallet</span>
+            </button>
+          )}
         </div>
       </div>
     </nav>
