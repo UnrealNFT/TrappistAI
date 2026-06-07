@@ -17,9 +17,82 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
   const [selected, setSelected] = useState(null)
   const [paying, setPaying] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [recovering, setRecovering] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [txHash, setTxHash] = useState('')
+  const [pendingPaymentInfo, setPendingPaymentInfo] = useState(null)
+
+  // Check for pending payment on load
+  useState(() => {
+    const pending = localStorage.getItem('pendingPayment')
+    if (pending) {
+      const data = JSON.parse(pending)
+      // Check if it's less than 24 hours old
+      if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+        setPendingPaymentInfo(data)
+      } else {
+        localStorage.removeItem('pendingPayment')
+      }
+    }
+  }, [])
+
+  const handleRecoverPayment = async () => {
+    if (!pendingPaymentInfo || !wallet) return
+
+    setRecovering(true)
+    setError('')
+    setSuccess(false)
+
+    try {
+      console.log('🔍 Attempting to recover payment:', pendingPaymentInfo.deployHash)
+
+      // Determine amount and tokens from the payment (default to Starter package)
+      const amount = 10  // CSPR
+      const tokens = 100  // tokens
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/payment/recover?deployHash=${pendingPaymentInfo.deployHash}&wallet=${wallet}&amount=${amount}&tokens=${tokens}`,
+        { method: 'POST' }
+      )
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        console.log('✅ Payment recovered successfully!')
+        setSuccess(true)
+        setRecovering(false)
+        localStorage.removeItem('pendingPayment')
+        setPendingPaymentInfo(null)
+
+        // Refresh balance
+        setTimeout(() => {
+          onPurchaseComplete()
+          setSuccess(false)
+        }, 3000)
+      } else if (data.message && data.message.includes('already credited')) {
+        console.log('✅ Payment was already credited')
+        setSuccess(true)
+        setRecovering(false)
+        localStorage.removeItem('pendingPayment')
+        setPendingPaymentInfo(null)
+        setTimeout(() => {
+          onPurchaseComplete()
+          setSuccess(false)
+        }, 2000)
+      } else if (data.pending) {
+        setError('⏳ Payment still not confirmed on blockchain. Please wait 1-2 more minutes.')
+        setRecovering(false)
+      } else {
+        throw new Error(data.error || 'Recovery failed')
+      }
+
+    } catch (err) {
+      console.error('❌ Recovery error:', err)
+      setError(err.message || 'Failed to recover payment. Please try again.')
+      setRecovering(false)
+    }
+  }
 
   const handlePayWithWallet = async () => {
     if (!wallet) {
@@ -190,6 +263,41 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 p-6">
       <div className="container mx-auto max-w-4xl">
+        {/* Pending Payment Alert */}
+        {pendingPaymentInfo && wallet && (
+          <div className="mb-8 p-6 bg-yellow-500/20 border-2 border-yellow-400/50 rounded-xl">
+            <div className="flex items-start gap-4">
+              <AlertCircle className="w-8 h-8 text-yellow-300 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-yellow-300 font-bold text-xl mb-2">⏳ Pending Payment Detected</h3>
+                <p className="text-yellow-200 mb-3">
+                  You have a payment that was sent but not yet credited. Click below to verify and credit your tokens.
+                </p>
+                <p className="text-yellow-100/70 text-sm font-mono mb-4">
+                  Deploy: {pendingPaymentInfo.deployHash.slice(0, 20)}...
+                </p>
+                <button
+                  onClick={handleRecoverPayment}
+                  disabled={recovering}
+                  className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-bold px-6 py-3 rounded-lg hover:shadow-lg hover:shadow-yellow-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {recovering ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Verifying on Blockchain...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-5 h-5" />
+                      Verify & Credit Tokens
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <h1 className="text-5xl font-bold text-white mb-4 text-center">Buy Credits</h1>
         <p className="text-white/70 text-center text-lg mb-12">
           Pay with Casper Wallet - Instant & Secure

@@ -242,9 +242,9 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
             "https://node.mainnet.casper.network/rpc"
         ]
         
-        # Wait for deploy to be executed (max 30 attempts * 3s = 90s)
+        # Wait for deploy to be executed (max 60 attempts * 3s = 180s)
         deploy_info = None
-        max_attempts = 30
+        max_attempts = 60
         delay_ms = 3000
         
         for attempt in range(1, max_attempts + 1):
@@ -290,7 +290,7 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
                 await asyncio.sleep(delay_ms / 1000)
         
         if not deploy_info or not deploy_info.get("execution_results"):
-            print("❌ Deploy not executed after 90 seconds")
+            print("❌ Deploy not executed after 180 seconds")
             return {
                 "error": "Payment not confirmed yet. Mainnet confirmation is taking longer than expected - wait 1 minute and try again.",
                 "pending": True,
@@ -400,6 +400,104 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/payment/recover")
+@limiter.limit("5/minute")
+async def recover_payment(request: Request, deployHash: str, wallet: str, amount: float, tokens: int):
+    """Recover lost payment by verifying on blockchain (for payments that timed out)"""
+    try:
+        import httpx
+        from db import process_payment_manual
+        
+        print(f"🔍 Recovering payment: deploy={deployHash[:20]}..., wallet={wallet[:20]}...")
+        
+        # Clean hash
+        clean_deploy = deployHash.lower().replace("hash-", "").replace("deploy-", "")
+        
+        # RPC nodes
+        rpc_nodes = [
+            "https://rpc.mainnet.casperlabs.io/rpc",
+            "https://node.mainnet.casper.network/rpc"
+        ]
+        
+        # Fetch deploy info from blockchain
+        deploy_info = None
+        for rpc_url in rpc_nodes:
+            try:
+                print(f"📡 Checking blockchain via {rpc_url}")
+                
+                async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+                    response = await client.post(
+                        rpc_url,
+                        json={
+                            "jsonrpc": "2.0",
+                            "method": "info_get_deploy",
+                            "params": {"deploy_hash": clean_deploy},
+                            "id": 1
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        if result.get("result") and result["result"].get("deploy"):
+                            deploy_info = result["result"]["deploy"]
+                            print("✅ Deploy found on blockchain!")
+                            break
+                            
+            except Exception as e:
+                print(f"⚠️ RPC node {rpc_url} failed: {e}")
+                continue
+        
+        if not deploy_info:
+            raise HTTPException(status_code=404, detail="Deploy not found on blockchain. Wait a few minutes and try again.")
+        
+        # Check execution results
+        execution_results = deploy_info.get("execution_results", [])
+        if not execution_results:
+            return {
+                "error": "Deploy not yet executed on blockchain. Wait 1-2 minutes and try again.",
+                "pending": True
+            }
+        
+        # Check if successful
+        result = execution_results[0].get("result", {})
+        if "Failure" in result:
+            error_msg = result["Failure"].get("error_message", "Unknown error")
+            raise HTTPException(status_code=400, detail=f"Payment failed on blockchain: {error_msg}")
+        
+        print("✅ Deploy SUCCESS on blockchain!")
+        
+        # Determine package name
+        package_name = "Custom"
+        if amount == 10 and tokens == 100:
+            package_name = "Starter"
+        
+        # Credit tokens (will check for duplicates)
+        try:
+            await process_payment_manual(wallet, clean_deploy, amount, tokens, package_name)
+            print(f"💰 Credited {tokens} tokens to {wallet}")
+            
+            return {
+                "success": True,
+                "deployHash": clean_deploy,
+                "tokens": tokens,
+                "message": f"Payment recovered! {tokens} tokens credited."
+            }
+            
+        except Exception as e:
+            if "already processed" in str(e).lower():
+                return {
+                    "success": False,
+                    "message": "Payment already credited",
+                    "deployHash": clean_deploy
+                }
+            raise
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Recovery error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
