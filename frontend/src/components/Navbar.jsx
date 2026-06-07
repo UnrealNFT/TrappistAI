@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom'
 import { RefreshCw, Coins } from 'lucide-react'
-import { ClickUI } from '@make-software/csprclick-ui'
+import { ClickUI, ThemeModeType } from '@make-software/csprclick-ui'
+import { useState } from 'react'
 
 export default function Navbar({ wallet, balance, onRefreshBalance }) {
+  const [themeMode] = useState(ThemeModeType.dark)
+
   return (
     <nav className="bg-white/10 backdrop-blur-md border-b border-white/20 sticky top-0 z-50">
       <div className="container mx-auto px-4 py-3 flex justify-between items-center">
@@ -29,7 +32,7 @@ export default function Navbar({ wallet, balance, onRefreshBalance }) {
 
         {/* Wallet */}
         <div className="flex items-center space-x-3">
-          {wallet ? (
+          {wallet && (
             <>
               {/* Balance */}
               <div className="flex items-center space-x-2 bg-white/20 px-4 py-2 rounded-lg">
@@ -50,10 +53,12 @@ export default function Navbar({ wallet, balance, onRefreshBalance }) {
                 </span>
               </div>
             </>
-          ) : null}
+          )}
 
-          {/* CSPR.click Connect Button */}
-          <ClickUI.ConnectButton />
+          {/* CSPR.click UI Component */}
+          <div className="cspr-click-wrapper">
+            <ClickUI themeMode={themeMode} />
+          </div>
         </div>
       </div>
     </nav>
