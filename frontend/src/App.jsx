@@ -1,20 +1,36 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { useState, useEffect } from 'react'
+import { AnimatePresence } from 'framer-motion'
+import { Toaster } from 'react-hot-toast'
 import Home from './pages/Home'
 import Generate from './pages/Generate'
 import BuyCredits from './pages/BuyCredits'
 import Navbar from './components/Navbar'
+import BottomNav from './components/BottomNav'
 import { getBalance } from './services/api'
 
 function App() {
   const [wallet, setWallet] = useState(null)
   const [balance, setBalance] = useState(0)
   const [provider, setProvider] = useState(null)
+  const [isMobile, setIsMobile] = useState(false)
 
   // Check if Casper Wallet is installed
   const isCasperWalletAvailable = () => {
     return typeof window !== 'undefined' && typeof window.CasperWalletProvider === 'function'
   }
+  
+  // Detect mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   // Connect wallet function
   const connectWallet = async () => {
@@ -96,34 +112,66 @@ function App() {
 
   return (
     <Router>
-      <div className="min-h-screen">
-        <Navbar 
-          wallet={wallet}
-          balance={balance}
-          onConnect={connectWallet}
-          onDisconnect={disconnectWallet}
-          onRefreshBalance={refreshBalance}
-        />
-        
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/generate" element={
-            <Generate 
-              wallet={wallet} 
-              balance={balance}
-              onBalanceUpdate={refreshBalance}
-            />
-          } />
-          <Route path="/buy" element={
-            <BuyCredits 
-              wallet={wallet}
-              balance={balance}
-              provider={provider}
-              onPurchaseComplete={refreshBalance}
-            />
-          } />
-        </Routes>
-      </div>
+      <AnimatePresence mode="wait">
+        <div className="min-h-screen bg-dark-bg">
+          <Navbar 
+            wallet={wallet}
+            balance={balance}
+            onConnect={connectWallet}
+            onDisconnect={disconnectWallet}
+            onRefreshBalance={refreshBalance}
+          />
+          
+          <main className={`${isMobile ? 'pb-36' : 'pb-8'}`}>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/generate" element={
+                <Generate 
+                  wallet={wallet} 
+                  balance={balance}
+                  onBalanceUpdate={refreshBalance}
+                />
+              } />
+              <Route path="/buy-credits" element={
+                <BuyCredits 
+                  wallet={wallet}
+                  balance={balance}
+                  provider={provider}
+                  onPurchaseComplete={refreshBalance}
+                />
+              } />
+            </Routes>
+          </main>
+          
+          {/* Bottom navigation - mobile only */}
+          {isMobile && <BottomNav wallet={wallet} balance={balance} />}
+          
+          {/* Toast notifications */}
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 3000,
+              style: {
+                background: '#1A1A1A',
+                color: '#fff',
+                border: '1px solid #2A2A2A',
+              },
+              success: {
+                iconTheme: {
+                  primary: '#00D084',
+                  secondary: '#fff',
+                },
+              },
+              error: {
+                iconTheme: {
+                  primary: '#FF6B6B',
+                  secondary: '#fff',
+                },
+              },
+            }}
+          />
+        </div>
+      </AnimatePresence>
     </Router>
   )
 }
