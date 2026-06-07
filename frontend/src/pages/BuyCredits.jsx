@@ -118,30 +118,43 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
         signature: keyPrefix + signatureHex
       }]
 
-      console.log('📡 Sending deploy to backend...')
+      console.log('📡 Sending deploy to backend (Step 1)...')
       setPaying(false)
       setVerifying(true)
 
-      // Envoyer le deploy via le backend
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/process`, {
+      // STEP 1: Send deploy to RPC via backend (like ScreenerLand)
+      const sendResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/casper/send-deploy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deployJson })
+      })
+
+      if (!sendResponse.ok) {
+        const errorData = await sendResponse.json()
+        throw new Error(errorData.detail || 'Failed to send deploy')
+      }
+
+      const sendData = await sendResponse.json()
+      const confirmedHash = sendData.deployHash
+
+      console.log('✅ Deploy sent to blockchain:', confirmedHash)
+      console.log('🔐 Verifying payment on blockchain (Step 2)...')
+
+      // STEP 2: Verify payment and credit tokens (like ScreenerLand)
+      const verifyResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           wallet,
-          deployJson,
+          deployHash: confirmedHash,
           amount: selected.cspr,
           tokens: selected.tokens
         })
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to process payment')
-      }
+      const verifyData = await verifyResponse.json()
 
-      const data = await response.json()
-
-      if (data.success) {
+      if (verifyResponse.ok && verifyData.success) {
         console.log('✅ Payment verified and tokens credited!')
         setSuccess(true)
         setVerifying(false)
@@ -153,8 +166,17 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
           setTxHash('')
           setSuccess(false)
         }, 3000)
+      } else if (verifyData.pending) {
+        console.warn('⏳ Payment still pending')
+        setVerifying(false)
+        setError('⏳ Payment sent successfully!\n\nMainnet confirmation is taking longer than expected. Refresh the page in 1-2 minutes to check status.')
+        // Store deploy hash for later verification
+        localStorage.setItem('pendingPayment', JSON.stringify({
+          deployHash: confirmedHash,
+          timestamp: Date.now()
+        }))
       } else {
-        throw new Error(data.error || 'Payment verification failed')
+        throw new Error(verifyData.error || 'Payment verification failed')
       }
 
     } catch (err) {
