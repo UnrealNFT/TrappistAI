@@ -706,15 +706,25 @@ async def recover_batch_payments(
 async def generate_image(request: Request, data: GenerateImageRequest):
     """Generate image with FLUX.1-schnell (1 token)"""
     try:
-        # Consume tokens
+        # Check balance WITHOUT consuming yet
+        current_balance = await get_user_balance(data.walletAddress)
+        if current_balance < 1:
+            raise HTTPException(status_code=402, detail="Insufficient tokens")
+        
+        # Generate image FIRST
+        try:
+            url = await asyncio.get_event_loop().run_in_executor(
+                None, wavespeed.generate_image, data.prompt
+            )
+        except Exception as gen_error:
+            # API failed - DON'T consume tokens
+            print(f"❌ Image generation failed: {gen_error}")
+            raise HTTPException(status_code=500, detail=f"Generation failed: {str(gen_error)}")
+        
+        # Only consume tokens if generation succeeded
         consumed = await consume_user_tokens(data.walletAddress, 1, "image", data.prompt)
         if not consumed:
             raise HTTPException(status_code=402, detail="Insufficient tokens")
-        
-        # Generate image
-        url = await asyncio.get_event_loop().run_in_executor(
-            None, wavespeed.generate_image, data.prompt
-        )
         
         return {
             "success": True,
@@ -734,22 +744,33 @@ async def generate_music(request: Request, data: GenerateMusicRequest):
     try:
         tokens_needed = 10 if data.quality == "hm" else 15
         
-        # Consume tokens
+        # Check balance WITHOUT consuming yet
+        current_balance = await get_user_balance(data.walletAddress)
+        if current_balance < tokens_needed:
+            raise HTTPException(status_code=402, detail="Insufficient tokens")
+        
+        # Generate music FIRST
+        try:
+            if data.quality == "minimax":
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None, wavespeed.generate_music_minimax, data.lyrics, data.tags
+                )
+            else:
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None, wavespeed.generate_music, data.lyrics, data.tags
+                )
+        except Exception as gen_error:
+            # API failed - DON'T consume tokens
+            print(f"❌ Music generation failed: {gen_error}")
+            raise HTTPException(status_code=500, detail=f"Generation failed: {str(gen_error)}")
+        
+        # Only consume tokens if generation succeeded
         consumed = await consume_user_tokens(
             data.walletAddress, tokens_needed, "music", f"{data.tags[:50]}..."
         )
         if not consumed:
+            # Edge case: balance changed during generation
             raise HTTPException(status_code=402, detail="Insufficient tokens")
-        
-        # Generate music
-        if data.quality == "minimax":
-            url = await asyncio.get_event_loop().run_in_executor(
-                None, wavespeed.generate_music_minimax, data.lyrics, data.tags
-            )
-        else:
-            url = await asyncio.get_event_loop().run_in_executor(
-                None, wavespeed.generate_music, data.lyrics, data.tags
-            )
         
         return {
             "success": True,
@@ -769,15 +790,21 @@ async def generate_3d(request: Request, data: Generate3DRequest):
     try:
         tokens_needed = 20 if data.withTexture else 5
         
-        # Consume tokens
+        # Check balance WITHOUT consuming yet
+        current_balance = await get_user_balance(data.walletAddress)
+        if current_balance < tokens_needed:
+            raise HTTPException(status_code=402, detail="Insufficient tokens")
+        
+        # Generate 3D FIRST (TODO: implement wavespeed 3D functions)
+        # For now, return mock response - in production, wrap in try/except like music/image
+        
+        # Only consume tokens if generation succeeded
         consumed = await consume_user_tokens(
             data.walletAddress, tokens_needed, "3d", f"texture={data.withTexture}"
         )
         if not consumed:
             raise HTTPException(status_code=402, detail="Insufficient tokens")
         
-        # Generate 3D (TODO: implement wavespeed 3D functions)
-        # For now, return mock response
         return {
             "success": True,
             "url": "https://example.com/model.glb",
