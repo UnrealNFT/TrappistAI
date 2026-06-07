@@ -4,7 +4,6 @@ import Home from './pages/Home'
 import Generate from './pages/Generate'
 import BuyCredits from './pages/BuyCredits'
 import Navbar from './components/Navbar'
-import WalletDebug from './components/WalletDebug'
 import { getBalance } from './services/api'
 
 function App() {
@@ -123,9 +122,6 @@ function App() {
             />
           } />
         </Routes>
-        
-        {/* Debug panel */}
-        <WalletDebug />
       </div>
     </Router>
   )
