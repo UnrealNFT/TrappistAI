@@ -13,7 +13,7 @@
     "@make-software/csprclick-core-types": "^2.1.0",
     "@make-software/csprclick-ui": "^2.1.0",
     "axios": "^1.6.5",
-    "casper-js-sdk": "^2.15.4",
+    "casper-js-sdk": "^2.15.7",
     "clsx": "^2.1.0",
     "lucide-react": "^0.312.0",
     "react": "^18.2.0",

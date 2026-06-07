@@ -117,6 +117,8 @@ function App() {
           <Route path="/buy" element={
             <BuyCredits 
               wallet={wallet}
+              balance={balance}
+              provider={provider}
               onPurchaseComplete={refreshBalance}
             />
           } />

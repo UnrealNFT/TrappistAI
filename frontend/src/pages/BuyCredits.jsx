@@ -1,14 +1,19 @@
 import { useState } from 'react'
 import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
-import api from '../services/api'
+import { CLPublicKey, DeployUtil } from 'casper-js-sdk'
 
 const PACKAGES = [
   { name: 'Starter', tokens: 100, cspr: 10, popular: true }
 ]
 
-const RECEIVER_WALLET = import.meta.env.VITE_RECEIVER_WALLET || 'account-hash-0123456789abcdef0123456789abcdef01234567'
+// 🔥 CONFIGURATION CASPER (à configurer avec ta vraie adresse)
+const CASPER_CONFIG = {
+  receiverWallet: '0202e5a88e2baf0306484eced583f8642902752668b4b91070dc2abd01d6304d2cd8',
+  chainName: 'casper',  // 'casper' pour mainnet, 'casper-test' pour testnet
+  paymentAmount: '100000000'  // 0.1 CSPR en motes pour les frais de gas
+}
 
-export default function BuyCredits({ wallet, balance, onRefreshBalance }) {
+export default function BuyCredits({ wallet, balance, provider, onPurchaseComplete }) {
   const [selected, setSelected] = useState(null)
   const [paying, setPaying] = useState(false)
   const [verifying, setVerifying] = useState(false)
@@ -22,9 +27,8 @@ export default function BuyCredits({ wallet, balance, onRefreshBalance }) {
       return
     }
 
-    if (!window.casperlabsHelper) {
-      setError('Casper Wallet extension not found. Please install it from casperwallet.io')
-      window.open('https://www.casperwallet.io/', '_blank')
+    if (!provider) {
+      setError('Wallet provider not available. Please reconnect your wallet.')
       return
     }
 
@@ -33,65 +37,129 @@ export default function BuyCredits({ wallet, balance, onRefreshBalance }) {
     setSuccess(false)
 
     try {
-      console.log('Initiating payment:', selected.cspr, 'CSPR')
+      console.log('🚀 Initiating payment:', selected.cspr, 'CSPR')
       
-      // Amount in motes (1 CSPR = 1,000,000,000 motes)
-      const amountMotes = selected.cspr * 1_000_000_000
+      // Montant en motes (1 CSPR = 1,000,000,000 motes)
+      const amountMotes = (selected.cspr * 1_000_000_000).toString()
+      
+      // RÉUTILISER le provider déjà connecté au lieu d'en créer un nouveau
+      console.log('✅ Using existing provider')
 
-      // Create deploy for transfer
-      const deployParams = {
-        amount: amountMotes.toString(),
-        target: RECEIVER_WALLET,
-        transferId: Date.now()
+      // Vérifier la connexion
+      const isConnected = await provider.isConnected()
+      
+      if (!isConnected) {
+        throw new Error('Wallet not connected. Please reconnect.')
       }
 
-      console.log('Deploy params:', deployParams)
+      console.log('✅ Wallet connected, creating deploy...')
 
-      // Request signature from Casper Wallet
-      const result = await window.casperlabsHelper.signAndDeploy(
-        deployParams.amount,
-        deployParams.target,
-        deployParams.transferId
+      // Créer les clés publiques
+      const senderPublicKey = CLPublicKey.fromHex(wallet)
+      const receiverPublicKey = CLPublicKey.fromHex(CASPER_CONFIG.receiverWallet)
+
+      // Créer les paramètres du deploy
+      const deployParams = new DeployUtil.DeployParams(
+        senderPublicKey,
+        CASPER_CONFIG.chainName,
+        1,  // gas price
+        1800000  // ttl (30 minutes)
       )
 
-      console.log('Payment result:', result)
+      // Créer le transfert avec un ID unique
+      const transferId = Date.now()
+      const transferArgs = DeployUtil.ExecutableDeployItem.newTransfer(
+        amountMotes,
+        receiverPublicKey,
+        null,
+        transferId
+      )
 
-      if (result && result.deployHash) {
-        const deployHash = result.deployHash
-        console.log('Deploy hash:', deployHash)
-        setTxHash(deployHash)
+      // Payment standard pour les frais de gas
+      const payment = DeployUtil.standardPayment(CASPER_CONFIG.paymentAmount)
 
-        // Wait a bit then verify
-        setVerifying(true)
-        setPaying(false)
+      // Créer le deploy
+      const deploy = DeployUtil.makeDeploy(deployParams, transferArgs, payment)
+      const deployJSON = DeployUtil.deployToJson(deploy)
 
-        // Give the blockchain time to process (5 seconds)
-        await new Promise(resolve => setTimeout(resolve, 5000))
+      console.log('📝 Deploy created, requesting signature...')
 
-        try {
-          await api.verifyPayment(wallet, deployHash, selected.cspr)
-          setSuccess(true)
-          setVerifying(false)
-          
-          // Refresh balance and reset after success
-          setTimeout(() => {
-            onRefreshBalance()
-            setSelected(null)
-            setTxHash('')
-            setSuccess(false)
-          }, 3000)
-        } catch (verifyErr) {
-          console.error('Verification error:', verifyErr)
-          setError(`Payment sent but verification pending. Your transaction: ${deployHash}. Tokens will be credited automatically within 1-2 minutes.`)
-          setVerifying(false)
-        }
+      // Demander la signature au wallet
+      const signedResult = await provider.sign(JSON.stringify(deployJSON), wallet)
+
+      if (!signedResult || signedResult.cancelled) {
+        throw new Error('Payment cancelled')
+      }
+
+      console.log('✅ Deploy signed!')
+
+      // Calculer le hash du deploy
+      const deployHash = Array.from(deploy.hash)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+
+      setTxHash(deployHash)
+
+      // Convertir la signature en hex
+      const signatureHex = Array.from(signedResult.signature)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+
+      // Construire le deploy signé complet
+      const deployJson = DeployUtil.deployToJson(deploy)
+      deployJson.deploy.header.account = deployJson.deploy.header.account.toLowerCase()
+
+      // Déterminer l'algorithme de signature (01 = ED25519, 02 = SECP256K1)
+      const keyPrefix = wallet.substring(0, 2)
+
+      // Ajouter l'approbation avec la signature
+      deployJson.deploy.approvals = [{
+        signer: senderPublicKey.toHex().toLowerCase(),
+        signature: keyPrefix + signatureHex
+      }]
+
+      console.log('📡 Sending deploy to backend...')
+      setPaying(false)
+      setVerifying(true)
+
+      // Envoyer le deploy via le backend
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wallet,
+          deployJson,
+          amount: selected.cspr,
+          tokens: selected.tokens
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to process payment')
+      }
+
+      const data = await response.json()
+
+      if (data.success) {
+        console.log('✅ Payment verified and tokens credited!')
+        setSuccess(true)
+        setVerifying(false)
+
+        // Refresh balance and reset after success
+        setTimeout(() => {
+          onPurchaseComplete()
+          setSelected(null)
+          setTxHash('')
+          setSuccess(false)
+        }, 3000)
       } else {
-        throw new Error('No deploy hash returned from wallet')
+        throw new Error(data.error || 'Payment verification failed')
       }
 
     } catch (err) {
-      console.error('Payment error:', err)
-      setError(err.message || 'Payment cancelled or failed. Please try again.')
+      console.error('❌ Payment error:', err)
+      setError(err.message || 'Payment failed. Please try again.')
       setPaying(false)
       setVerifying(false)
     }
@@ -196,6 +264,14 @@ export default function BuyCredits({ wallet, balance, onRefreshBalance }) {
                     <p className="text-blue-300 font-semibold mb-2">Transaction Submitted</p>
                     <p className="text-blue-200 text-xs mb-2">Deploy Hash:</p>
                     <code className="text-blue-100 text-xs break-all block bg-black/30 p-2 rounded">{txHash}</code>
+                    <a
+                      href={`https://cspr.live/deploy/${txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-purple-300 hover:text-purple-200 underline text-sm mt-2 inline-block"
+                    >
+                      View on CSPR.live →
+                    </a>
                   </div>
                 )}
 
@@ -213,7 +289,7 @@ export default function BuyCredits({ wallet, balance, onRefreshBalance }) {
                   ) : verifying ? (
                     <>
                       <Loader2 className="w-6 h-6 animate-spin" />
-                      <span>Verifying payment...</span>
+                      <span>Verifying payment on blockchain...</span>
                     </>
                   ) : success ? (
                     <>
@@ -231,7 +307,7 @@ export default function BuyCredits({ wallet, balance, onRefreshBalance }) {
                 {/* Info Box */}
                 <div className="p-4 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-400/30 rounded-xl">
                   <p className="text-purple-200 text-sm leading-relaxed">
-                    💡 <strong>How it works:</strong> Click the button above and approve the transaction in your Casper Wallet extension. Your tokens will be credited automatically within seconds!
+                    💡 <strong>How it works:</strong> Click the button above to sign the transaction with your Casper Wallet. We'll verify the payment on the blockchain and credit your tokens automatically!
                   </p>
                 </div>
 
@@ -257,7 +333,7 @@ export default function BuyCredits({ wallet, balance, onRefreshBalance }) {
         {/* Info Notice */}
         <div className="mt-8 text-center">
           <p className="text-white/50 text-sm">
-            💡 Your tokens will be credited automatically within 1-2 minutes after payment confirmation.
+            💡 Your tokens will be credited instantly after blockchain confirmation.
           </p>
         </div>
       </div>

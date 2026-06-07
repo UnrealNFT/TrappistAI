@@ -132,6 +132,109 @@ async def get_payments(request: Request, wallet_address: str):
 # PAYMENT VERIFICATION
 # ============================================
 
+class ProcessPaymentRequest(BaseModel):
+    wallet: str
+    deployJson: dict
+    amount: float
+    tokens: int
+
+@app.post("/api/payment/process")
+@limiter.limit("10/minute")
+async def process_payment(request: Request, data: ProcessPaymentRequest):
+    """Process CSPR payment: send deploy to RPC, verify, and credit tokens"""
+    try:
+        import httpx
+        
+        # 1. Send deploy to Casper RPC
+        rpc_url = os.getenv("CASPER_RPC_URL", "https://rpc.mainnet.casperlabs.io/rpc")
+        
+        print(f"📡 Sending deploy to {rpc_url}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                rpc_url,
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "account_put_deploy",
+                    "params": data.deployJson,
+                    "id": 1
+                }
+            )
+            rpc_data = response.json()
+        
+        print(f"📥 RPC response: {rpc_data}")
+        
+        if "error" in rpc_data:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"RPC error: {rpc_data['error'].get('message', 'Unknown error')}"
+            )
+        
+        deploy_hash = rpc_data["result"]["deploy_hash"]
+        print(f"✅ Deploy sent! Hash: {deploy_hash}")
+        
+        # 2. Wait a bit for execution (optional - could return pending status)
+        await asyncio.sleep(2)
+        
+        # 3. Verify the deploy status
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                rpc_url,
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "info_get_deploy",
+                    "params": {"deploy_hash": deploy_hash},
+                    "id": 1
+                }
+            )
+            verify_data = response.json()
+        
+        if "error" in verify_data:
+            # Deploy submitted but not yet executed - still valid
+            print(f"⏳ Deploy pending execution: {deploy_hash}")
+        else:
+            # Check execution result
+            execution = verify_data["result"].get("execution_results", [])
+            if execution and len(execution) > 0:
+                result = execution[0]["result"]
+                if "Success" not in result:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Deploy failed on chain: {result}"
+                    )
+                print(f"✅ Deploy executed successfully!")
+        
+        # 4. Credit tokens (deploy was accepted by RPC, so it will execute)
+        from db import process_payment_manual
+        
+        # Calculate package name from amount
+        package_name = "Custom"
+        if data.amount == 10 and data.tokens == 100:
+            package_name = "Starter"
+        
+        await process_payment_manual(
+            data.wallet, 
+            deploy_hash, 
+            data.amount, 
+            data.tokens, 
+            package_name
+        )
+        
+        print(f"💰 Credited {data.tokens} tokens to {data.wallet}")
+        
+        return {
+            "success": True,
+            "deployHash": deploy_hash,
+            "tokens": data.tokens,
+            "message": f"Payment successful! {data.tokens} tokens credited."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Payment processing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/payments/verify")
 @limiter.limit("10/minute")
 async def verify_payment(request: Request, data: VerifyPaymentRequest):
