@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
@@ -8,6 +8,25 @@ import BuyCredits from './pages/BuyCredits'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
 import { getBalance } from './services/api'
+
+// Component to restart scan animation on route change
+function ScanlineAnimationTrigger() {
+  const location = useLocation()
+  
+  useEffect(() => {
+    // Remove class
+    document.body.classList.remove('scan-active')
+    
+    // Add it back after a tiny delay to retrigger animation
+    const timer = setTimeout(() => {
+      document.body.classList.add('scan-active')
+    }, 50)
+    
+    return () => clearTimeout(timer)
+  }, [location.pathname])
+  
+  return null
+}
 
 function App() {
   const [wallet, setWallet] = useState(null)
@@ -112,6 +131,7 @@ function App() {
 
   return (
     <Router>
+      <ScanlineAnimationTrigger />
       <AnimatePresence mode="wait">
         <div className="min-h-screen bg-dark-bg">
           <Navbar 

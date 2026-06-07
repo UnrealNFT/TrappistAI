@@ -31,7 +31,12 @@
       rgba(0, 255, 65, 0.15) 3%,
       transparent 100%);
     background-repeat: no-repeat;
-    animation: scan 7.5s linear 0s infinite;
+  }
+  
+  /* Trigger animation when class is added */
+  body.scan-active::before {
+    animation: scan 6s ease-in-out 0s 1;
+    animation-fill-mode: forwards;
   }
   
   /* Custom scrollbar styles */
@@ -68,8 +73,8 @@
 
 /* Glow Animation */
 @keyframes glow {
-  0%, 100% { text-shadow: 0 0 10px #00ff41, 0 0 20px #00ff41, 0 0 30px #00ff41; }
-  50% { text-shadow: 0 0 20px #00ff41, 0 0 30px #00ff41, 0 0 40px #00ff41; }
+  0%, 100% { text-shadow: 0 0 5px #00ff41, 0 0 10px #00ff41, 0 0 15px #00ff41; }
+  50% { text-shadow: 0 0 8px #00ff41, 0 0 15px #00ff41, 0 0 20px #00ff41; }
 }
 
 /* Custom Components */
@@ -94,11 +99,11 @@
   
   /* Gradient text - Matrix green */
   .gradient-text {
-    background: linear-gradient(135deg, #00ff41 0%, #00cc33 100%);
+    background: linear-gradient(135deg, #00ff41 0%, #33ff66 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: glow 2s ease-in-out infinite;
+    filter: brightness(1.3);
   }
   
   /* Button primary - Matrix green */
@@ -209,7 +214,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #000000;
   min-height: 100vh;
 }
 
@@ -219,8 +224,9 @@ code {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #00ff41 0%, #33ff66 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  filter: brightness(1.3);
 }

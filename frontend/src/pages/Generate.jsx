@@ -3,7 +3,7 @@ import { Image, Music, Box, MessageSquare, Loader2, Download } from 'lucide-reac
 import { generateImage, generateMusic, generate3D, chat } from '../services/api'
 
 export default function Generate({ wallet, balance, onBalanceUpdate }) {
-  const [tab, setTab] = useState('image')
+  const [tab, setTab] = useState('chat')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
@@ -79,10 +79,10 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       {/* Tabs */}
       <div className="flex justify-center space-x-2 mb-8">
         {[
+          { id: 'chat', icon: <MessageSquare className="w-5 h-5" />, label: 'Chat' },
           { id: 'image', icon: <Image className="w-5 h-5" />, label: 'Image' },
           { id: 'music', icon: <Music className="w-5 h-5" />, label: 'Music' },
-          { id: '3d', icon: <Box className="w-5 h-5" />, label: '3D' },
-          { id: 'chat', icon: <MessageSquare className="w-5 h-5" />, label: 'Chat' }
+          { id: '3d', icon: <Box className="w-5 h-5" />, label: '3D' }
         ].map(t => (
           <button
             key={t.id}

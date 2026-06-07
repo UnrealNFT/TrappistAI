@@ -7,8 +7,14 @@ export default function Navbar({ wallet, balance, onConnect, onDisconnect, onRef
       <div className="container mx-auto px-4 py-3 flex justify-between items-center">
         {/* Logo */}
         <Link to="/" className="flex items-center space-x-2">
-          <img src="/trappist1.png" alt="TrappistAI" className="w-10 h-10 rounded-lg" />
-          <span className="text-green-400 font-bold text-xl">TrappistAI</span>
+          <img src="/trappist1.png" alt="TrappistAI" className="w-14 h-14 rounded-lg" />
+          <span className="font-bold text-xl">
+            <span className="text-green-400">TR</span>
+            <span className="text-yellow-400">A</span>
+            <span className="text-green-400">PP</span>
+            <span className="text-yellow-400">I</span>
+            <span className="text-green-400">ST</span>
+          </span>
         </Link>
 
         {/* Navigation */}
