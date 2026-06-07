@@ -243,7 +243,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
   return (
     <div className="min-h-screen bg-black p-6">
       <div className="container mx-auto max-w-4xl">
-        <h1 className="text-5xl font-bold text-green-400 mb-4 text-center animate-glow">Buy Credits</h1>
+        <h1 className="text-5xl font-bold text-green-400 mb-4 text-center">Buy Credits</h1>
         <p className="text-green-300/70 text-center text-lg mb-12">
           Pay with Casper Wallet - Instant & Secure
         </p>

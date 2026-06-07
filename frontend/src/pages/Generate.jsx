@@ -74,7 +74,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-4xl font-bold text-green-400 mb-8 text-center animate-glow">Generate</h1>
+      <h1 className="text-4xl font-bold text-green-400 mb-8 text-center">Generate</h1>
 
       {/* Tabs */}
       <div className="flex justify-center space-x-2 mb-8">

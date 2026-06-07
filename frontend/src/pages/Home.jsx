@@ -6,7 +6,7 @@ export default function Home() {
     <div className="container mx-auto px-4 py-16">
       {/* Hero */}
       <div className="text-center mb-16">
-        <h1 className="text-6xl font-bold text-green-400 mb-4 animate-glow">
+        <h1 className="text-6xl font-bold text-green-400 mb-4">
           Create with <span className="gradient-text">AI</span>
         </h1>
         <p className="text-green-300/80 text-xl mb-8">
@@ -77,7 +77,7 @@ export default function Home() {
 
       {/* Package Starter Only */}
       <div className="mt-16 text-center">
-        <h2 className="text-3xl font-bold text-green-400 mb-8 animate-glow">Simple Pricing</h2>
+        <h2 className="text-3xl font-bold text-green-400 mb-8">Simple Pricing</h2>
         <div className="flex justify-center">
           <div className="glass border border-green-400 shadow-lg shadow-green-500/50 p-8 rounded-xl max-w-sm">
             <div className="text-green-400 text-sm font-semibold mb-2 animate-blink">✨ PACKAGE UNIQUE</div>
