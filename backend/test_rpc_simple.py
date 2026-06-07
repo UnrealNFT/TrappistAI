@@ -1,7 +1,7 @@
 import requests
 import json
 
-deploy_hash = "126e67afe68d1c92d36fb8f273b9490d03098aee594a073393b4e11bc6cf2819"
+deploy_hash = "a18ad48a38dead27a71ad3c6cd6e2a2295f500a8d77c50acb83e238bc2aa9067"
 
 # Test multiple RPC endpoints
 rpc_urls = [

@@ -168,10 +168,9 @@ async def send_deploy(request: Request, data: SendDeployRequest):
         print(f"Deploy chain_name: {actual_deploy.get('header', {}).get('chain_name', 'N/A')}")
         print(f"Deploy approvals count: {len(actual_deploy.get('approvals', []))}")
         
-        # RPC nodes (mainnet) - node.mainnet works, rpc.casper returns 404!
+        # RPC node (mainnet) - ONLY working endpoint
         rpc_nodes = [
-            "https://node.mainnet.casper.network/rpc",
-            "https://casper-node.tor.us"
+            "https://node.mainnet.casper.network/rpc"
         ]
         
         result = None
@@ -246,10 +245,9 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
         # Clean hashes
         clean_deploy = data.deployHash.lower().replace("hash-", "").replace("deploy-", "")
         
-        # RPC nodes - node.mainnet works, rpc.casper returns 404!
+        # RPC node - ONLY working endpoint
         rpc_nodes = [
-            "https://node.mainnet.casper.network/rpc",
-            "https://casper-node.tor.us"
+            "https://node.mainnet.casper.network/rpc"
         ]
         
         # Wait for deploy to be executed (max 30 attempts * 3s = 90s - same as ScreenerLand)
@@ -459,10 +457,9 @@ async def recover_payment(request: Request, deployHash: str, wallet: str, amount
         # Clean hash
         clean_deploy = deployHash.lower().replace("hash-", "").replace("deploy-", "")
         
-        # RPC nodes - node.mainnet works, rpc.casper returns 404!
+        # RPC node - ONLY working endpoint
         rpc_nodes = [
-            "https://node.mainnet.casper.network/rpc",
-            "https://casper-node.tor.us"
+            "https://node.mainnet.casper.network/rpc"
         ]
         
         # Fetch deploy info from blockchain
@@ -565,10 +562,9 @@ async def recover_batch_payments(
         print(f"🔍 Batch recovery for wallet: {wallet[:20]}...")
         print(f"📦 {len(deployHashes)} deploys to check")
         
-        # RPC nodes - node.mainnet works, rpc.casper returns 404!
+        # RPC node - ONLY working endpoint
         rpc_nodes = [
-            "https://node.mainnet.casper.network/rpc",
-            "https://casper-node.tor.us"
+            "https://node.mainnet.casper.network/rpc"
         ]
         
         results = {
