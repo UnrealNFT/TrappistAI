@@ -21,7 +21,7 @@ class TaskTimeout(Exception):
 
 def _submit(endpoint: str, payload: dict) -> str:
     """Submit a task and return its ID."""
-    r = requests.post(f"{BASE}/{endpoint}", json=payload, headers=HEADERS(), timeout=30)
+    r = requests.post(f"{BASE}/{endpoint}", json=payload, headers=HEADERS(), timeout=60)
     r.raise_for_status()
     data = r.json()
     task_id = data["data"]["id"]
@@ -33,7 +33,7 @@ def _poll(task_id: str, max_wait: int = 180) -> str:
     url = f"{BASE}/predictions/{task_id}/result"
     deadline = time.time() + max_wait
     while time.time() < deadline:
-        r = requests.get(url, headers=HEADERS(), timeout=30)
+        r = requests.get(url, headers=HEADERS(), timeout=60)
         r.raise_for_status()
         data = r.json()["data"]
         status = data.get("status")
