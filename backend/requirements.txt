@@ -23,6 +23,3 @@ passlib[bcrypt]==1.7.4
 
 # Rate Limiting
 slowapi==0.1.9
-
-# Casper SDK
-casper-python-sdk==0.2.0
