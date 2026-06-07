@@ -168,10 +168,10 @@ async def send_deploy(request: Request, data: SendDeployRequest):
         print(f"Deploy chain_name: {actual_deploy.get('header', {}).get('chain_name', 'N/A')}")
         print(f"Deploy approvals count: {len(actual_deploy.get('approvals', []))}")
         
-        # RPC nodes (mainnet) - same as ScreenerLand
+        # RPC nodes (mainnet) - node.mainnet works, rpc.casper returns 404!
         rpc_nodes = [
-            "https://rpc.casper.network/rpc",
-            "https://node.mainnet.casper.network/rpc"
+            "https://node.mainnet.casper.network/rpc",
+            "https://casper-node.tor.us"
         ]
         
         result = None
@@ -246,10 +246,10 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
         # Clean hashes
         clean_deploy = data.deployHash.lower().replace("hash-", "").replace("deploy-", "")
         
-        # RPC nodes (same as ScreenerLand)
+        # RPC nodes - node.mainnet works, rpc.casper returns 404!
         rpc_nodes = [
-            "https://rpc.casper.network/rpc",
-            "https://node.mainnet.casper.network/rpc"
+            "https://node.mainnet.casper.network/rpc",
+            "https://casper-node.tor.us"
         ]
         
         # Wait for deploy to be executed (max 30 attempts * 3s = 90s - same as ScreenerLand)
@@ -296,23 +296,31 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
                             print(f"⏳ RPC returned error: {rpc_data['error'].get('message', 'Unknown')}")
                             continue
                         
-                        if rpc_data.get("result") and rpc_data["result"].get("execution_results"):
-                            deploy_info = rpc_data["result"]
+                        # Check BOTH formats like ScreenerLand (execution_results AND execution_info)
+                        result = rpc_data.get("result")
+                        if result and (result.get("execution_results") or result.get("execution_info")):
+                            deploy_info = result
                             print(f"✅ Deploy found with execution result from {rpc_url}")
                             break
-                        else:
+                        elif result:
                             print("⏳ Deploy found but not executed yet, waiting...")
+                        else:
+                            print("⏳ No result yet, waiting...")
                     
                 except Exception as fetch_error:
                     print(f"⚠️ Fetch error on {rpc_url}: {str(fetch_error)}")
             
-            if deploy_info and deploy_info.get("execution_results"):
+            # Check both formats like ScreenerLand
+            if deploy_info and (deploy_info.get("execution_results") or deploy_info.get("execution_info")):
                 break
             
             if attempt < max_attempts:
                 await asyncio.sleep(delay_ms / 1000)
         
-        if not deploy_info or not deploy_info.get("execution_results"):
+        # Check both old and new API formats (like ScreenerLand)
+        has_execution = deploy_info and (deploy_info.get("execution_results") or deploy_info.get("execution_info"))
+        
+        if not has_execution:
             print("❌ Deploy not executed after 90 seconds")
             return {
                 "error": "Payment not confirmed yet. Mainnet confirmation is taking longer than expected - wait 1 minute and refresh the page to check again.",
@@ -321,17 +329,29 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
                 "message": "Your payment was sent successfully but blockchain confirmation is taking longer than expected. Please wait and refresh the page."
             }
         
-        # Check execution result
-        execution_results = deploy_info.get("execution_results", [])
-        if execution_results:
-            result = execution_results[0].get("result", {})
-            if "Failure" in result:
-                error_msg = result["Failure"].get("error_message", "Unknown error")
-                print(f"❌ Deploy FAILED on blockchain: {error_msg}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Payment failed on blockchain: {error_msg}"
-                )
+        # Extract execution result from either format (like ScreenerLand)
+        error_message = None
+        
+        if deploy_info.get("execution_info"):
+            # New format (testnet uses this)
+            execution_result = deploy_info["execution_info"].get("execution_result", {})
+            if execution_result.get("Version2"):
+                error_message = execution_result["Version2"].get("error_message")
+        elif deploy_info.get("execution_results"):
+            # Old format
+            execution_results = deploy_info["execution_results"]
+            if execution_results and len(execution_results) > 0:
+                result = execution_results[0].get("result", {})
+                if "Failure" in result:
+                    error_message = result["Failure"].get("error_message", "Unknown error")
+        
+        # Check if deploy failed
+        if error_message:
+            print(f"❌ Deploy FAILED on blockchain: {error_message}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payment failed on blockchain: {error_message}"
+            )
         
         print("✅ Deploy succeeded on blockchain!")
         
@@ -439,10 +459,10 @@ async def recover_payment(request: Request, deployHash: str, wallet: str, amount
         # Clean hash
         clean_deploy = deployHash.lower().replace("hash-", "").replace("deploy-", "")
         
-        # RPC nodes (same as ScreenerLand)
+        # RPC nodes - node.mainnet works, rpc.casper returns 404!
         rpc_nodes = [
-            "https://rpc.casper.network/rpc",
-            "https://node.mainnet.casper.network/rpc"
+            "https://node.mainnet.casper.network/rpc",
+            "https://casper-node.tor.us"
         ]
         
         # Fetch deploy info from blockchain
@@ -545,10 +565,10 @@ async def recover_batch_payments(
         print(f"🔍 Batch recovery for wallet: {wallet[:20]}...")
         print(f"📦 {len(deployHashes)} deploys to check")
         
-        # RPC nodes
+        # RPC nodes - node.mainnet works, rpc.casper returns 404!
         rpc_nodes = [
-            "https://rpc.casper.network/rpc",
-            "https://node.mainnet.casper.network/rpc"
+            "https://node.mainnet.casper.network/rpc",
+            "https://casper-node.tor.us"
         ]
         
         results = {
