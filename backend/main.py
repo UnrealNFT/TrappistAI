@@ -194,7 +194,17 @@ async def send_deploy(request: Request, data: SendDeployRequest):
                         }
                     )
                     
-                    rpc_data = response.json()
+                    # Check response validity
+                    if response.status_code != 200:
+                        raise Exception(f"RPC returned status {response.status_code}")
+                    
+                    if not response.content:
+                        raise Exception("RPC returned empty response")
+                    
+                    try:
+                        rpc_data = response.json()
+                    except Exception as json_err:
+                        raise Exception(f"Invalid JSON: {str(json_err)}")
                     
                     print(f"📥 RPC Response from {rpc_url}: {rpc_data}")
                     
@@ -267,7 +277,20 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
                             }
                         )
                         
-                        rpc_data = response.json()
+                        # Check response validity
+                        if response.status_code != 200:
+                            print(f"⚠️ RPC returned status {response.status_code}")
+                            continue
+                        
+                        if not response.content:
+                            print(f"⚠️ RPC returned empty response")
+                            continue
+                        
+                        try:
+                            rpc_data = response.json()
+                        except Exception as json_err:
+                            print(f"⚠️ Invalid JSON from {rpc_url}: {str(json_err)}")
+                            continue
                         
                         if "error" in rpc_data:
                             print(f"⏳ RPC returned error: {rpc_data['error'].get('message', 'Unknown')}")
@@ -438,12 +461,16 @@ async def recover_payment(request: Request, deployHash: str, wallet: str, amount
                         }
                     )
                     
-                    if response.status_code == 200:
-                        result = response.json()
-                        if result.get("result") and result["result"].get("deploy"):
-                            deploy_info = result["result"]["deploy"]
-                            print("✅ Deploy found on blockchain!")
-                            break
+                    if response.status_code == 200 and response.content:
+                        try:
+                            result = response.json()
+                            if result.get("result") and result["result"].get("deploy"):
+                                deploy_info = result["result"]["deploy"]
+                                print("✅ Deploy found on blockchain!")
+                                break
+                        except Exception as json_err:
+                            print(f"⚠️ Invalid JSON from {rpc_url}: {str(json_err)}")
+                            continue
                             
             except Exception as e:
                 print(f"⚠️ RPC node {rpc_url} failed: {e}")
