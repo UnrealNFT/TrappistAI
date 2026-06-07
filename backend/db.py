@@ -122,7 +122,7 @@ async def process_payment(wallet_address: str, tx_hash: str, amount_cspr: float,
                 text("""
                     INSERT INTO payments 
                     (wallet_address, amount_cspr, tokens_purchased, package_name, transaction_hash, network, status, confirmed_at)
-                    VALUES (:wallet, :amount, :tokens, :package, :tx, 'mainnet', 'confirmed', NOW())
+                    VALUES (:wallet, :amount, :tokens, :package, :tx, 'mainnet', 'confirmed', CURRENT_TIMESTAMP)
                 """),
                 {
                     "wallet": wallet_address,
@@ -137,11 +137,11 @@ async def process_payment(wallet_address: str, tx_hash: str, amount_cspr: float,
             conn.execute(
                 text("""
                     INSERT INTO users (wallet_address, tokens, created_at, updated_at)
-                    VALUES (:wallet, :tokens, NOW(), NOW())
+                    VALUES (:wallet, :tokens, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     ON CONFLICT (wallet_address)
                     DO UPDATE SET 
                         tokens = users.tokens + :tokens,
-                        updated_at = NOW()
+                        updated_at = CURRENT_TIMESTAMP
                 """),
                 {"wallet": wallet_address, "tokens": tokens}
             )
@@ -175,7 +175,7 @@ async def process_payment_manual(wallet_address: str, tx_hash: str, amount_cspr:
                 text("""
                     INSERT INTO payments 
                     (wallet_address, amount_cspr, tokens_purchased, package_name, transaction_hash, network, status, confirmed_at)
-                    VALUES (:wallet, :amount, :tokens, :package, :tx, 'mainnet', 'confirmed', NOW())
+                    VALUES (:wallet, :amount, :tokens, :package, :tx, 'mainnet', 'confirmed', CURRENT_TIMESTAMP)
                 """),
                 {
                     "wallet": wallet_address,
@@ -190,11 +190,11 @@ async def process_payment_manual(wallet_address: str, tx_hash: str, amount_cspr:
             conn.execute(
                 text("""
                     INSERT INTO users (wallet_address, tokens, created_at, updated_at)
-                    VALUES (:wallet, :tokens, NOW(), NOW())
+                    VALUES (:wallet, :tokens, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     ON CONFLICT (wallet_address)
                     DO UPDATE SET 
                         tokens = users.tokens + :tokens,
-                        updated_at = NOW()
+                        updated_at = CURRENT_TIMESTAMP
                 """),
                 {"wallet": wallet_address, "tokens": tokens}
             )

@@ -30,6 +30,14 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start CSPR listener on startup"""
+    # Initialize database
+    try:
+        print("🔧 Initializing database...")
+        import init_db
+        print("✅ Database initialized")
+    except Exception as e:
+        print(f"⚠️ Database init warning: {e}")
+    
     listener_task = asyncio.create_task(listen_payments())
     print("🚀 CSPR payment listener started")
     

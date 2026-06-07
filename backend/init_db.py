@@ -27,9 +27,11 @@ CREATE TABLE IF NOT EXISTS payments (
     transaction_hash TEXT UNIQUE NOT NULL,
     amount_cspr REAL NOT NULL,
     tokens_purchased INTEGER NOT NULL,
+    package_name TEXT,
+    network TEXT DEFAULT 'mainnet',
     status TEXT DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    verified_at TIMESTAMP
+    confirmed_at TIMESTAMP
 )
 ''')
 
