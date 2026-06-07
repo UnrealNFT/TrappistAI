@@ -1,6 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { useClickRef } from '@make-software/csprclick-ui'
 import Home from './pages/Home'
 import Generate from './pages/Generate'
 import BuyCredits from './pages/BuyCredits'
@@ -9,20 +8,46 @@ import WalletDebug from './components/WalletDebug'
 import { getBalance } from './services/api'
 
 function App() {
-  const clickRef = useClickRef()
   const [wallet, setWallet] = useState(null)
   const [balance, setBalance] = useState(0)
+  const [provider, setProvider] = useState(null)
 
-  // Listen to CSPR.click events
-  useEffect(() => {
-    if (!clickRef) return
+  // Check if Casper Wallet is installed
+  const isCasperWalletAvailable = () => {
+    return typeof window !== 'undefined' && typeof window.CasperWalletProvider === 'function'
+  }
 
-    // When user signs in
-    clickRef.on('csprclick:signed_in', async (evt) => {
-      const publicKey = evt.account.public_key
+  // Connect wallet function
+  const connectWallet = async () => {
+    console.log('🔗 Connecting to Casper Wallet...')
+    
+    if (!isCasperWalletAvailable()) {
+      alert('Casper Wallet not found! Please install Casper Wallet extension.')
+      window.open('https://www.casperwallet.io/', '_blank')
+      return
+    }
+
+    try {
+      // Create provider instance
+      const walletProvider = window.CasperWalletProvider()
+      setProvider(walletProvider)
+      console.log('✅ Provider created')
+
+      // Request connection
+      const isConnected = await walletProvider.requestConnection()
+      
+      if (!isConnected) {
+        alert('Connection rejected by user')
+        return
+      }
+
+      // Get active public key
+      const publicKey = await walletProvider.getActivePublicKey()
       setWallet(publicKey)
       localStorage.setItem('wallet', publicKey)
       
+      console.log('✅ Wallet connected:', publicKey)
+
       // Fetch balance
       try {
         const bal = await getBalance(publicKey)
@@ -30,29 +55,32 @@ function App() {
       } catch (error) {
         console.error('Failed to fetch balance:', error)
       }
-    })
+    } catch (error) {
+      console.error('❌ Wallet connection failed:', error)
+      alert('Failed to connect wallet: ' + error.message)
+    }
+  }
 
-    // When user switches account
-    clickRef.on('csprclick:switched_account', async (evt) => {
-      const publicKey = evt.account.public_key
-      setWallet(publicKey)
-      localStorage.setItem('wallet', publicKey)
-      
-      try {
-        const bal = await getBalance(publicKey)
-        setBalance(bal)
-      } catch (error) {
-        console.error('Failed to fetch balance:', error)
-      }
-    })
+  // Disconnect wallet
+  const disconnectWallet = () => {
+    setWallet(null)
+    setBalance(0)
+    setProvider(null)
+    localStorage.removeItem('wallet')
+    console.log('🔌 Wallet disconnected')
+  }
 
-    // When user signs out
-    clickRef.on('csprclick:signed_out', () => {
-      setWallet(null)
-      setBalance(0)
-      localStorage.removeItem('wallet')
-    })
-  }, [clickRef])
+  // Auto-connect on mount if previously connected
+  useEffect(() => {
+    const savedWallet = localStorage.getItem('wallet')
+    if (savedWallet && isCasperWalletAvailable()) {
+      // Try to reconnect
+      connectWallet().catch(() => {
+        // Silently fail, user can reconnect manually
+        localStorage.removeItem('wallet')
+      })
+    }
+  }, [])
 
   // Refresh balance
   const refreshBalance = async () => {
@@ -72,6 +100,8 @@ function App() {
         <Navbar 
           wallet={wallet}
           balance={balance}
+          onConnect={connectWallet}
+          onDisconnect={disconnectWallet}
           onRefreshBalance={refreshBalance}
         />
         

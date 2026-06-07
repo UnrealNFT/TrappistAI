@@ -1,22 +1,7 @@
 import { Link } from 'react-router-dom'
 import { RefreshCw, Coins, Wallet, LogOut } from 'lucide-react'
-import { useClickRef } from '@make-software/csprclick-ui'
 
-export default function Navbar({ wallet, balance, onRefreshBalance }) {
-  const clickRef = useClickRef()
-
-  const handleConnect = () => {
-    if (clickRef) {
-      clickRef.signIn()
-    }
-  }
-
-  const handleDisconnect = () => {
-    if (clickRef) {
-      clickRef.signOut()
-    }
-  }
-
+export default function Navbar({ wallet, balance, onConnect, onDisconnect, onRefreshBalance }) {
   return (
     <nav className="bg-white/10 backdrop-blur-md border-b border-white/20 sticky top-0 z-50">
       <div className="container mx-auto px-4 py-3 flex justify-between items-center">
@@ -66,7 +51,7 @@ export default function Navbar({ wallet, balance, onRefreshBalance }) {
 
               {/* Disconnect Button */}
               <button
-                onClick={handleDisconnect}
+                onClick={onDisconnect}
                 className="p-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg transition"
                 title="Disconnect Wallet"
               >
@@ -76,7 +61,7 @@ export default function Navbar({ wallet, balance, onRefreshBalance }) {
           ) : (
             /* Connect Button */
             <button
-              onClick={handleConnect}
+              onClick={onConnect}
               className="flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-2 rounded-lg hover:scale-105 transition"
             >
               <Wallet className="w-5 h-5 text-white" />
