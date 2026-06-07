@@ -33,7 +33,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
             throw new Error('Please enter a prompt')
           }
           res = await generateImage(walletToUse, imagePrompt)
-          setResult({ type: 'image', url: res.url, tokensUsed: res.tokensUsed })
+          setResult({ type: 'image', url: res.url, tokensUsed: res.tokensUsed, warning: res.warning })
           break
 
         case 'music':
@@ -41,7 +41,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
             throw new Error('Please enter music tags/style')
           }
           res = await generateMusic(walletToUse, musicLyrics, musicTags, musicQuality)
-          setResult({ type: 'music', url: res.url, tokensUsed: res.tokensUsed })
+          setResult({ type: 'music', url: res.url, tokensUsed: res.tokensUsed, warning: res.warning })
           break
 
         case '3d':
@@ -240,6 +240,13 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
             <div className="text-green-300/70 text-sm text-center">
               ✨ Generated! Used {result.tokensUsed} tokens
             </div>
+            
+            {/* Fallback warning */}
+            {result.warning && (
+              <div className="p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-yellow-300 text-sm text-center">
+                ⚠️ {result.warning}
+              </div>
+            )}
             
             {result.type === 'image' && (
               <div>

@@ -810,19 +810,39 @@ async def generate_music(request: Request, data: GenerateMusicRequest):
         if current_balance < tokens_needed:
             raise HTTPException(status_code=402, detail="Insufficient tokens")
         
-        # Generate music FIRST
+        # Generate music FIRST with retry + fallback
+        fallback_used = False
         try:
             if data.quality == "minimax":
                 url = await asyncio.get_event_loop().run_in_executor(
                     None, wavespeed.generate_music_minimax, data.lyrics, data.tags
                 )
             else:
-                url = await asyncio.get_event_loop().run_in_executor(
-                    None, wavespeed.generate_music, data.lyrics, data.tags
-                )
+                # HeartMuLa with auto-retry
+                try:
+                    url = await asyncio.get_event_loop().run_in_executor(
+                        None, wavespeed.generate_music, data.lyrics, data.tags
+                    )
+                except Exception as hm_error:
+                    print(f"⚠️ HeartMuLa failed (attempt 1): {hm_error}")
+                    # Retry once
+                    try:
+                        print("🔄 Retrying HeartMuLa...")
+                        url = await asyncio.get_event_loop().run_in_executor(
+                            None, wavespeed.generate_music, data.lyrics, data.tags
+                        )
+                    except Exception as retry_error:
+                        # Fallback to MiniMax
+                        print(f"⚠️ HeartMuLa failed again: {retry_error}")
+                        print("🔄 Falling back to MiniMax...")
+                        url = await asyncio.get_event_loop().run_in_executor(
+                            None, wavespeed.generate_music_minimax, data.lyrics, data.tags
+                        )
+                        fallback_used = True
+                        tokens_needed = 10  # MiniMax pricing
         except Exception as gen_error:
-            # API failed - DON'T consume tokens
-            print(f"❌ Music generation failed: {gen_error}")
+            # Both failed - DON'T consume tokens
+            print(f"❌ Music generation failed completely: {gen_error}")
             raise HTTPException(status_code=500, detail=f"Generation failed: {str(gen_error)}")
         
         # Only consume tokens if generation succeeded
@@ -833,11 +853,17 @@ async def generate_music(request: Request, data: GenerateMusicRequest):
             # Edge case: balance changed during generation
             raise HTTPException(status_code=402, detail="Insufficient tokens")
         
-        return {
+        response = {
             "success": True,
             "url": url,
             "tokensUsed": tokens_needed
         }
+        
+        # Notify if fallback was used
+        if fallback_used:
+            response["warning"] = "HeartMuLa unavailable, used MiniMax (saved 4 tokens)"
+        
+        return response
         
     except HTTPException:
         raise

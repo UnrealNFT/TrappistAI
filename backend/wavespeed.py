@@ -2,6 +2,10 @@
 import os
 import time
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 BASE = "https://api.wavespeed.ai/api/v3"
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
