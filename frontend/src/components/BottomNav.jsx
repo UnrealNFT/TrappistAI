@@ -1,12 +1,12 @@
 import { Link, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { FaHome, FaWandMagicSparkles, FaWallet, FaUser } from 'react-icons/fa6'
+import { FaHouse, FaWandMagicSparkles, FaWallet, FaUser } from 'react-icons/fa6'
 
 export default function BottomNav({ wallet, balance }) {
   const location = useLocation()
   
   const navItems = [
-    { path: '/', label: 'Home', icon: FaHome },
+    { path: '/', label: 'Home', icon: FaHouse },
     { path: '/generate', label: 'Generate', icon: FaWandMagicSparkles },
     { path: '/buy-credits', label: 'Buy', icon: FaWallet },
     { path: '/profile', label: 'Profile', icon: FaUser },
