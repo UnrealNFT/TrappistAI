@@ -24,7 +24,7 @@ export default function Home() {
             Start Creating
           </Link>
           <Link
-            to="/buy"
+            to="/buy-credits"
             className="bg-white/20 backdrop-blur-md px-8 py-3 rounded-lg text-white font-semibold hover:bg-white/30 transition"
           >
             Buy Credits
