@@ -8,27 +8,28 @@ export default {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#6C5CE7',
-          dark: '#5849C6',
-          light: '#A29BFE'
+          DEFAULT: '#00ff41',
+          dark: '#00cc33',
+          light: '#33ff66'
         },
         secondary: {
-          DEFAULT: '#00D9FF',
-          dark: '#00B8D4',
-          light: '#4DFFEB'
+          DEFAULT: '#00ff41',
+          dark: '#009922',
+          light: '#66ff88'
         },
-        success: '#00D084',
-        danger: '#FF6B6B',
-        warning: '#FFD93D',
+        success: '#00ff41',
+        danger: '#ff0000',
+        warning: '#ffff00',
         dark: {
-          bg: '#0F0F0F',
-          card: '#1A1A1A',
-          hover: '#242424',
-          border: '#2A2A2A'
+          bg: '#000000',
+          card: '#0a0a0a',
+          hover: '#0f0f0f',
+          border: '#00ff41'
         }
       },
       fontFamily: {
-        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif']
+        sans: ['Courier New', 'monospace'],
+        mono: ['Courier New', 'monospace']
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-in-out',
@@ -36,6 +37,9 @@ export default {
         'scale-in': 'scaleIn 0.3s ease-out',
         'spin-slow': 'spin 3s linear infinite',
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'scan': 'scan 7.5s linear infinite',
+        'blink': 'blink 500ms linear infinite',
+        'glow': 'glow 2s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -49,6 +53,18 @@ export default {
         scaleIn: {
           '0%': { transform: 'scale(0.9)', opacity: '0' },
           '100%': { transform: 'scale(1)', opacity: '1' }
+        },
+        scan: {
+          '0%': { backgroundPosition: '0 -100vh' },
+          '35%, 100%': { backgroundPosition: '0 100vh' }
+        },
+        blink: {
+          '0%, 49%': { opacity: '0' },
+          '50%, 100%': { opacity: '1' }
+        },
+        glow: {
+          '0%, 100%': { textShadow: '0 0 10px #00ff41, 0 0 20px #00ff41' },
+          '50%': { textShadow: '0 0 20px #00ff41, 0 0 30px #00ff41, 0 0 40px #00ff41' }
         }
       },
       screens: {

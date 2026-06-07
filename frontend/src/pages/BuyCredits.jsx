@@ -3,7 +3,7 @@ import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react
 import { CLPublicKey, DeployUtil } from 'casper-js-sdk'
 
 const PACKAGES = [
-  { name: 'Starter', tokens: 100, cspr: 10, popular: true }
+  { name: 'Starter', tokens: 100, cspr: 1000, popular: true }
 ]
 
 // 🔥 CONFIGURATION CASPER (à configurer avec ta vraie adresse)
@@ -241,10 +241,10 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 p-6">
+    <div className="min-h-screen bg-black p-6">
       <div className="container mx-auto max-w-4xl">
-        <h1 className="text-5xl font-bold text-white mb-4 text-center">Buy Credits</h1>
-        <p className="text-white/70 text-center text-lg mb-12">
+        <h1 className="text-5xl font-bold text-green-400 mb-4 text-center animate-glow">Buy Credits</h1>
+        <p className="text-green-300/70 text-center text-lg mb-12">
           Pay with Casper Wallet - Instant & Secure
         </p>
 
@@ -256,20 +256,20 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
               onClick={() => setSelected(pkg)}
               className={`cursor-pointer p-8 rounded-2xl border-2 transition-all transform hover:scale-105 max-w-sm ${
                 selected?.name === pkg.name
-                  ? 'bg-gradient-to-br from-purple-500/40 to-pink-500/40 border-purple-400 shadow-2xl shadow-purple-500/50 scale-105'
-                  : 'bg-white/10 backdrop-blur-md border-white/30 hover:bg-white/15'
+                  ? 'glass border-green-400 shadow-2xl shadow-green-500/50 scale-105'
+                  : 'glass border-green-500/30 hover:border-green-400/50'
               }`}
             >
               {pkg.popular && (
-                <div className="text-purple-300 text-sm font-bold mb-3 flex items-center gap-2">
+                <div className="text-green-400 text-sm font-bold mb-3 flex items-center gap-2 animate-blink">
                   ✨ POPULAR CHOICE
                 </div>
               )}
-              <h3 className="text-white font-bold text-3xl mb-4">{pkg.name}</h3>
-              <p className="text-white/80 text-6xl font-bold mb-2">{pkg.tokens}</p>
-              <p className="text-white/60 text-lg mb-6">tokens</p>
-              <div className="border-t border-white/30 pt-6">
-                <p className="text-purple-300 font-bold text-4xl">{pkg.cspr} CSPR</p>
+              <h3 className="text-green-300 font-bold text-3xl mb-4">{pkg.name}</h3>
+              <p className="text-green-400 text-6xl font-bold mb-2">{pkg.tokens}</p>
+              <p className="text-green-300/60 text-lg mb-6">tokens</p>
+              <div className="border-t border-green-500/30 pt-6">
+                <p className="text-green-400 font-bold text-4xl">{pkg.cspr} CSPR</p>
               </div>
             </div>
           ))}
@@ -277,18 +277,18 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
 
         {/* Payment Section */}
         {selected && (
-          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-2xl border border-white/20 shadow-2xl">
-            <h2 className="text-3xl font-bold text-white mb-6">
+          <div className="glass p-8 rounded-2xl border border-green-500/30 shadow-2xl shadow-green-500/20">
+            <h2 className="text-3xl font-bold text-green-400 mb-6">
               Complete Payment: {selected.name}
             </h2>
 
             {!wallet ? (
-              <div className="text-center py-12 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-400/30">
-                <AlertCircle className="w-16 h-16 text-purple-300 mx-auto mb-4" />
-                <p className="text-white text-lg mb-6">Please connect your Casper Wallet to continue</p>
+              <div className="text-center py-12 glass rounded-xl border border-green-500/30">
+                <AlertCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
+                <p className="text-green-300 text-lg mb-6">Please connect your Casper Wallet to continue</p>
                 <button
                   onClick={() => window.location.href = '/'}
-                  className="bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold px-8 py-4 rounded-lg hover:shadow-lg hover:shadow-purple-500/50 transition-all"
+                  className="bg-green-500 text-black font-bold px-8 py-4 rounded-lg hover:shadow-lg hover:shadow-green-500/50 transition-all hover:bg-green-400"
                 >
                   Connect Wallet
                 </button>
@@ -296,18 +296,18 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
             ) : (
               <>
                 {/* Payment Info */}
-                <div className="mb-8 bg-gradient-to-r from-purple-500/10 to-pink-500/10 p-6 rounded-xl border border-purple-400/30">
+                <div className="mb-8 glass p-6 rounded-xl border border-green-500/30">
                   <div className="flex justify-between items-center mb-4">
-                    <span className="text-white/80 text-lg">Amount to pay:</span>
-                    <span className="text-4xl font-bold text-white">{selected.cspr} CSPR</span>
+                    <span className="text-green-300/80 text-lg">Amount to pay:</span>
+                    <span className="text-4xl font-bold text-green-400">{selected.cspr} CSPR</span>
                   </div>
                   <div className="flex justify-between items-center mb-4">
-                    <span className="text-white/80 text-lg">You will receive:</span>
-                    <span className="text-3xl font-bold text-purple-300">{selected.tokens} tokens</span>
+                    <span className="text-green-300/80 text-lg">You will receive:</span>
+                    <span className="text-3xl font-bold text-green-400">{selected.tokens} tokens</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-white/80">Your wallet:</span>
-                    <span className="text-sm text-white/90 font-mono bg-black/30 px-3 py-1 rounded">
+                    <span className="text-green-300/80">Your wallet:</span>
+                    <span className="text-sm text-green-300 font-mono bg-black/30 px-3 py-1 rounded">
                       {wallet.slice(0, 12)}...{wallet.slice(-8)}
                     </span>
                   </div>
@@ -335,15 +335,15 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                 )}
 
                 {txHash && !success && (
-                  <div className="mb-6 p-4 bg-blue-500/20 border-2 border-blue-500/50 rounded-xl">
-                    <p className="text-blue-300 font-semibold mb-2">Transaction Submitted</p>
-                    <p className="text-blue-200 text-xs mb-2">Deploy Hash:</p>
-                    <code className="text-blue-100 text-xs break-all block bg-black/30 p-2 rounded">{txHash}</code>
+                  <div className="mb-6 p-4 glass border-2 border-green-500/50 rounded-xl">
+                    <p className="text-green-400 font-semibold mb-2">Transaction Submitted</p>
+                    <p className="text-green-300 text-xs mb-2">Deploy Hash:</p>
+                    <code className="text-green-400 text-xs break-all block bg-black/30 p-2 rounded">{txHash}</code>
                     <a
                       href={`https://cspr.live/deploy/${txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-purple-300 hover:text-purple-200 underline text-sm mt-2 inline-block"
+                      className="text-green-400 hover:text-green-300 underline text-sm mt-2 inline-block"
                     >
                       View on CSPR.live →
                     </a>
@@ -354,7 +354,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                 <button
                   onClick={handlePayWithWallet}
                   disabled={paying || verifying || success}
-                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-5 rounded-xl text-lg hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-6"
+                  className="w-full bg-green-500 text-black font-bold py-5 rounded-xl text-lg hover:shadow-2xl hover:shadow-green-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-6 hover:bg-green-400"
                 >
                   {paying ? (
                     <>
@@ -380,21 +380,21 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                 </button>
 
                 {/* Info Box */}
-                <div className="p-4 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-400/30 rounded-xl">
-                  <p className="text-purple-200 text-sm leading-relaxed">
+                <div className="p-4 glass border border-green-500/30 rounded-xl">
+                  <p className="text-green-300 text-sm leading-relaxed">
                     💡 <strong>How it works:</strong> Click the button above to sign the transaction with your Casper Wallet. We'll verify the payment on the blockchain and credit your tokens automatically!
                   </p>
                 </div>
 
                 {/* Help Link */}
                 <div className="mt-6 text-center">
-                  <p className="text-white/60 text-sm">
+                  <p className="text-green-300/60 text-sm">
                     Need help?{' '}
                     <a
                       href="https://cspr.live/"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-purple-300 hover:text-purple-200 underline font-semibold"
+                      className="text-green-400 hover:text-green-300 underline font-semibold"
                     >
                       View on CSPR.live →
                     </a>
@@ -407,7 +407,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
 
         {/* Info Notice */}
         <div className="mt-8 text-center">
-          <p className="text-white/50 text-sm">
+          <p className="text-green-300/50 text-sm">
             💡 Your tokens will be credited instantly after blockchain confirmation.
           </p>
         </div>

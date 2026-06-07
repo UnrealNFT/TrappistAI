@@ -16,14 +16,14 @@ export default function BottomNav({ wallet, balance }) {
     <motion.div
       initial={{ y: 100 }}
       animate={{ y: 0 }}
-      className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-white/10 safe-area-bottom"
+      className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-green-500/30 safe-area-bottom"
     >
       {/* Balance bar on top of bottom nav */}
       {wallet && (
-        <div className="px-4 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-b border-white/10">
+        <div className="px-4 py-2 bg-green-500/10 border-b border-green-500/30">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-white/60">Your Balance</span>
-            <span className="font-bold gradient-text">{balance} tokens</span>
+            <span className="text-green-300/60">Your Balance</span>
+            <span className="font-bold text-green-400 animate-glow">{balance} tokens</span>
           </div>
         </div>
       )}
@@ -42,7 +42,7 @@ export default function BottomNav({ wallet, balance }) {
               <motion.div
                 whileTap={{ scale: 0.9 }}
                 className={`flex flex-col items-center ${
-                  isActive ? 'text-purple-500' : 'text-gray-400'
+                  isActive ? 'text-green-400' : 'text-green-300/50'
                 }`}
               >
                 <Icon className={`text-xl mb-1 transition-all duration-300 ${
@@ -57,7 +57,7 @@ export default function BottomNav({ wallet, balance }) {
                 {isActive && (
                   <motion.div
                     layoutId="bottom-nav-indicator"
-                    className="absolute top-0 w-12 h-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-b-full"
+                    className="absolute top-0 w-12 h-1 bg-green-500 rounded-b-full shadow-lg shadow-green-500/50"
                     transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                   />
                 )}

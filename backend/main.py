@@ -5,6 +5,7 @@ Payment: CSPR (Casper blockchain)
 """
 import os
 import asyncio
+import requests
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -22,6 +23,11 @@ from db import get_db_session, get_user_balance, consume_user_tokens, get_paymen
 import wavespeed
 
 load_dotenv()
+
+# Groq Configuration
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = "llama-3.3-70b-versatile"
+conversation_history = {}  # Store per-user conversation history
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
@@ -95,6 +101,61 @@ class ChatRequest(BaseModel):
 class VerifyPaymentRequest(BaseModel):
     walletAddress: str
     txHash: str
+
+# ============================================
+# GROQ CHAT HELPERS
+# ============================================
+
+def _groq_complete(messages: list, max_tokens: int = 800) -> str:
+    """Call Groq API for chat completion"""
+    if not GROQ_API_KEY:
+        raise ValueError("GROQ_API_KEY not configured")
+    
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": GROQ_MODEL,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": 0.7
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"Groq API error: {str(e)}")
+
+def _groq_chat_with_memory(wallet: str, prompt: str) -> str:
+    """Chat with memory - remembers conversation history per wallet"""
+    if wallet not in conversation_history:
+        conversation_history[wallet] = []
+
+    # Add new message
+    conversation_history[wallet].append({"role": "user", "content": prompt})
+
+    # Keep only last 10 messages (5 exchanges)
+    if len(conversation_history[wallet]) > 10:
+        conversation_history[wallet] = conversation_history[wallet][-10:]
+
+    messages = [
+        {
+            "role": "system", 
+            "content": "You are TrappistAI, a friendly, smart, and natural AI assistant. You love AI, crypto, and helping users create amazing content. You remember all previous conversations. Detect the user's language and always reply in that same language."
+        }
+    ] + conversation_history[wallet]
+
+    try:
+        answer = _groq_complete(messages, max_tokens=900)
+        conversation_history[wallet].append({"role": "assistant", "content": answer})
+        return answer
+    except Exception as e:
+        return f"❌ Chat error: {str(e)[:150]}"
 
 # ============================================
 # HEALTH CHECK
@@ -740,9 +801,9 @@ async def generate_image(request: Request, data: GenerateImageRequest):
 @app.post("/api/generate/music")
 @limiter.limit("10/minute")
 async def generate_music(request: Request, data: GenerateMusicRequest):
-    """Generate music with HeartMuLa (10 tokens) or MiniMax (15 tokens)"""
+    """Generate music with HeartMuLa (14 tokens) or MiniMax (10 tokens)"""
     try:
-        tokens_needed = 10 if data.quality == "hm" else 15
+        tokens_needed = 14 if data.quality == "hm" else 10
         
         # Check balance WITHOUT consuming yet
         current_balance = await get_user_balance(data.walletAddress)
@@ -822,13 +883,30 @@ async def generate_3d(request: Request, data: Generate3DRequest):
 async def chat(request: Request, data: ChatRequest):
     """Free chat with Groq (no tokens consumed)"""
     try:
-        # TODO: Implement Groq integration
+        if not GROQ_API_KEY:
+            raise HTTPException(
+                status_code=503,
+                detail="Chat service not configured - GROQ_API_KEY missing"
+            )
+        
+        wallet = data.walletAddress
+        message = data.message.strip()
+        
+        if not message:
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        
+        # Run chat in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, _groq_chat_with_memory, wallet, message)
+        
         return {
             "success": True,
-            "response": "Chat feature coming soon!",
-            "tokensUsed": 0
+            "response": response,
+            "tokensUsed": 0  # Chat is free!
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

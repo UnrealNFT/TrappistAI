@@ -74,7 +74,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-4xl font-bold text-white mb-8 text-center">Generate</h1>
+      <h1 className="text-4xl font-bold text-green-400 mb-8 text-center animate-glow">Generate</h1>
 
       {/* Tabs */}
       <div className="flex justify-center space-x-2 mb-8">
@@ -89,8 +89,8 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
             onClick={() => setTab(t.id)}
             className={`flex items-center space-x-2 px-6 py-3 rounded-lg transition ${
               tab === t.id
-                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
-                : 'bg-white/10 text-white/70 hover:bg-white/20'
+                ? 'bg-green-500 text-black font-semibold shadow-lg shadow-green-500/50'
+                : 'glass border border-green-500/30 text-green-300 hover:border-green-400/50'
             }`}
           >
             {t.icon}
@@ -100,22 +100,22 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       </div>
 
       {/* Generator */}
-      <div className="max-w-3xl mx-auto bg-white/10 backdrop-blur-md p-8 rounded-xl border border-white/20">
+      <div className="max-w-3xl mx-auto glass p-8 rounded-xl border border-green-500/30">
         
         {/* Image */}
         {tab === 'image' && (
           <div className="space-y-4">
             <div>
-              <label className="block text-white mb-2 font-semibold">Prompt</label>
+              <label className="block text-green-400 mb-2 font-semibold">Prompt</label>
               <textarea
                 value={imagePrompt}
                 onChange={(e) => setImagePrompt(e.target.value)}
                 placeholder="A beautiful sunset over mountains..."
-                className="w-full p-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full p-3 rounded-lg bg-black border border-green-500/30 text-green-400 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
                 rows={4}
               />
             </div>
-            <p className="text-white/60 text-sm">Cost: 1 token • FLUX.1-schnell • 1024x1024</p>
+            <p className="text-green-300/60 text-sm">Cost: 1 token (10 CSPR) • FLUX.1-schnell • 1024x1024</p>
           </div>
         )}
 
@@ -123,33 +123,33 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
         {tab === 'music' && (
           <div className="space-y-4">
             <div>
-              <label className="block text-white mb-2 font-semibold">Style / Tags</label>
+              <label className="block text-green-400 mb-2 font-semibold">Style / Tags</label>
               <input
                 value={musicTags}
                 onChange={(e) => setMusicTags(e.target.value)}
                 placeholder="electronic, dark, cinematic"
-                className="w-full p-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full p-3 rounded-lg bg-black border border-green-500/30 text-green-400 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </div>
             <div>
-              <label className="block text-white mb-2 font-semibold">Lyrics (optional)</label>
+              <label className="block text-green-400 mb-2 font-semibold">Lyrics (optional)</label>
               <textarea
                 value={musicLyrics}
                 onChange={(e) => setMusicLyrics(e.target.value)}
                 placeholder="Leave empty for instrumental..."
-                className="w-full p-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full p-3 rounded-lg bg-black border border-green-500/30 text-green-400 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
                 rows={6}
               />
             </div>
             <div>
-              <label className="block text-white mb-2 font-semibold">Quality</label>
+              <label className="block text-green-400 mb-2 font-semibold">Quality</label>
               <select
                 value={musicQuality}
                 onChange={(e) => setMusicQuality(e.target.value)}
-                className="w-full p-3 rounded-lg bg-white/10 border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full p-3 rounded-lg bg-black border border-green-500/30 text-green-400 focus:outline-none focus:ring-2 focus:ring-green-500"
               >
-                <option value="hm">HeartMuLa (10 tokens)</option>
-                <option value="minimax">MiniMax HD (15 tokens)</option>
+                <option value="hm" className="bg-black">HeartMuLa (14 tokens / 140 CSPR)</option>
+                <option value="minimax" className="bg-black">MiniMax HD (10 tokens / 100 CSPR)</option>
               </select>
             </div>
           </div>
@@ -161,15 +161,15 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
             {/* Chat history */}
             <div className="h-64 overflow-y-auto space-y-2 mb-4">
               {chatHistory.length === 0 ? (
-                <p className="text-white/50 text-center">Start a conversation...</p>
+                <p className="text-green-300/50 text-center">Start a conversation...</p>
               ) : (
                 chatHistory.map((msg, i) => (
                   <div
                     key={i}
                     className={`p-3 rounded-lg ${
                       msg.role === 'user'
-                        ? 'bg-purple-500/20 text-white ml-8'
-                        : 'bg-white/10 text-white/90 mr-8'
+                        ? 'bg-green-500/20 text-green-300 ml-8 border border-green-500/30'
+                        : 'glass text-green-300/90 mr-8 border border-green-500/20'
                     }`}
                   >
                     {msg.content}
@@ -185,10 +185,10 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
                 onChange={(e) => setChatMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleGenerate()}
                 placeholder="Type your message..."
-                className="w-full p-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full p-3 rounded-lg bg-black border border-green-500/30 text-green-400 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </div>
-            <p className="text-white/60 text-sm">Free chat • No tokens consumed</p>
+            <p className="text-green-300/60 text-sm">Free chat • No tokens consumed</p>
           </div>
         )}
 
@@ -197,7 +197,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
           <button
             onClick={handleGenerate}
             disabled={loading}
-            className="w-full mt-6 bg-gradient-to-r from-purple-500 to-pink-500 px-8 py-3 rounded-lg text-white font-semibold hover:scale-105 transition disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center space-x-2"
+            className="w-full mt-6 bg-green-500 text-black px-8 py-3 rounded-lg font-semibold hover:scale-105 hover:bg-green-400 hover:shadow-lg hover:shadow-green-500/50 transition disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center space-x-2"
           >
             {loading ? (
               <>
@@ -214,7 +214,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
           <button
             onClick={handleGenerate}
             disabled={loading}
-            className="w-full mt-6 bg-gradient-to-r from-purple-500 to-pink-500 px-8 py-3 rounded-lg text-white font-semibold hover:scale-105 transition disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center space-x-2"
+            className="w-full mt-6 bg-green-500 text-black px-8 py-3 rounded-lg font-semibold hover:scale-105 hover:bg-green-400 hover:shadow-lg hover:shadow-green-500/50 transition disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center space-x-2"
           >
             {loading ? (
               <>
@@ -229,7 +229,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
 
         {/* Error */}
         {error && (
-          <div className="mt-4 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-white">
+          <div className="mt-4 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300">
             {error}
           </div>
         )}
@@ -237,17 +237,17 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
         {/* Result */}
         {result && tab !== 'chat' && (
           <div className="mt-6 space-y-4">
-            <div className="text-white/70 text-sm text-center">
+            <div className="text-green-300/70 text-sm text-center">
               ✨ Generated! Used {result.tokensUsed} tokens
             </div>
             
             {result.type === 'image' && (
               <div>
-                <img src={result.url} alt="Generated" className="w-full rounded-lg" />
+                <img src={result.url} alt="Generated" className="w-full rounded-lg border border-green-500/30" />
                 <a
                   href={result.url}
                   download
-                  className="mt-3 flex items-center justify-center space-x-2 w-full bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg text-white transition"
+                  className="mt-3 flex items-center justify-center space-x-2 w-full glass border border-green-500/30 hover:border-green-400/50 px-4 py-2 rounded-lg text-green-300 transition"
                 >
                   <Download className="w-4 h-4" />
                   <span>Download</span>
@@ -263,7 +263,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
                 <a
                   href={result.url}
                   download
-                  className="mt-3 flex items-center justify-center space-x-2 w-full bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg text-white transition"
+                  className="mt-3 flex items-center justify-center space-x-2 w-full glass border border-green-500/30 hover:border-green-400/50 px-4 py-2 rounded-lg text-green-300 transition"
                 >
                   <Download className="w-4 h-4" />
                   <span>Download</span>
