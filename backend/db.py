@@ -35,10 +35,12 @@ def get_db_session():
 
 async def get_user_balance(wallet_address: str) -> int:
     """Get user's token balance"""
+    # Normalize to lowercase
+    wallet_normalized = wallet_address.lower().strip()
     with engine.connect() as conn:
         result = conn.execute(
             text("SELECT tokens FROM users WHERE wallet_address = :wallet LIMIT 1"),
-            {"wallet": wallet_address}
+            {"wallet": wallet_normalized}
         )
         row = result.fetchone()
         return row[0] if row else 0
@@ -49,6 +51,9 @@ async def consume_user_tokens(wallet_address: str, tokens: int, gen_type: str, p
     Consume tokens for generation
     Returns True if successful, False if insufficient balance
     """
+    # Normalize to lowercase
+    wallet_normalized = wallet_address.lower().strip()
+    
     with engine.connect() as conn:
         # Start transaction
         trans = conn.begin()
@@ -57,7 +62,7 @@ async def consume_user_tokens(wallet_address: str, tokens: int, gen_type: str, p
             # Check balance
             result = conn.execute(
                 text("SELECT tokens FROM users WHERE wallet_address = :wallet LIMIT 1"),
-                {"wallet": wallet_address}
+                {"wallet": wallet_normalized}
             )
             row = result.fetchone()
             current_tokens = row[0] if row else 0
@@ -73,7 +78,7 @@ async def consume_user_tokens(wallet_address: str, tokens: int, gen_type: str, p
                     SET tokens = tokens - :tokens, updated_at = CURRENT_TIMESTAMP 
                     WHERE wallet_address = :wallet
                 """),
-                {"tokens": tokens, "wallet": wallet_address}
+                {"tokens": tokens, "wallet": wallet_normalized}
             )
             
             # Log generation
@@ -83,7 +88,7 @@ async def consume_user_tokens(wallet_address: str, tokens: int, gen_type: str, p
                     VALUES (:wallet, :type, :prompt, :tokens)
                 """),
                 {
-                    "wallet": wallet_address,
+                    "wallet": wallet_normalized,
                     "type": gen_type,
                     "prompt": prompt[:500],  # Limit prompt length
                     "tokens": tokens
@@ -157,6 +162,10 @@ async def process_payment(wallet_address: str, tx_hash: str, amount_cspr: float,
 
 async def process_payment_manual(wallet_address: str, tx_hash: str, amount_cspr: float, tokens: int, package_name: str):
     """Manual payment processing (same as process_payment but raises exceptions)"""
+    # Normalize to lowercase
+    wallet_normalized = wallet_address.lower().strip()
+    tx_normalized = tx_hash.lower().strip()
+    
     with engine.connect() as conn:
         trans = conn.begin()
         
@@ -164,7 +173,7 @@ async def process_payment_manual(wallet_address: str, tx_hash: str, amount_cspr:
             # Check if already processed
             result = conn.execute(
                 text("SELECT id FROM payments WHERE transaction_hash = :tx LIMIT 1"),
-                {"tx": tx_hash}
+                {"tx": tx_normalized}
             )
             if result.fetchone():
                 trans.rollback()
@@ -178,11 +187,11 @@ async def process_payment_manual(wallet_address: str, tx_hash: str, amount_cspr:
                     VALUES (:wallet, :amount, :tokens, :package, :tx, 'mainnet', 'confirmed', CURRENT_TIMESTAMP)
                 """),
                 {
-                    "wallet": wallet_address,
+                    "wallet": wallet_normalized,
                     "amount": amount_cspr,
                     "tokens": tokens,
                     "package": package_name,
-                    "tx": tx_hash
+                    "tx": tx_normalized
                 }
             )
             
@@ -196,7 +205,7 @@ async def process_payment_manual(wallet_address: str, tx_hash: str, amount_cspr:
                         tokens = users.tokens + :tokens,
                         updated_at = CURRENT_TIMESTAMP
                 """),
-                {"wallet": wallet_address, "tokens": tokens}
+                {"wallet": wallet_normalized, "tokens": tokens}
             )
             
             trans.commit()
@@ -208,6 +217,9 @@ async def process_payment_manual(wallet_address: str, tx_hash: str, amount_cspr:
 
 async def get_payment_history(wallet_address: str) -> list:
     """Get user's payment history"""
+    # Normalize to lowercase
+    wallet_normalized = wallet_address.lower().strip()
+    
     with engine.connect() as conn:
         result = conn.execute(
             text("""
@@ -219,7 +231,7 @@ async def get_payment_history(wallet_address: str) -> list:
                 ORDER BY confirmed_at DESC
                 LIMIT 50
             """),
-            {"wallet": wallet_address}
+            {"wallet": wallet_normalized}
         )
         
         payments = []

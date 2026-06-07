@@ -122,7 +122,11 @@ async def health():
 async def get_balance(request: Request, wallet_address: str):
     """Get user's token balance"""
     try:
-        balance = await get_user_balance(wallet_address)
+        # Normalize to lowercase
+        wallet_normalized = wallet_address.lower().strip()
+        print(f"💰 Balance request for: {wallet_normalized[:20]}...")
+        balance = await get_user_balance(wallet_normalized)
+        print(f"💰 Balance returned: {balance} tokens")
         return {"success": True, "tokens": balance}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -240,7 +244,9 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
         if not data.wallet or not data.deployHash:
             raise HTTPException(status_code=400, detail="Missing wallet or deployHash")
         
-        print(f"🔐 Verifying payment: wallet={data.wallet[:20]}..., deploy={data.deployHash[:20]}...")
+        # Normalize wallet address to lowercase
+        normalized_wallet = data.wallet.lower().strip()
+        print(f"🔐 Verifying payment: wallet={normalized_wallet[:20]}..., deploy={data.deployHash[:20]}...")
         
         # Clean hashes
         clean_deploy = data.deployHash.lower().replace("hash-", "").replace("deploy-", "")
@@ -369,14 +375,14 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
             package_name = "Starter"
         
         await process_payment_manual(
-            data.wallet, 
+            normalized_wallet, 
             clean_deploy, 
             data.amount, 
             data.tokens, 
             package_name
         )
         
-        print(f"💰 Credited {data.tokens} tokens to {data.wallet}")
+        print(f"💰 Credited {data.tokens} tokens to {normalized_wallet}")
         
         return {
             "success": True,

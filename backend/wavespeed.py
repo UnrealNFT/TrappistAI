@@ -78,6 +78,7 @@ def generate_music(lyrics: str, tags: str = "electronic, dark, cinematic") -> st
         "lyrics": final_lyrics,
         "tags": tags,
         "seed": -1,
+        "duration": 60  # 60 seconds (try to request longer duration)
     })
     return _poll(task_id, max_wait=600)
 
@@ -91,6 +92,7 @@ def generate_music_minimax(lyrics: str, tags: str = "electronic, dark, cinematic
         "lyrics": final_lyrics,
         "bitrate": 256000,
         "sample_rate": 44100,
+        "duration": 60  # 60 seconds
     })
     return _poll(task_id, max_wait=600)
 

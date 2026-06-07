@@ -42,14 +42,15 @@ function App() {
 
       // Get active public key
       const publicKey = await walletProvider.getActivePublicKey()
-      setWallet(publicKey)
-      localStorage.setItem('wallet', publicKey)
+      const normalizedKey = publicKey.toLowerCase().trim()
+      setWallet(normalizedKey)
+      localStorage.setItem('wallet', normalizedKey)
       
-      console.log('✅ Wallet connected:', publicKey)
+      console.log('✅ Wallet connected:', normalizedKey)
 
       // Fetch balance
       try {
-        const bal = await getBalance(publicKey)
+        const bal = await getBalance(normalizedKey)
         setBalance(bal)
       } catch (error) {
         console.error('Failed to fetch balance:', error)
