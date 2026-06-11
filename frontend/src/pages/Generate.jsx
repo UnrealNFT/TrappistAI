@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Image, Music, Box, MessageSquare, Loader2, Upload, Send, X, Download } from 'lucide-react'
-import { generateImage, generateMusic, generate3D, chat, generateLyrics } from '../services/api'
+import { generateImage, generateMusic, generate3D, chat, generateLyrics, getJobStatus } from '../services/api'
 
 // Music styles (from PiranAI bot)
 const MUSIC_STYLES = {
@@ -22,6 +22,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
   const [uploadedImage, setUploadedImage] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [showUploadPrompt, setShowUploadPrompt] = useState(false)
+  const [activeJobs, setActiveJobs] = useState({}) // Track background jobs (music, 3D)
   
   const messagesEndRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -61,6 +62,115 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       result
     }])
   }
+
+  // Job polling helpers
+  const startJobPolling = (jobId, messageId, jobType) => {
+    console.log(`⏳ Starting polling for job: ${jobId} (${jobType})`)
+    
+    // Save job to localStorage
+    const jobs = JSON.parse(localStorage.getItem('trappist_active_jobs') || '{}')
+    jobs[jobId] = { messageId, jobType, startedAt: Date.now() }
+    localStorage.setItem('trappist_active_jobs', JSON.stringify(jobs))
+    setActiveJobs(jobs)
+    
+    // Start polling
+    const interval = setInterval(async () => {
+      try {
+        const job = await getJobStatus(jobId)
+        console.log(`📊 Job ${jobId} status:`, job.status)
+        
+        if (job.status === 'completed') {
+          clearInterval(interval)
+          
+          // Remove from active jobs
+          const updatedJobs = { ...activeJobs }
+          delete updatedJobs[jobId]
+          localStorage.setItem('trappist_active_jobs', JSON.stringify(updatedJobs))
+          setActiveJobs(updatedJobs)
+          
+          // Update message with result
+          setMessages(prev => prev.map(msg => 
+            msg.id === messageId
+              ? {
+                  ...msg,
+                  content: `✅ **${jobType === 'music' ? 'Music' : '3D Model'} Generated!**`,
+                  result: {
+                    type: jobType,
+                    url: job.result.url,
+                    tokensUsed: job.result.tokensUsed,
+                    warning: job.result.warning
+                  }
+                }
+              : msg
+          ))
+          
+          // Add regenerate buttons for music
+          if (jobType === 'music') {
+            addMessage('assistant', '🎵 **Want to try different lyrics?**', [
+              { label: '🔄 Regenerate Lyrics', action: 'music_preview_redo' },
+              { label: '✏️ Write Own Lyrics', action: 'music_lyrics_own' }
+            ])
+          }
+          
+          await onBalanceUpdate()
+        } else if (job.status === 'failed') {
+          clearInterval(interval)
+          
+          // Remove from active jobs
+          const updatedJobs = { ...activeJobs }
+          delete updatedJobs[jobId]
+          localStorage.setItem('trappist_active_jobs', JSON.stringify(updatedJobs))
+          setActiveJobs(updatedJobs)
+          
+          // Update message with error
+          setMessages(prev => prev.map(msg => 
+            msg.id === messageId
+              ? { ...msg, content: `❌ **Error:** ${job.error}` }
+              : msg
+          ))
+        } else {
+          // Still processing - update message
+          const elapsed = Math.floor((Date.now() - jobs[jobId].startedAt) / 1000)
+          const minutes = Math.floor(elapsed / 60)
+          const seconds = elapsed % 60
+          const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
+          
+          setMessages(prev => prev.map(msg => 
+            msg.id === messageId
+              ? { 
+                  ...msg, 
+                  content: `⏳ **Generating ${jobType === 'music' ? 'music' : '3D model'}...**\n_Time elapsed: ${timeStr}_\n\n💡 **You can close this page!** Generation continues in background. Come back anytime to check.` 
+                }
+              : msg
+          ))
+        }
+      } catch (err) {
+        console.error(`❌ Error polling job ${jobId}:`, err)
+      }
+    }, 5000) // Poll every 5 seconds
+    
+    // Clean up on unmount
+    return () => clearInterval(interval)
+  }
+
+  // Restore active jobs on mount
+  useEffect(() => {
+    const savedJobs = localStorage.getItem('trappist_active_jobs')
+    if (savedJobs) {
+      try {
+        const jobs = JSON.parse(savedJobs)
+        setActiveJobs(jobs)
+        
+        // Resume polling for each job
+        Object.keys(jobs).forEach(jobId => {
+          const { messageId, jobType } = jobs[jobId]
+          startJobPolling(jobId, messageId, jobType)
+        })
+      } catch (e) {
+        console.error('Failed to restore active jobs:', e)
+      }
+    }
+  }, [])
 
   // Handle button click (inline keyboard) - EXACTLY like Telegram
   const handleButtonClick = async (action) => {
@@ -288,19 +398,18 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
     
     setLoading(true)
     // NO user message for inline button click (like Telegram)
-    addMessage('assistant', `🎨 **Génération 3D en cours...**\n_Cost: ${cost} tokens_\n⏳ Peut prendre jusqu'à 10 min`)
+    
+    // Create message for this generation
+    const messageId = Date.now()
+    addMessage('assistant', `🎨 **Starting 3D generation...**\n_Cost: ${cost} tokens_\n⏳ Estimated time: 5-10 minutes\n\n💡 **You can close this page!** Generation continues in background.`)
 
     try {
       // Use image preview as data URL
       const res = await generate3D(walletToUse, imagePreview, withTexture)
       
-      addMessage('assistant', '✅ **3D Model Generated!**', null, {
-        type: '3d',
-        url: res.url,
-        tokensUsed: res.tokensUsed
-      })
-
-      await onBalanceUpdate()
+      // Start job polling
+      const lastMessage = messages[messages.length - 1]
+      startJobPolling(res.job_id, lastMessage.id, '3d')
       
       // Clean up uploaded image
       setUploadedImage(null)
@@ -327,29 +436,21 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
     const tags = `${styleLabel}, ${flowData.musicVoice} vocals, modern, high quality`
     
     setLoading(true)
-    addMessage('assistant', `🎵 **Generating music...**\n_Cost: ${cost} tokens_\n⏳ This may take 2-3 minutes`)
+    
+    // Create message for this generation
+    const messageId = Date.now()
+    addMessage('assistant', `🎵 **Starting music generation...**\n_Cost: ${cost} tokens_\n⏳ Estimated time: 2-10 minutes\n\n💡 **You can close this page!** Generation continues in background.`)
 
     try {
       const res = await generateMusic(walletToUse, lyrics, tags, quality)
       
-      addMessage('assistant', '✅ **Music Generated!**', null, {
-        type: 'music',
-        url: res.url,
-        tokensUsed: res.tokensUsed,
-        warning: res.warning
-      })
-
-      await onBalanceUpdate()
+      // Start job polling
+      const lastMessage = messages[messages.length - 1]
+      startJobPolling(res.job_id, lastMessage.id, 'music')
       
       // Keep flowData for regeneration - don't clean up!
       // User can regenerate lyrics infinite times
       setCurrentFlow('chat')
-      
-      // Add regenerate button after music generation
-      addMessage('assistant', '🎵 **Want to try different lyrics?**', [
-        { label: '🔄 Regenerate Lyrics', action: 'music_preview_redo' },
-        { label: '✏️ Write Own Lyrics', action: 'music_lyrics_own' }
-      ])
 
     } catch (err) {
       addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
@@ -477,17 +578,18 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       
       const quality = flowData.musicQuality
       const cost = quality === 'hm' ? 14 : 10
-      addMessage('assistant', `🎸 **Generating instrumental...**\n_Cost: ${cost} tokens_\n⏳ This may take 2-3 minutes`)
+      
+      // Create message for this generation
+      const messageId = Date.now()
+      addMessage('assistant', `🎸 **Starting instrumental generation...**\n_Cost: ${cost} tokens_\n⏳ Estimated time: 2-10 minutes\n\n💡 **You can close this page!** Generation continues in background.`)
       
       try {
         const res = await generateMusic(walletToUse, '', userMessage, quality)
-        addMessage('assistant', '✅ **Instrumental Generated!**', null, {
-          type: 'music',
-          url: res.url,
-          tokensUsed: res.tokensUsed,
-          warning: res.warning
-        })
-        await onBalanceUpdate()
+        
+        // Start job polling
+        const lastMessage = messages[messages.length - 1]
+        startJobPolling(res.job_id, lastMessage.id, 'music')
+        
         setCurrentFlow('chat')
         // Keep flowData for potential regeneration
       } catch (err) {

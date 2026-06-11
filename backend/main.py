@@ -29,6 +29,39 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = "llama-3.3-70b-versatile"
 conversation_history = {}  # Store per-user conversation history
 
+# Jobs system for async generation (music, 3D, etc.)
+import uuid
+from typing import Optional
+jobs = {}  # {job_id: {status, result, error, created_at, updated_at}}
+
+def create_job(job_type: str) -> str:
+    """Create a new job and return job_id"""
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {
+        "job_id": job_id,
+        "type": job_type,
+        "status": "pending",  # pending, processing, completed, failed
+        "result": None,
+        "error": None,
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat()
+    }
+    return job_id
+
+def update_job(job_id: str, status: str, result: Optional[dict] = None, error: Optional[str] = None):
+    """Update job status"""
+    if job_id in jobs:
+        jobs[job_id]["status"] = status
+        jobs[job_id]["updated_at"] = datetime.now().isoformat()
+        if result:
+            jobs[job_id]["result"] = result
+        if error:
+            jobs[job_id]["error"] = error
+
+def get_job(job_id: str) -> Optional[dict]:
+    """Get job by ID"""
+    return jobs.get(job_id)
+
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
 
@@ -248,6 +281,26 @@ async def get_payments(request: Request, wallet_address: str):
         return {"success": True, "payments": payments}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================
+# JOB STATUS
+# ============================================
+
+@app.get("/api/jobs/{job_id}")
+@limiter.limit("60/minute")
+async def get_job_status(request: Request, job_id: str):
+    """Get job status for async generation (music, 3D, etc.)
+    
+    Status values:
+    - pending: Job created, not started yet
+    - processing: Generation in progress
+    - completed: Generation successful, result available
+    - failed: Generation failed, error available
+    """
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 # ============================================
 # PAYMENT VERIFICATION
@@ -848,7 +901,11 @@ async def generate_image(request: Request, data: GenerateImageRequest):
 @app.post("/api/generate/music")
 @limiter.limit("10/minute")
 async def generate_music(request: Request, data: GenerateMusicRequest):
-    """Generate music with HeartMuLa (14 tokens) or MiniMax (10 tokens)"""
+    """Generate music with HeartMuLa (14 tokens) or MiniMax (10 tokens)
+    
+    Returns job_id immediately. Use GET /api/jobs/{job_id} to check status.
+    Generation runs in background and can take 2-10 minutes.
+    """
     try:
         tokens_needed = 14 if data.quality == "hm" else 10
         
@@ -857,18 +914,57 @@ async def generate_music(request: Request, data: GenerateMusicRequest):
         if current_balance < tokens_needed:
             raise HTTPException(status_code=402, detail="Insufficient tokens")
         
-        # Generate music FIRST with retry + fallback
+        # Create job and return immediately
+        job_id = create_job("music")
+        
+        # Launch background generation
+        asyncio.create_task(_generate_music_background(
+            job_id,
+            data.walletAddress,
+            data.lyrics,
+            data.tags,
+            data.quality,
+            tokens_needed
+        ))
+        
+        return {
+            "success": True,
+            "job_id": job_id,
+            "status": "pending",
+            "message": "Music generation started. Use GET /api/jobs/{job_id} to check status.",
+            "estimatedTime": "2-10 minutes"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _generate_music_background(
+    job_id: str,
+    wallet_address: str,
+    lyrics: str,
+    tags: str,
+    quality: str,
+    tokens_needed: int
+):
+    """Background task for music generation"""
+    try:
+        update_job(job_id, "processing")
+        
+        # Generate music with retry + fallback
         fallback_used = False
         try:
-            if data.quality == "minimax":
+            if quality == "minimax":
                 url = await asyncio.get_event_loop().run_in_executor(
-                    None, wavespeed.generate_music_minimax, data.lyrics, data.tags
+                    None, wavespeed.generate_music_minimax, lyrics, tags
                 )
             else:
                 # HeartMuLa with auto-retry
                 try:
                     url = await asyncio.get_event_loop().run_in_executor(
-                        None, wavespeed.generate_music, data.lyrics, data.tags
+                        None, wavespeed.generate_music, lyrics, tags
                     )
                 except Exception as hm_error:
                     print(f"⚠️ HeartMuLa failed (attempt 1): {hm_error}")
@@ -876,51 +972,56 @@ async def generate_music(request: Request, data: GenerateMusicRequest):
                     try:
                         print("🔄 Retrying HeartMuLa...")
                         url = await asyncio.get_event_loop().run_in_executor(
-                            None, wavespeed.generate_music, data.lyrics, data.tags
+                            None, wavespeed.generate_music, lyrics, tags
                         )
                     except Exception as retry_error:
                         # Fallback to MiniMax
                         print(f"⚠️ HeartMuLa failed again: {retry_error}")
                         print("🔄 Falling back to MiniMax...")
                         url = await asyncio.get_event_loop().run_in_executor(
-                            None, wavespeed.generate_music_minimax, data.lyrics, data.tags
+                            None, wavespeed.generate_music_minimax, lyrics, tags
                         )
                         fallback_used = True
                         tokens_needed = 10  # MiniMax pricing
         except Exception as gen_error:
             # Both failed - DON'T consume tokens
             print(f"❌ Music generation failed completely: {gen_error}")
-            raise HTTPException(status_code=500, detail=f"Generation failed: {str(gen_error)}")
+            update_job(job_id, "failed", error=f"Generation failed: {str(gen_error)}")
+            return
         
         # Only consume tokens if generation succeeded
         consumed = await consume_user_tokens(
-            data.walletAddress, tokens_needed, "music", f"{data.tags[:50]}..."
+            wallet_address, tokens_needed, "music", f"{tags[:50]}..."
         )
         if not consumed:
             # Edge case: balance changed during generation
-            raise HTTPException(status_code=402, detail="Insufficient tokens")
+            update_job(job_id, "failed", error="Insufficient tokens (balance changed)")
+            return
         
-        response = {
-            "success": True,
+        result = {
             "url": url,
             "tokensUsed": tokens_needed
         }
         
         # Notify if fallback was used
         if fallback_used:
-            response["warning"] = "HeartMuLa unavailable, used MiniMax (saved 4 tokens)"
+            result["warning"] = "HeartMuLa unavailable, used MiniMax (saved 4 tokens)"
         
-        return response
+        update_job(job_id, "completed", result=result)
+        print(f"✅ Music generation completed: {job_id}")
         
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Background music generation error: {e}")
+        update_job(job_id, "failed", error=str(e))
 
 @app.post("/api/generate/3d")
 @limiter.limit("20/minute")
 async def generate_3d(request: Request, data: Generate3DRequest):
-    """Generate 3D model (2 tokens without texture, 30 with texture)"""
+    """Generate 3D model (2 tokens without texture, 30 with texture)
+    
+    Returns job_id immediately. Use GET /api/jobs/{job_id} to check status.
+    Generation runs in background and can take 5-10 minutes.
+    """
     try:
         tokens_needed = 30 if data.withTexture else 2
         
@@ -929,19 +1030,46 @@ async def generate_3d(request: Request, data: Generate3DRequest):
         if current_balance < tokens_needed:
             raise HTTPException(status_code=402, detail="Insufficient tokens")
         
-        # imageUrl can be either:
-        # 1. data:image/png;base64,... (from frontend upload)
-        # 2. https://... (direct URL)
+        # Create job and return immediately
+        job_id = create_job("3d")
         
-        image_url = data.imageUrl
+        # Launch background generation
+        asyncio.create_task(_generate_3d_background(
+            job_id,
+            data.walletAddress,
+            data.imageUrl,
+            data.withTexture,
+            tokens_needed
+        ))
         
-        # If data URL, we need to convert it to a real URL
-        # For now, let's accept it directly since WaveSpeed might support base64
-        # TODO: If WaveSpeed doesn't support data URLs, upload to temporary storage first
+        return {
+            "success": True,
+            "job_id": job_id,
+            "status": "pending",
+            "message": "3D generation started. Use GET /api/jobs/{job_id} to check status.",
+            "estimatedTime": "5-10 minutes"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _generate_3d_background(
+    job_id: str,
+    wallet_address: str,
+    image_url: str,
+    with_texture: bool,
+    tokens_needed: int
+):
+    """Background task for 3D generation"""
+    try:
+        update_job(job_id, "processing")
         
         # Generate 3D
         try:
-            if data.withTexture:
+            if with_texture:
                 url = await asyncio.get_event_loop().run_in_executor(
                     None, wavespeed.generate_3d_with_texture, image_url
                 )
@@ -952,25 +1080,28 @@ async def generate_3d(request: Request, data: Generate3DRequest):
         except Exception as gen_error:
             # Generation failed - DON'T consume tokens
             print(f"❌ 3D generation failed: {gen_error}")
-            raise HTTPException(status_code=500, detail=f"Generation failed: {str(gen_error)}")
+            update_job(job_id, "failed", error=f"Generation failed: {str(gen_error)}")
+            return
         
         # Only consume tokens if generation succeeded
         consumed = await consume_user_tokens(
-            data.walletAddress, tokens_needed, "3d", f"texture={data.withTexture}"
+            wallet_address, tokens_needed, "3d", f"texture={with_texture}"
         )
         if not consumed:
-            raise HTTPException(status_code=402, detail="Insufficient tokens")
+            update_job(job_id, "failed", error="Insufficient tokens (balance changed)")
+            return
         
-        return {
-            "success": True,
+        result = {
             "url": url,
             "tokensUsed": tokens_needed
         }
         
-    except HTTPException:
-        raise
+        update_job(job_id, "completed", result=result)
+        print(f"✅ 3D generation completed: {job_id}")
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Background 3D generation error: {e}")
+        update_job(job_id, "failed", error=str(e))
 
 @app.post("/api/chat")
 @limiter.limit("50/minute")

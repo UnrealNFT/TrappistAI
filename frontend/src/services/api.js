@@ -79,4 +79,11 @@ export const generateLyrics = async (walletAddress, style, voice, subject) => {
   return data
 }
 
+// ===== JOBS =====
+
+export const getJobStatus = async (jobId) => {
+  const { data } = await api.get(`/api/jobs/${jobId}`)
+  return data
+}
+
 export default api
