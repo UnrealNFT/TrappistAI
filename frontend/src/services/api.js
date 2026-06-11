@@ -86,4 +86,27 @@ export const getJobStatus = async (jobId) => {
   return data
 }
 
+// ===== PROFILE =====
+
+export const getProfileInfo = async (walletAddress) => {
+  const { data } = await api.get(`/api/profile/${walletAddress}`)
+  return data
+}
+
+export const linkTelegram = async (walletAddress, telegramUsername) => {
+  const { data } = await api.post('/api/profile/link-telegram', {
+    walletAddress,
+    telegramUsername
+  })
+  return data
+}
+
+export const verifyTelegramCode = async (walletAddress, code) => {
+  const { data } = await api.post('/api/profile/verify-code', {
+    walletAddress,
+    code
+  })
+  return data
+}
+
 export default api

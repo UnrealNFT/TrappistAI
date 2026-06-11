@@ -303,6 +303,200 @@ async def get_job_status(request: Request, job_id: str):
     return job
 
 # ============================================
+# PROFILE & TELEGRAM LINKING
+# ============================================
+
+import random
+from datetime import timedelta
+
+class LinkTelegramRequest(BaseModel):
+    walletAddress: str
+    telegramUsername: str
+
+class VerifyCodeRequest(BaseModel):
+    walletAddress: str
+    code: str
+
+@app.get("/api/profile/{wallet_address}")
+@limiter.limit("50/minute")
+async def get_profile(request: Request, wallet_address: str):
+    """Get user profile info including Telegram link status"""
+    wallet_normalized = wallet_address.lower().strip()
+    
+    with get_db_session() as conn:
+        result = conn.execute(
+            text("""
+                SELECT telegram_username, telegram_user_id, telegram_verified, created_at
+                FROM users 
+                WHERE wallet_address = :wallet
+                LIMIT 1
+            """),
+            {"wallet": wallet_normalized}
+        )
+        row = result.fetchone()
+        
+        if not row:
+            # Create user if doesn't exist
+            conn.execute(
+                text("INSERT INTO users (wallet_address, tokens) VALUES (:wallet, 0)"),
+                {"wallet": wallet_normalized}
+            )
+            conn.commit()
+            return {
+                "wallet_address": wallet_address,
+                "telegram_username": None,
+                "telegram_verified": False,
+                "created_at": datetime.now().isoformat()
+            }
+        
+        return {
+            "wallet_address": wallet_address,
+            "telegram_username": row[0],
+            "telegram_user_id": row[1],
+            "telegram_verified": bool(row[2]),
+            "created_at": row[3].isoformat() if row[3] else None
+        }
+
+@app.post("/api/profile/link-telegram")
+@limiter.limit("10/minute")
+async def link_telegram(request: Request, data: LinkTelegramRequest):
+    """Generate verification code and send to Telegram bot"""
+    wallet_normalized = data.walletAddress.lower().strip()
+    username = data.telegramUsername.strip().replace('@', '')
+    
+    if not username:
+        raise HTTPException(status_code=400, detail="Telegram username required")
+    
+    # Generate 6-digit code
+    code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+    expires_at = datetime.now() + timedelta(minutes=10)
+    
+    # Store verification code
+    with get_db_session() as conn:
+        # Ensure user exists
+        result = conn.execute(
+            text("SELECT id FROM users WHERE wallet_address = :wallet"),
+            {"wallet": wallet_normalized}
+        )
+        if not result.fetchone():
+            conn.execute(
+                text("INSERT INTO users (wallet_address, tokens) VALUES (:wallet, 0)"),
+                {"wallet": wallet_normalized}
+            )
+        
+        # Insert verification code (delete old ones first)
+        conn.execute(
+            text("DELETE FROM telegram_verification WHERE wallet_address = :wallet AND verified = 0"),
+            {"wallet": wallet_normalized}
+        )
+        conn.execute(
+            text("""
+                INSERT INTO telegram_verification 
+                (wallet_address, telegram_username, verification_code, expires_at, verified)
+                VALUES (:wallet, :username, :code, :expires, 0)
+            """),
+            {
+                "wallet": wallet_normalized,
+                "username": username,
+                "code": code,
+                "expires": expires_at
+            }
+        )
+        conn.commit()
+    
+    # TODO: Send code to PiranAI bot via webhook
+    # For now, we'll return it (in production, only send to Telegram)
+    print(f"🔐 Verification code for @{username}: {code}")
+    
+    try:
+        # Try to send to PiranAI bot webhook
+        PIRANAI_WEBHOOK = os.getenv("PIRANAI_WEBHOOK_URL")
+        if PIRANAI_WEBHOOK:
+            import httpx
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(PIRANAI_WEBHOOK, json={
+                    "action": "send_verification",
+                    "username": username,
+                    "code": code,
+                    "wallet": wallet_normalized
+                })
+            print(f"✅ Sent code to @{username} via PiranAI bot")
+    except Exception as e:
+        print(f"⚠️ Failed to send to PiranAI bot: {e}")
+        # Continue anyway - code is stored in DB
+    
+    return {
+        "success": True,
+        "message": f"Verification code sent to @{username}",
+        "code": code if os.getenv("DEBUG") == "1" else None  # Only in debug mode
+    }
+
+@app.post("/api/profile/verify-code")
+@limiter.limit("20/minute")
+async def verify_code(request: Request, data: VerifyCodeRequest):
+    """Verify code and link Telegram account"""
+    wallet_normalized = data.walletAddress.lower().strip()
+    code = data.code.strip()
+    
+    if len(code) != 6 or not code.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid code format")
+    
+    with get_db_session() as conn:
+        # Check verification code
+        result = conn.execute(
+            text("""
+                SELECT telegram_username, expires_at, verified
+                FROM telegram_verification
+                WHERE wallet_address = :wallet AND verification_code = :code
+                ORDER BY created_at DESC
+                LIMIT 1
+            """),
+            {"wallet": wallet_normalized, "code": code}
+        )
+        row = result.fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=400, detail="Invalid verification code")
+        
+        username, expires_at, verified = row
+        
+        if verified:
+            raise HTTPException(status_code=400, detail="Code already used")
+        
+        if datetime.now() > expires_at:
+            raise HTTPException(status_code=400, detail="Code expired (10 min limit)")
+        
+        # Mark as verified
+        conn.execute(
+            text("""
+                UPDATE telegram_verification 
+                SET verified = 1 
+                WHERE wallet_address = :wallet AND verification_code = :code
+            """),
+            {"wallet": wallet_normalized, "code": code}
+        )
+        
+        # Update user
+        conn.execute(
+            text("""
+                UPDATE users 
+                SET telegram_username = :username, telegram_verified = 1 
+                WHERE wallet_address = :wallet
+            """),
+            {"wallet": wallet_normalized, "username": username}
+        )
+        
+        conn.commit()
+    
+    print(f"✅ Linked @{username} to wallet {wallet_normalized[:10]}...")
+    
+    return {
+        "success": True,
+        "message": "Telegram account linked successfully",
+        "telegram_username": username
+    }
+
+# ============================================
 # PAYMENT VERIFICATION
 # ============================================
 

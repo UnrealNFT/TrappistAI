@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
 import Home from './pages/Home'
 import Generate from './pages/Generate'
+import Profile from './pages/Profile'
 import BuyCredits from './pages/BuyCredits'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
@@ -150,6 +151,11 @@ function App() {
                   wallet={wallet} 
                   balance={balance}
                   onBalanceUpdate={refreshBalance}
+                />
+              } />
+              <Route path="/profile" element={
+                <Profile 
+                  wallet={wallet}
                 />
               } />
               <Route path="/buy-credits" element={
