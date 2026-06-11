@@ -16,6 +16,26 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
   const messagesEndRef = useRef(null)
   const fileInputRef = useRef(null)
 
+  // Load messages from localStorage on mount (persist like Telegram)
+  useEffect(() => {
+    const saved = localStorage.getItem('trappist_chat_history')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        setMessages(parsed)
+      } catch (e) {
+        console.error('Failed to load chat history:', e)
+      }
+    }
+  }, [])
+
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem('trappist_chat_history', JSON.stringify(messages))
+    }
+  }, [messages])
+
   // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -85,7 +105,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       setImagePreview(e.target.result)
       setShowUploadPrompt(false)
       
-      addMessage('user', '📷 Image uploaded')
+      // NO user message for upload (like Telegram - inline action)
       addMessage('assistant', '🎨 **Choose 3D Quality:**\n\n⚡ **Sans texture** — 2 tokens (~5 min)\n   └ Géométrie pure, monochrome\n\n🎨 **Avec texture** — 30 tokens (~10 min)\n   └ Couleurs et textures complètes', [
         { label: '⚡ Sans texture (2 tokens)', action: '3d_quality_notex' },
         { label: '🎨 Avec texture (30 tokens)', action: '3d_quality_tex' }
@@ -100,7 +120,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
     const cost = withTexture ? 30 : 2
     
     setLoading(true)
-    addMessage('user', withTexture ? 'With Texture' : 'Without Texture')
+    // NO user message for inline button click (like Telegram)
     addMessage('assistant', `🎨 **Génération 3D en cours...**\n_Cost: ${cost} tokens_\n⏳ Peut prendre jusqu'à 10 min`)
 
     try {
