@@ -6,11 +6,15 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     wallet_address VARCHAR(255) UNIQUE NOT NULL,
     tokens INTEGER DEFAULT 0,
+    telegram_username VARCHAR(255),
+    telegram_user_id BIGINT,
+    telegram_verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX idx_users_wallet ON users(wallet_address);
+CREATE INDEX idx_users_telegram ON users(telegram_username);
 
 -- Payments table
 CREATE TABLE IF NOT EXISTS payments (
@@ -44,6 +48,20 @@ CREATE TABLE IF NOT EXISTS generations (
 CREATE INDEX idx_generations_wallet ON generations(wallet_address);
 CREATE INDEX idx_generations_type ON generations(type);
 CREATE INDEX idx_generations_created ON generations(created_at DESC);
+
+-- Telegram verification table for linking accounts
+CREATE TABLE IF NOT EXISTS telegram_verification (
+    id SERIAL PRIMARY KEY,
+    wallet_address VARCHAR(255) NOT NULL,
+    telegram_username VARCHAR(255) NOT NULL,
+    verification_code VARCHAR(6) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    verified BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_telegram_verification_wallet ON telegram_verification(wallet_address);
+CREATE INDEX idx_telegram_verification_code ON telegram_verification(verification_code);
 
 -- Example data (optional)
 -- INSERT INTO users (wallet_address, tokens) VALUES 
