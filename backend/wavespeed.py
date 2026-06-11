@@ -110,7 +110,7 @@ def generate_3d_from_image(image_url: str) -> str:
     task_id = _submit("wavespeed-ai/hunyuan-3d-v3.1/image-to-3d-rapid", {
         "image": image_url,
     })
-    return _poll(task_id, max_wait=300)
+    return _poll(task_id, max_wait=600)
 
 
 def generate_3d_with_texture(image_url: str) -> str:
@@ -122,7 +122,7 @@ def generate_3d_with_texture(image_url: str) -> str:
     task_id = _submit("tripo3d/v2.5/image-to-3d", {
         "image": image_url,
     })
-    return _poll(task_id, max_wait=300)
+    return _poll(task_id, max_wait=600)
 
 
 if __name__ == "__main__":

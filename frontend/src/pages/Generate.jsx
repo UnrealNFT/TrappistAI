@@ -86,7 +86,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       setShowUploadPrompt(false)
       
       addMessage('user', '📷 Image uploaded')
-      addMessage('assistant', '🎨 **Choose 3D Quality:**\n\n⚡ **Sans texture** — 2 tokens (~2 min)\n   └ Géométrie pure, monochrome\n\n🎨 **Avec texture** — 30 tokens (~5 min)\n   └ Couleurs et textures complètes', [
+      addMessage('assistant', '🎨 **Choose 3D Quality:**\n\n⚡ **Sans texture** — 2 tokens (~5 min)\n   └ Géométrie pure, monochrome\n\n🎨 **Avec texture** — 30 tokens (~10 min)\n   └ Couleurs et textures complètes', [
         { label: '⚡ Sans texture (2 tokens)', action: '3d_quality_notex' },
         { label: '🎨 Avec texture (30 tokens)', action: '3d_quality_tex' }
       ])
@@ -101,7 +101,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
     
     setLoading(true)
     addMessage('user', withTexture ? 'With Texture' : 'Without Texture')
-    addMessage('assistant', `🎨 **Génération 3D en cours...**\n_Cost: ${cost} tokens_\n⏳ Peut prendre jusqu'à 5 min`)
+    addMessage('assistant', `🎨 **Génération 3D en cours...**\n_Cost: ${cost} tokens_\n⏳ Peut prendre jusqu'à 10 min`)
 
     try {
       // Use image preview as data URL
