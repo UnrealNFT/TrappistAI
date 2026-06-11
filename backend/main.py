@@ -418,7 +418,8 @@ async def link_telegram(request: Request, data: LinkTelegramRequest):
                     "action": "send_verification",
                     "username": username,
                     "code": code,
-                    "wallet": wallet_normalized
+                    "wallet": wallet_normalized,
+                    "secret": os.getenv("WEBHOOK_SECRET", "")  # Security check
                 })
             print(f"✅ Sent code to @{username} via PiranAI bot")
     except Exception as e:
