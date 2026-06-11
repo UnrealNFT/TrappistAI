@@ -61,11 +61,11 @@ def handle_verification():
         
         if not telegram_user_id:
             print(f"⚠️  User @{username} not found in database")
-            print(f"💡 User needs to run /link in @PiranAI_bot first!")
+            print(f"💡 User needs to run /link in @PiraAi_bot first!")
             return jsonify({
                 "error": "User not found",
-                "message": f"@{username} needs to run /link in @PiranAI_bot first",
-                "hint": "Ask user to open Telegram and send /link to @PiranAI_bot"
+                "message": f"@{username} needs to run /link in @PiraAi_bot first",
+                "hint": "Ask user to open Telegram and send /link to @PiraAi_bot"
             }), 404
         
         # Send message via Telegram Bot API

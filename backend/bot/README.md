@@ -110,6 +110,6 @@ MIT
 
 ## Links
 
-- Bot: [@PiranAI_bot](https://t.me/PiranAI_bot)
-- Website: [trappisai.netlify.app](https://trappisai.netlify.app)
+- Bot: [@PiraAi_bot](https://t.me/PiraAi_bot)
+- Website: [trappistai.netlify.app](https://trappistai.netlify.app)
 - Backend: [trappistai-backend.onrender.com](https://trappistai-backend.onrender.com)
