@@ -74,7 +74,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
         const qualityLabel = quality === 'hm' ? 'HeartMuLa' : 'MiniMax 2.5 HD'
         
         setCurrentFlow('music_style')
-        setFlowData({ musicQuality: quality })
+        setFlowData({ ...flowData, musicQuality: quality })
         
         addMessage('assistant', `✅ **${qualityLabel}** selected (${cost} tokens)\n\n🎼 **Step 2/4 — Choose your style:**`, 
           Object.keys(MUSIC_STYLES).map(key => ({
@@ -341,9 +341,15 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
 
       await onBalanceUpdate()
       
-      // Clean up flow
+      // Keep flowData for regeneration - don't clean up!
+      // User can regenerate lyrics infinite times
       setCurrentFlow('chat')
-      setFlowData({})
+      
+      // Add regenerate button after music generation
+      addMessage('assistant', '🎵 **Want to try different lyrics?**', [
+        { label: '🔄 Regenerate Lyrics', action: 'music_preview_redo' },
+        { label: '✏️ Write Own Lyrics', action: 'music_lyrics_own' }
+      ])
 
     } catch (err) {
       addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
@@ -483,7 +489,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
         })
         await onBalanceUpdate()
         setCurrentFlow('chat')
-        setFlowData({})
+        // Keep flowData for potential regeneration
       } catch (err) {
         addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
       } finally {
