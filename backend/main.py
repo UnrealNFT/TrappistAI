@@ -412,17 +412,22 @@ async def link_telegram(request: Request, data: LinkTelegramRequest):
         PIRANAI_WEBHOOK = os.getenv("PIRANAI_WEBHOOK_URL")
         if PIRANAI_WEBHOOK:
             import httpx
+            print(f"🔗 Sending to webhook: {PIRANAI_WEBHOOK}")
             async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(PIRANAI_WEBHOOK, json={
+                response = await client.post(PIRANAI_WEBHOOK, json={
                     "action": "send_verification",
                     "username": username,
                     "code": code,
                     "wallet": wallet_normalized,
                     "secret": os.getenv("WEBHOOK_SECRET", "")  # Security check
                 })
+                print(f"📡 Webhook response: {response.status_code} - {response.text[:200]}")
+                response.raise_for_status()  # Raise error if not 2xx
             print(f"✅ Sent code to @{username} via PiranAI bot")
+        else:
+            print(f"⚠️ PIRANAI_WEBHOOK_URL not configured!")
     except Exception as e:
-        print(f"⚠️ Failed to send to PiranAI bot: {e}")
+        print(f"⚠️ Failed to send to PiranAI bot: {type(e).__name__}: {e}")
         # Continue anyway - code is stored in DB
     
     return {
