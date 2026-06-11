@@ -403,28 +403,60 @@ async def link_telegram(request: Request, data: LinkTelegramRequest):
         )
         conn.commit()
     
-    # Send code to PiranAI bot via internal webhook
+    # Send code to PiranAI bot directly (no HTTP call needed)
     print(f"🔐 Verification code for @{username}: {code}")
     
     try:
-        # Call internal webhook endpoint (same service)
-        WEBHOOK_URL = os.getenv("PIRANAI_WEBHOOK_URL", "http://localhost:8000/webhook/verification")
-        import httpx
-        print(f"🔗 Sending to internal webhook: {WEBHOOK_URL}")
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(WEBHOOK_URL, json={
-                "action": "send_verification",
-                "username": username,
-                "code": code,
-                "wallet": wallet_normalized,
-                "secret": os.getenv("WEBHOOK_SECRET", "")  # Security check
-            })
-            print(f"📡 Webhook response: {response.status_code} - {response.text[:200]}")
-            response.raise_for_status()  # Raise error if not 2xx
-        print(f"✅ Sent code to @{username} via PiranAI bot")
+        # Lookup telegram_user_id from PostgreSQL
+        with get_db_session() as conn:
+            result = conn.execute(
+                text("SELECT user_id FROM telegram_usernames WHERE username = :username"),
+                {"username": username.lower()}
+            ).fetchone()
+        
+        if not result:
+            print(f"⚠️ User @{username} not found in telegram_usernames table")
+            print(f"💡 User needs to run /start in @PiraAi_bot first!")
+            # Continue anyway - code is stored in DB for manual entry
+        else:
+            telegram_user_id = result[0]
+            
+            # Send message via Telegram Bot API
+            BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+            if BOT_TOKEN:
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                message = f"""Hi @{username}!
+
+🔐 **TrappistAI Verification Code**
+
+Your verification code is: `{code}`
+
+Enter this code on [trappistai.netlify.app/profile](https://trappistai.netlify.app/profile) to link your account.
+
+⏰ Code expires in 10 minutes.
+
+🎨 Once linked, all your generations will sync between the website and Telegram bot!
+                """.strip()
+                
+                payload = {
+                    "chat_id": telegram_user_id,
+                    "text": message,
+                    "parse_mode": "Markdown",
+                    "disable_web_page_preview": True
+                }
+                
+                import httpx
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.post(url, json=payload)
+                    response.raise_for_status()
+                
+                print(f"✅ Sent verification code to @{username} (user_id: {telegram_user_id})")
+            else:
+                print(f"⚠️ BOT_TOKEN not configured")
+                
     except Exception as e:
-        print(f"⚠️ Failed to send to PiranAI bot: {type(e).__name__}: {e}")
-        # Continue anyway - code is stored in DB
+        print(f"⚠️ Failed to send to Telegram: {type(e).__name__}: {e}")
+        # Continue anyway - code is stored in DB for manual entry
     
     return {
         "success": True,
