@@ -5,9 +5,10 @@ Payment: CSPR (Casper blockchain)
 """
 import os
 import asyncio
+import random
 import requests
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,7 @@ from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
 
 from cspr_listener import listen_payments
 from db import get_db_session, get_user_balance, consume_user_tokens, get_payment_history
@@ -305,9 +307,6 @@ async def get_job_status(request: Request, job_id: str):
 # ============================================
 # PROFILE & TELEGRAM LINKING
 # ============================================
-
-import random
-from datetime import timedelta
 
 class LinkTelegramRequest(BaseModel):
     walletAddress: str
