@@ -10,8 +10,8 @@ Run alongside bot.py:
 from flask import Flask, request, jsonify
 import requests
 import os
-import sqlite3
 from dotenv import load_dotenv
+from shared_db import get_user_id_by_username_pg
 
 load_dotenv()
 
@@ -19,22 +19,6 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8641629385:AAGibWxAiHRqirqrk9Rawt6FAE_DDVtlTmk")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "YOUR_SECRET_HERE_CHANGE_ME")
-DB_PATH = os.getenv("DB_PATH", "piranai.db")
-
-def get_user_id_by_username(username: str) -> int | None:
-    """Get user_id from username (same DB as bot.py)"""
-    try:
-        db = sqlite3.connect(DB_PATH)
-        clean_username = username.lstrip("@").lower()
-        row = db.execute(
-            "SELECT user_id FROM telegram_usernames WHERE username = ? COLLATE NOCASE",
-            (clean_username,)
-        ).fetchone()
-        db.close()
-        return row[0] if row else None
-    except Exception as e:
-        print(f"❌ DB error: {e}")
-        return None
 
 @app.route('/webhook/verification', methods=['POST'])
 def handle_verification():
@@ -56,11 +40,11 @@ def handle_verification():
         
         print(f"📬 Verification request for @{username}: {code}")
         
-        # Lookup telegram_user_id from database
-        telegram_user_id = get_user_id_by_username(username)
+        # Lookup telegram_user_id from PostgreSQL database
+        telegram_user_id = get_user_id_by_username_pg(username)
         
         if not telegram_user_id:
-            print(f"⚠️  User @{username} not found in database")
+            print(f"⚠️  User @{username} not found in PostgreSQL")
             print(f"💡 User needs to run /link in @PiraAi_bot first!")
             return jsonify({
                 "error": "User not found",

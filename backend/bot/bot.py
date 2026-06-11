@@ -14,6 +14,14 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 import wavespeed
 
+# Import shared PostgreSQL functions
+try:
+    from shared_db import store_username_mapping_pg, get_user_id_by_username_pg
+except ImportError:
+    print("⚠️ shared_db.py not found - PostgreSQL sync disabled")
+    store_username_mapping_pg = lambda *args: None
+    get_user_id_by_username_pg = lambda *args: None
+
 load_dotenv()
 logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,12 +86,17 @@ def store_username_mapping(user_id: int, username: str):
     if not username:
         return
     clean_username = username.lstrip("@").lower()
+    
+    # Store in local SQLite (for bot's own use)
     _db.execute(
         "INSERT OR REPLACE INTO telegram_usernames (username, user_id, updated_at) "
         "VALUES (?, ?, CURRENT_TIMESTAMP)",
         (clean_username, user_id)
     )
     _db.commit()
+    
+    # ALSO store in PostgreSQL (for webhook access)
+    store_username_mapping_pg(user_id, username)
 
 def get_user_id_by_username(username: str) -> int | None:
     """Get user_id from username for TrappistAI webhook"""

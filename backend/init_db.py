@@ -106,6 +106,15 @@ with engine.connect() as conn:
     )
     '''))
     
+    # Create telegram_usernames table (shared between bot and webhook)
+    conn.execute(text(f'''
+    CREATE TABLE IF NOT EXISTS telegram_usernames (
+        username TEXT PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        updated_at TIMESTAMP DEFAULT {timestamp_default}
+    )
+    '''))
+    
     conn.commit()
     
     # Create indexes for better performance

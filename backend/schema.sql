@@ -63,6 +63,15 @@ CREATE TABLE IF NOT EXISTS telegram_verification (
 CREATE INDEX idx_telegram_verification_wallet ON telegram_verification(wallet_address);
 CREATE INDEX idx_telegram_verification_code ON telegram_verification(verification_code);
 
+-- Telegram username → user_id mapping for bot and webhook
+CREATE TABLE IF NOT EXISTS telegram_usernames (
+    username VARCHAR(255) PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_telegram_usernames_user_id ON telegram_usernames(user_id);
+
 -- Example data (optional)
 -- INSERT INTO users (wallet_address, tokens) VALUES 
 -- ('0123456789abcdef0123456789abcdef01234567', 1000);
