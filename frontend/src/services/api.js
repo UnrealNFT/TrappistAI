@@ -4,7 +4,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 360000, // 6 min for music generation
+  timeout: 600000, // 10 min for music/lyrics generation
   headers: {
     'Content-Type': 'application/json'
   }
