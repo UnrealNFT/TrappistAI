@@ -4,22 +4,10 @@ import { generateImage, generateMusic, generate3D, chat } from '../services/api'
 
 export default function Generate({ wallet, balance, onBalanceUpdate }) {
   const [loading, setLoading] = useState(false)
-  const [messages, setMessages] = useState([
-    {
-      id: Date.now(),
-      role: 'assistant',
-      content: '🎨 **TrappistAI Generator**\n\nWhat would you like to create today?',
-      buttons: [
-        { label: '🖼️ Generate Image', action: 'start_image' },
-        { label: '🎵 Generate Music', action: 'start_music' },
-        { label: '🎨 Generate 3D', action: 'start_3d' },
-        { label: '💬 Chat', action: 'start_chat' }
-      ]
-    }
-  ])
+  const [messages, setMessages] = useState([]) // Empty by default - like Telegram
   
   const [inputValue, setInputValue] = useState('')
-  const [currentFlow, setCurrentFlow] = useState(null) // 'image', 'music', '3d', 'chat'
+  const [currentFlow, setCurrentFlow] = useState('chat') // Chat active by default
   const [flowData, setFlowData] = useState({}) // Store flow-specific data
   const [uploadedImage, setUploadedImage] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
@@ -44,43 +32,12 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
     }])
   }
 
-  // Handle button click (inline keyboard)
+  // Handle button click (inline keyboard) - EXACTLY like Telegram
   const handleButtonClick = async (action) => {
     setLoading(true)
 
     try {
       switch (action) {
-        case 'start_image':
-          setCurrentFlow('image')
-          addMessage('user', 'Generate Image')
-          addMessage('assistant', '📸 **Image Generation**\n\nDescribe what you want to create:', null)
-          setShowUploadPrompt(false)
-          break
-
-        case 'start_music':
-          setCurrentFlow('music')
-          addMessage('user', 'Generate Music')
-          addMessage('assistant', '🎵 **Music Generation**\n\nChoose quality:', [
-            { label: '🎵 HeartMuLa (14 tokens)', action: 'music_hm' },
-            { label: '🎶 MiniMax HD (10 tokens)', action: 'music_minimax' }
-          ])
-          break
-
-        case 'start_3d':
-          setCurrentFlow('3d')
-          addMessage('user', 'Generate 3D')
-          addMessage('assistant', '🎨 **3D Generation**\n\nHow do you want to create?', [
-            { label: '🖼️ From Image', action: '3d_from_image' },
-            { label: '✍️ From Text (Coming Soon)', action: '3d_from_text' }
-          ])
-          break
-
-        case 'start_chat':
-          setCurrentFlow('chat')
-          addMessage('user', 'Chat')
-          addMessage('assistant', '💬 **Chat Mode**\n\nAsk me anything! (Free, no tokens)')
-          break
-
         case '3d_from_image':
           setShowUploadPrompt(true)
           addMessage('assistant', '📷 **Upload an Image**\n\nClick the button below to select an image from your device.')
@@ -88,23 +45,16 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
 
         case '3d_from_text':
           addMessage('assistant', '✍️ Text-to-3D is coming soon! Use "From Image" for now.')
-          setTimeout(() => {
-            setCurrentFlow(null)
-            addMessage('assistant', 'What would you like to create?', [
-              { label: '🖼️ Generate Image', action: 'start_image' },
-              { label: '🎵 Generate Music', action: 'start_music' },
-              { label: '🎨 Generate 3D', action: 'start_3d' },
-              { label: '💬 Chat', action: 'start_chat' }
-            ])
-          }, 2000)
           break
 
         case 'music_hm':
+          setCurrentFlow('music')
           setFlowData({ ...flowData, musicQuality: 'hm' })
           addMessage('assistant', '🎵 **HeartMuLa Selected** (14 tokens)\n\nEnter music style/tags:\n_(Example: electronic, dark, cinematic)_')
           break
 
         case 'music_minimax':
+          setCurrentFlow('music')
           setFlowData({ ...flowData, musicQuality: 'minimax' })
           addMessage('assistant', '🎶 **MiniMax HD Selected** (10 tokens)\n\nEnter music style/tags:\n_(Example: pop, happy, upbeat)_')
           break
@@ -115,20 +65,6 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
 
         case '3d_quality_tex':
           await handle3DGeneration(true)
-          break
-
-        case 'back_to_menu':
-          setCurrentFlow(null)
-          setFlowData({})
-          setUploadedImage(null)
-          setImagePreview(null)
-          setShowUploadPrompt(false)
-          addMessage('assistant', 'What would you like to create?', [
-            { label: '🖼️ Generate Image', action: 'start_image' },
-            { label: '🎵 Generate Music', action: 'start_music' },
-            { label: '🎨 Generate 3D', action: 'start_3d' },
-            { label: '💬 Chat', action: 'start_chat' }
-          ])
           break
       }
     } catch (err) {
@@ -152,8 +88,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       addMessage('user', '📷 Image uploaded')
       addMessage('assistant', '🎨 **Choose 3D Quality:**\n\n⚡ **Sans texture** — 2 tokens (~2 min)\n   └ Géométrie pure, monochrome\n\n🎨 **Avec texture** — 30 tokens (~5 min)\n   └ Couleurs et textures complètes', [
         { label: '⚡ Sans texture (2 tokens)', action: '3d_quality_notex' },
-        { label: '🎨 Avec texture (30 tokens)', action: '3d_quality_tex' },
-        { label: '❌ Cancel', action: 'back_to_menu' }
+        { label: '🎨 Avec texture (30 tokens)', action: '3d_quality_tex' }
       ])
     }
     reader.readAsDataURL(file)
@@ -169,8 +104,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
     addMessage('assistant', `🎨 **Génération 3D en cours...**\n_Cost: ${cost} tokens_\n⏳ Peut prendre jusqu'à 5 min`)
 
     try {
-      // TODO: Upload image to backend first
-      // For now, use image preview as placeholder
+      // Use image preview as data URL
       const res = await generate3D(walletToUse, imagePreview, withTexture)
       
       addMessage('assistant', '✅ **3D Model Generated!**', null, {
@@ -180,108 +114,123 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       })
 
       await onBalanceUpdate()
-
-      // Back to menu
-      setTimeout(() => {
-        setCurrentFlow(null)
-        setFlowData({})
-        setUploadedImage(null)
-        setImagePreview(null)
-        addMessage('assistant', 'What would you like to create next?', [
-          { label: '🖼️ Generate Image', action: 'start_image' },
-          { label: '🎵 Generate Music', action: 'start_music' },
-          { label: '🎨 Generate 3D', action: 'start_3d' },
-          { label: '💬 Chat', action: 'start_chat' }
-        ])
-      }, 2000)
+      
+      // Clean up uploaded image
+      setUploadedImage(null)
+      setImagePreview(null)
+      setShowUploadPrompt(false)
+      setCurrentFlow('chat')
 
     } catch (err) {
       addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
-      setTimeout(() => handleButtonClick('back_to_menu'), 2000)
     } finally {
       setLoading(false)
     }
   }
 
-  // Handle send message
+  // Handle send message - EXACTLY like Telegram with command parsing
   const handleSend = async () => {
     if (!inputValue.trim() || loading) return
 
     const walletToUse = wallet || 'test_wallet_01234567890abcdef'
-    const userMessage = inputValue
+    const userMessage = inputValue.trim()
     setInputValue('')
-    setLoading(true)
 
-    addMessage('user', userMessage)
+    // Detect commands (like Telegram)
+    if (userMessage.startsWith('/')) {
+      const parts = userMessage.split(' ')
+      const command = parts[0].toLowerCase()
+      const args = parts.slice(1).join(' ')
 
-    try {
-      if (currentFlow === 'chat') {
-        // Chat mode
-        const res = await chat(walletToUse, userMessage)
-        addMessage('assistant', res.response)
+      // /image <prompt>
+      if (command === '/image') {
+        if (!args) {
+          addMessage('user', userMessage)
+          addMessage('assistant', '📸 **Usage:** `/image <description>`\n\nExample: `/image sunset over mountains`')
+          return
+        }
         
-      } else if (currentFlow === 'image') {
-        // Image generation
+        setLoading(true)
+        addMessage('user', userMessage)
         addMessage('assistant', '🖼️ **Generating image...**\n_Cost: 1 token_\n⏳ This may take a few seconds')
-        const res = await generateImage(walletToUse, userMessage)
         
-        addMessage('assistant', '✅ **Image Generated!**', null, {
-          type: 'image',
-          url: res.url,
-          tokensUsed: res.tokensUsed,
-          warning: res.warning
-        })
+        try {
+          const res = await generateImage(walletToUse, args)
+          addMessage('assistant', '✅ **Image Generated!**', null, {
+            type: 'image',
+            url: res.url,
+            tokensUsed: res.tokensUsed,
+            warning: res.warning
+          })
+          await onBalanceUpdate()
+        } catch (err) {
+          addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
 
-        await onBalanceUpdate()
+      // /music
+      if (command === '/music') {
+        addMessage('user', userMessage)
+        addMessage('assistant', '🎵 **Music Generation**\n\nChoose quality:', [
+          { label: '🎵 HeartMuLa (14 tokens)', action: 'music_hm' },
+          { label: '🎶 MiniMax HD (10 tokens)', action: 'music_minimax' }
+        ])
+        return
+      }
 
-        // Back to menu
-        setTimeout(() => {
-          setCurrentFlow(null)
-          addMessage('assistant', 'What would you like to create next?', [
-            { label: '🖼️ Generate Image', action: 'start_image' },
-            { label: '🎵 Generate Music', action: 'start_music' },
-            { label: '🎨 Generate 3D', action: 'start_3d' },
-            { label: '💬 Chat', action: 'start_chat' }
-          ])
-        }, 2000)
+      // /3d
+      if (command === '/3d') {
+        addMessage('user', userMessage)
+        addMessage('assistant', '🎨 **3D Generation**\n\nHow do you want to create?', [
+          { label: '🖼️ From Image', action: '3d_from_image' },
+          { label: '✍️ From Text (Coming Soon)', action: '3d_from_text' }
+        ])
+        return
+      }
 
-      } else if (currentFlow === 'music') {
-        // Music generation
-        const quality = flowData.musicQuality || 'hm'
-        const cost = quality === 'hm' ? 14 : 10
-        
-        addMessage('assistant', `🎵 **Generating music...**\n_Cost: ${cost} tokens_\n⏳ This may take 2-3 minutes`)
-        
+      // Unknown command - treat as chat
+    }
+
+    // Check if in music flow (after quality selection)
+    if (currentFlow === 'music' && flowData.musicQuality) {
+      setLoading(true)
+      addMessage('user', userMessage)
+      
+      const quality = flowData.musicQuality
+      const cost = quality === 'hm' ? 14 : 10
+      addMessage('assistant', `🎵 **Generating music...**\n_Cost: ${cost} tokens_\n⏳ This may take 2-3 minutes`)
+      
+      try {
         const res = await generateMusic(walletToUse, '', userMessage, quality)
-        
         addMessage('assistant', '✅ **Music Generated!**', null, {
           type: 'music',
           url: res.url,
           tokensUsed: res.tokensUsed,
           warning: res.warning
         })
-
         await onBalanceUpdate()
-
-        // Back to menu
-        setTimeout(() => {
-          setCurrentFlow(null)
-          setFlowData({})
-          addMessage('assistant', 'What would you like to create next?', [
-            { label: '🖼️ Generate Image', action: 'start_image' },
-            { label: '🎵 Generate Music', action: 'start_music' },
-            { label: '🎨 Generate 3D', action: 'start_3d' },
-            { label: '💬 Chat', action: 'start_chat' }
-          ])
-        }, 2000)
+        setCurrentFlow('chat')
+        setFlowData({})
+      } catch (err) {
+        addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
+      } finally {
+        setLoading(false)
       }
+      return
+    }
 
+    // Default: Free chat with Groq (like Telegram on_free_message)
+    setLoading(true)
+    addMessage('user', userMessage)
+    
+    try {
+      const res = await chat(walletToUse, userMessage)
+      addMessage('assistant', res.response)
     } catch (err) {
       addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
-      
-      if (currentFlow !== 'chat') {
-        setTimeout(() => handleButtonClick('back_to_menu'), 2000)
-      }
     } finally {
       setLoading(false)
     }
@@ -461,17 +410,16 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSend()}
               placeholder={
-                currentFlow === 'chat' ? 'Type your message...' :
-                currentFlow === 'image' ? 'Describe the image you want...' :
-                currentFlow === 'music' ? 'Enter music style/tags...' :
-                'Choose an option above...'
+                showUploadPrompt ? 'Upload an image first...' :
+                currentFlow === 'music' && flowData.musicQuality ? 'Enter music style/tags...' :
+                'Type a message or command (/image, /music, /3d)...'
               }
-              disabled={loading || !currentFlow || showUploadPrompt}
+              disabled={loading || showUploadPrompt}
               className="flex-1 bg-black/50 border border-green-500/30 text-green-400 placeholder-gray-500 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
             />
             <button
               onClick={handleSend}
-              disabled={loading || !inputValue.trim() || !currentFlow || showUploadPrompt}
+              disabled={loading || !inputValue.trim() || showUploadPrompt}
               className="bg-green-500 text-black p-3 rounded-lg hover:bg-green-400 transition disabled:opacity-50 disabled:hover:bg-green-500"
             >
               <Send className="w-5 h-5" />
