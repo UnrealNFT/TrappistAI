@@ -88,29 +88,40 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
           localStorage.setItem('trappist_active_jobs', JSON.stringify(updatedJobs))
           setActiveJobs(updatedJobs)
           
-          // Update message with result
-          setMessages(prev => prev.map(msg => 
-            msg.id === messageId
-              ? {
-                  ...msg,
-                  content: `✅ **${jobType === 'music' ? 'Music' : '3D Model'} Generated!**`,
-                  result: {
-                    type: jobType,
-                    url: job.result.url,
-                    tokensUsed: job.result.tokensUsed,
-                    warning: job.result.warning
+          // Update message AND add regenerate buttons in ONE atomic operation
+          setMessages(prev => {
+            // First, update the generating message with result
+            const updated = prev.map(msg => 
+              msg.id === messageId
+                ? {
+                    ...msg,
+                    content: `✅ **${jobType === 'music' ? 'Music' : '3D Model'} Generated!**`,
+                    result: {
+                      type: jobType,
+                      url: job.result.url,
+                      tokensUsed: job.result.tokensUsed,
+                      warning: job.result.warning
+                    }
                   }
-                }
-              : msg
-          ))
-          
-          // Add regenerate buttons for music
-          if (jobType === 'music') {
-            addMessage('assistant', '🎵 **Want to try different lyrics?**', [
-              { label: '🔄 Regenerate Lyrics', action: 'music_preview_redo' },
-              { label: '✏️ Write Own Lyrics', action: 'music_lyrics_own' }
-            ])
-          }
+                : msg
+            )
+            
+            // Then, add regenerate buttons for music (in same state update!)
+            if (jobType === 'music') {
+              return [...updated, {
+                id: Date.now(),
+                role: 'assistant',
+                content: '🎵 **Want to try different lyrics?**',
+                buttons: [
+                  { label: '🔄 Regenerate Lyrics', action: 'music_preview_redo' },
+                  { label: '✏️ Write Own Lyrics', action: 'music_lyrics_own' }
+                ],
+                result: null
+              }]
+            }
+            
+            return updated
+          })
           
           await onBalanceUpdate()
         } else if (job.status === 'failed') {
