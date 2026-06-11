@@ -385,14 +385,14 @@ async def link_telegram(request: Request, data: LinkTelegramRequest):
         
         # Insert verification code (delete old ones first)
         conn.execute(
-            text("DELETE FROM telegram_verification WHERE wallet_address = :wallet AND verified = 0"),
+            text("DELETE FROM telegram_verification WHERE wallet_address = :wallet AND verified = FALSE"),
             {"wallet": wallet_normalized}
         )
         conn.execute(
             text("""
                 INSERT INTO telegram_verification 
                 (wallet_address, telegram_username, verification_code, expires_at, verified)
-                VALUES (:wallet, :username, :code, :expires, 0)
+                VALUES (:wallet, :username, :code, :expires, FALSE)
             """),
             {
                 "wallet": wallet_normalized,
@@ -480,7 +480,7 @@ async def verify_code(request: Request, data: VerifyCodeRequest):
         conn.execute(
             text("""
                 UPDATE users 
-                SET telegram_username = :username, telegram_verified = 1 
+                SET telegram_username = :username, telegram_verified = TRUE 
                 WHERE wallet_address = :wallet
             """),
             {"wallet": wallet_normalized, "username": username}
