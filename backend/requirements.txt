@@ -23,3 +23,8 @@ passlib[bcrypt]==1.7.4
 
 # Rate Limiting
 slowapi==0.1.9
+
+# Telegram Bot (PiranAI)
+python-telegram-bot>=20.0
+flask==3.0.0
+gunicorn==21.2.0
