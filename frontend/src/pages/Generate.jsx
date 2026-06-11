@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { Image, Music, Box, MessageSquare, Loader2, Upload, Send, X, Download } from 'lucide-react'
-import { generateImage, generateMusic, generate3D, chat } from '../services/api'
+import { generateImage, generateMusic, generate3D, chat, generateLyrics } from '../services/api'
+
+// Music styles (from PiranAI bot)
+const MUSIC_STYLES = {
+  trap: { emoji: '💰', label: 'Trap' },
+  drill: { emoji: '🔫', label: 'Drill' },
+  pop: { emoji: '🎤', label: 'Pop' },
+  rnb: { emoji: '💕', label: 'R&B' },
+  rock: { emoji: '🎸', label: 'Rock' },
+  afrobeat: { emoji: '🌍', label: 'Afrobeat' }
+}
 
 export default function Generate({ wallet, balance, onBalanceUpdate }) {
   const [loading, setLoading] = useState(false)
@@ -57,36 +67,190 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
     setLoading(true)
 
     try {
-      switch (action) {
-        case '3d_from_image':
-          setShowUploadPrompt(true)
-          addMessage('assistant', '📷 **Upload an Image**\n\nClick the button below to select an image from your device.')
-          break
-
-        case '3d_from_text':
-          addMessage('assistant', '✍️ Text-to-3D is coming soon! Use "From Image" for now.')
-          break
-
-        case 'music_hm':
-          setCurrentFlow('music')
-          setFlowData({ ...flowData, musicQuality: 'hm' })
-          addMessage('assistant', '🎵 **HeartMuLa Selected** (14 tokens)\n\nEnter music style/tags:\n_(Example: electronic, dark, cinematic)_')
-          break
-
-        case 'music_minimax':
-          setCurrentFlow('music')
-          setFlowData({ ...flowData, musicQuality: 'minimax' })
-          addMessage('assistant', '🎶 **MiniMax HD Selected** (10 tokens)\n\nEnter music style/tags:\n_(Example: pop, happy, upbeat)_')
-          break
-
-        case '3d_quality_notex':
-          await handle3DGeneration(false)
-          break
-
-        case '3d_quality_tex':
-          await handle3DGeneration(true)
-          break
+      // ===== MUSIC FLOW =====
+      if (action === 'music_hm' || action === 'music_minimax') {
+        const quality = action === 'music_hm' ? 'hm' : 'minimax'
+        const cost = quality === 'hm' ? 14 : 10
+        const qualityLabel = quality === 'hm' ? 'HeartMuLa' : 'MiniMax 2.5 HD'
+        
+        setCurrentFlow('music_style')
+        setFlowData({ musicQuality: quality })
+        
+        addMessage('assistant', `✅ **${qualityLabel}** selected (${cost} tokens)\n\n🎼 **Step 2/4 — Choose your style:**`, 
+          Object.keys(MUSIC_STYLES).map(key => ({
+            label: `${MUSIC_STYLES[key].emoji} ${MUSIC_STYLES[key].label}`,
+            action: `music_style_${key}`
+          }))
+        )
+        setLoading(false)
+        return
       }
+
+      // Style selection
+      if (action.startsWith('music_style_')) {
+        const style = action.replace('music_style_', '')
+        const styleLabel = MUSIC_STYLES[style]?.label || style
+        
+        setCurrentFlow('music_voice')
+        setFlowData({ ...flowData, musicStyle: style })
+        
+        addMessage('assistant', `✅ Style: **${styleLabel}**\n\n🎤 **Step 3/4 — Voice:**`, [
+          { label: '🗣️ Male', action: 'music_voice_male' },
+          { label: '🗣️ Female', action: 'music_voice_female' }
+        ])
+        setLoading(false)
+        return
+      }
+
+      // Voice selection
+      if (action === 'music_voice_male' || action === 'music_voice_female') {
+        const voice = action === 'music_voice_male' ? 'male' : 'female'
+        const voiceIcon = voice === 'male' ? '👨' : '👩'
+        const styleLabel = MUSIC_STYLES[flowData.musicStyle]?.label
+        
+        setCurrentFlow('music_type')
+        setFlowData({ ...flowData, musicVoice: voice })
+        
+        addMessage('assistant', `✅ **${styleLabel}** ${voiceIcon}\n\n🎵 **Step 4/4 — Lyrics or Instrumental?**`, [
+          { label: '🎤 With Lyrics', action: 'music_type_paroles' },
+          { label: '🎸 Instrumental Only', action: 'music_type_instrumental' }
+        ])
+        setLoading(false)
+        return
+      }
+
+      // Type selection: Paroles
+      if (action === 'music_type_paroles') {
+        setCurrentFlow('music_lyrics_choice')
+        setFlowData({ ...flowData, musicType: 'paroles' })
+        
+        addMessage('assistant', '🎤 **How do you want to create the lyrics?**', [
+          { label: '✍️ I write my own lyrics', action: 'music_lyrics_own' },
+          { label: '🤖 AI generates lyrics', action: 'music_lyrics_ai' },
+          { label: '❌ Cancel', action: 'music_cancel' }
+        ])
+        setLoading(false)
+        return
+      }
+
+      // Type selection: Instrumental
+      if (action === 'music_type_instrumental') {
+        setCurrentFlow('music_tags')
+        setFlowData({ ...flowData, musicType: 'instrumental', musicLyrics: '' })
+        
+        addMessage('assistant', '🎸 **Instrumental Mode**\n\nEnter music tags/mood:\n_(Example: dark, cinematic, powerful)_')
+        setLoading(false)
+        return
+      }
+
+      // Lyrics choice: Own
+      if (action === 'music_lyrics_own') {
+        setCurrentFlow('music_own_lyrics')
+        setFlowData({ ...flowData, musicLyricsType: 'own' })
+        
+        addMessage('assistant', '✍️ **Send your lyrics now:**\n_(You can use `[Verse]`, `[Chorus]`, `[Bridge]` or free text)_\n_(or /cancel)_')
+        setLoading(false)
+        return
+      }
+
+      // Lyrics choice: AI
+      if (action === 'music_lyrics_ai') {
+        setCurrentFlow('music_subject')
+        setFlowData({ ...flowData, musicLyricsType: 'ai' })
+        
+        const styleLabel = MUSIC_STYLES[flowData.musicStyle]?.label
+        const voiceIcon = flowData.musicVoice === 'male' ? '👨' : '👩'
+        
+        addMessage('assistant', 
+          `🤖 **AI Lyrics Generator**\n\n` +
+          `Style: **${styleLabel}** ${voiceIcon}\n\n` +
+          `**CRITICAL: Describe what the song is ABOUT (the subject/topic)**\n\n` +
+          `Examples:\n` +
+          `• "black dog, great companion, loyalty"\n` +
+          `• "lost in the city at 3AM, neon lights"\n` +
+          `• "heartbreak but empowered, rising"\n` +
+          `• "money and power, dark energy"\n\n` +
+          `⚠️ Remember: The STYLE (${styleLabel}) defines HOW you sing.\n` +
+          `The SUBJECT below defines WHAT you sing about.`
+        )
+        setLoading(false)
+        return
+      }
+
+      // Preview actions
+      if (action === 'music_preview_generate') {
+        await handleMusicGeneration()
+        return
+      }
+
+      if (action === 'music_preview_redo') {
+        // Regenerate lyrics
+        const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+        addMessage('assistant', '🔄 **Rewriting lyrics...**')
+        
+        try {
+          const res = await generateLyrics(
+            walletToUse,
+            flowData.musicStyle,
+            flowData.musicVoice,
+            flowData.musicSubject
+          )
+          
+          setFlowData({ ...flowData, musicLyrics: res.lyrics })
+          
+          const preview = res.lyrics.length > 3500 ? res.lyrics.substring(0, 3500) + '…' : res.lyrics
+          addMessage('assistant', `📝 **New Lyrics Generated:**\n\n\`\`\`\n${preview}\n\`\`\`\n\n_What do you want to do?_`, [
+            { label: '🎵 Generate Music', action: 'music_preview_generate' },
+            { label: '🔄 Rewrite Again', action: 'music_preview_redo' },
+            { label: '✏️ Edit Manually', action: 'music_preview_edit' }
+          ])
+        } catch (err) {
+          addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+
+      if (action === 'music_preview_edit') {
+        setCurrentFlow('music_own_lyrics')
+        addMessage('assistant', `✏️ **Edit the lyrics:**\n\n\`\`\`\n${flowData.musicLyrics}\n\`\`\`\n\n_Send your edited version:_`)
+        setLoading(false)
+        return
+      }
+
+      if (action === 'music_cancel') {
+        setCurrentFlow('chat')
+        setFlowData({})
+        addMessage('assistant', '❌ Music generation cancelled.')
+        setLoading(false)
+        return
+      }
+
+      // ===== 3D FLOW =====
+      if (action === '3d_from_image') {
+        setShowUploadPrompt(true)
+        addMessage('assistant', '📷 **Upload an Image**\n\nClick the button below to select an image from your device.')
+        setLoading(false)
+        return
+      }
+
+      if (action === '3d_from_text') {
+        addMessage('assistant', '✍️ Text-to-3D is coming soon! Use "From Image" for now.')
+        setLoading(false)
+        return
+      }
+
+      if (action === '3d_quality_notex') {
+        await handle3DGeneration(false)
+        return
+      }
+
+      if (action === '3d_quality_tex') {
+        await handle3DGeneration(true)
+        return
+      }
+
     } catch (err) {
       addMessage('assistant', `❌ Error: ${err.message}`)
     } finally {
@@ -140,6 +304,43 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       setImagePreview(null)
       setShowUploadPrompt(false)
       setCurrentFlow('chat')
+
+    } catch (err) {
+      addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Handle music generation
+  const handleMusicGeneration = async () => {
+    const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+    const quality = flowData.musicQuality
+    const cost = quality === 'hm' ? 14 : 10
+    const lyrics = flowData.musicLyrics || ''
+    const styleLabel = MUSIC_STYLES[flowData.musicStyle]?.label || flowData.musicStyle
+    
+    // Generate tags from style
+    const tags = `${styleLabel}, ${flowData.musicVoice} vocals, modern, high quality`
+    
+    setLoading(true)
+    addMessage('assistant', `🎵 **Generating music...**\n_Cost: ${cost} tokens_\n⏳ This may take 2-3 minutes`)
+
+    try {
+      const res = await generateMusic(walletToUse, lyrics, tags, quality)
+      
+      addMessage('assistant', '✅ **Music Generated!**', null, {
+        type: 'music',
+        url: res.url,
+        tokensUsed: res.tokensUsed,
+        warning: res.warning
+      })
+
+      await onBalanceUpdate()
+      
+      // Clean up flow
+      setCurrentFlow('chat')
+      setFlowData({})
 
     } catch (err) {
       addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
@@ -214,18 +415,61 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       // Unknown command - treat as chat
     }
 
-    // Check if in music flow (after quality selection)
-    if (currentFlow === 'music' && flowData.musicQuality) {
+    // ===== MUSIC FLOW INPUTS =====
+    
+    // Subject input (AI lyrics generation)
+    if (currentFlow === 'music_subject') {
+      setLoading(true)
+      addMessage('user', userMessage)
+      addMessage('assistant', '🤖 **AI Lyrics Generator working...**\n⏳ ~15 seconds')
+      
+      try {
+        const res = await generateLyrics(
+          walletToUse,
+          flowData.musicStyle,
+          flowData.musicVoice,
+          userMessage
+        )
+        
+        setFlowData({ ...flowData, musicSubject: userMessage, musicLyrics: res.lyrics })
+        setCurrentFlow('music_preview')
+        
+        const preview = res.lyrics.length > 3500 ? res.lyrics.substring(0, 3500) + '…' : res.lyrics
+        addMessage('assistant', `📝 **Lyrics Generated by AI:**\n\n\`\`\`\n${preview}\n\`\`\`\n\n_What do you want to do?_`, [
+          { label: '🎵 Generate Music', action: 'music_preview_generate' },
+          { label: '🔄 Rewrite', action: 'music_preview_redo' },
+          { label: '✏️ Edit Manually', action: 'music_preview_edit' }
+        ])
+      } catch (err) {
+        addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
+    // Own lyrics input
+    if (currentFlow === 'music_own_lyrics') {
+      setLoading(true)
+      addMessage('user', userMessage)
+      setFlowData({ ...flowData, musicLyrics: userMessage })
+      
+      await handleMusicGeneration()
+      return
+    }
+
+    // Instrumental tags input
+    if (currentFlow === 'music_tags') {
       setLoading(true)
       addMessage('user', userMessage)
       
       const quality = flowData.musicQuality
       const cost = quality === 'hm' ? 14 : 10
-      addMessage('assistant', `🎵 **Generating music...**\n_Cost: ${cost} tokens_\n⏳ This may take 2-3 minutes`)
+      addMessage('assistant', `🎸 **Generating instrumental...**\n_Cost: ${cost} tokens_\n⏳ This may take 2-3 minutes`)
       
       try {
         const res = await generateMusic(walletToUse, '', userMessage, quality)
-        addMessage('assistant', '✅ **Music Generated!**', null, {
+        addMessage('assistant', '✅ **Instrumental Generated!**', null, {
           type: 'music',
           url: res.url,
           tokensUsed: res.tokensUsed,

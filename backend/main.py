@@ -98,6 +98,12 @@ class ChatRequest(BaseModel):
     walletAddress: str
     message: str
 
+class GenerateLyricsRequest(BaseModel):
+    walletAddress: str
+    style: str  # trap, drill, pop, rnb, rock, afrobeat
+    voice: str  # male or female
+    subject: str  # What the song is about (NOT the musical style)
+
 class VerifyPaymentRequest(BaseModel):
     walletAddress: str
     txHash: str
@@ -156,6 +162,47 @@ def _groq_chat_with_memory(wallet: str, prompt: str) -> str:
         return answer
     except Exception as e:
         return f"❌ Chat error: {str(e)[:150]}"
+
+def _groq_lyrics(style: str, voice: str, subject: str) -> str:
+    """Generate lyrics with Groq - CRITICAL separation between STYLE and SUBJECT"""
+    system_msg = (
+        "You are a world-class songwriter and lyricist. "
+        "CRITICAL: Understand the FUNDAMENTAL difference between MUSICAL STYLE and SONG SUBJECT. "
+        "STYLE defines HOW you write (flow, rhythm, energy, delivery). "
+        "SUBJECT defines WHAT you write about (the content, the topic). "
+        "These are COMPLETELY SEPARATE concepts. A trap song can be about ANYTHING (love, dogs, cars, life). "
+        "Detect the language of the subject description and write ALL lyrics in that EXACT same language. "
+        "Write ONLY lyrics with structure markers. NO explanations, NO titles."
+    )
+    
+    user_msg = (
+        f"MUSICAL STYLE: {style}\n"
+        f"(This defines your flow, rhythm, delivery, and energy - NOT the content)\n\n"
+        f"VOICE TYPE: {voice} vocals\n\n"
+        f"SONG SUBJECT: {subject}\n"
+        f"(This is WHAT the lyrics talk about - completely independent of style)\n\n"
+        "CRITICAL EXAMPLES to avoid confusion:\n"
+        "- Style: 'Trap' + Subject: 'black dog, great companion' → Trap FLOW about a loyal dog (NOT a dog rapping)\n"
+        "- Style: 'Pop' + Subject: 'broken laptop, frustration' → Catchy pop song about tech problems\n"
+        "- Style: 'Drill' + Subject: 'grandmother, warm cookies' → Dark menacing delivery about grandma\n\n"
+        "STRICT TECHNICAL REQUIREMENTS:\n"
+        "- Structure markers: [intro-short] [Verse] [Chorus] [Bridge] [outro-short]\n"
+        "- Every [Verse]: 6-8 lines with MANDATORY end-of-line rhymes (AABB or ABAB scheme)\n"
+        "- Every [Chorus]: 4-6 catchy sticky hook lines (repeatable, memorable)\n"
+        "- [Bridge]: 3-4 lines (emotional twist or shift in perspective)\n"
+        "- TWO verses + chorus repeated + bridge\n"
+        f"- Write ENTIRELY in the SAME language as this subject: '{subject}'\n"
+        f"- Apply {style} style characteristics: flow, wordplay, delivery energy\n"
+        f"- Make lyrics about: {subject}\n"
+        "\nNOW WRITE:\n"
+    )
+    
+    messages = [
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": user_msg}
+    ]
+    
+    return _groq_complete(messages, max_tokens=1200)
 
 # ============================================
 # HEALTH CHECK
@@ -955,6 +1002,47 @@ async def chat(request: Request, data: ChatRequest):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/generate/lyrics")
+@limiter.limit("20/minute")
+async def generate_lyrics(request: Request, data: GenerateLyricsRequest):
+    """Generate lyrics with AI (FREE - no tokens consumed)"""
+    try:
+        if not GROQ_API_KEY:
+            raise HTTPException(
+                status_code=503,
+                detail="Lyrics generation not configured - GROQ_API_KEY missing"
+            )
+        
+        style = data.style.strip()
+        voice = data.voice.strip()
+        subject = data.subject.strip()
+        
+        if not style or not voice or not subject:
+            raise HTTPException(status_code=400, detail="Style, voice, and subject are required")
+        
+        print(f"🎤 Generating {style} lyrics ({voice} voice) about: {subject[:50]}...")
+        
+        # Run lyrics generation in thread pool
+        loop = asyncio.get_event_loop()
+        lyrics = await loop.run_in_executor(None, _groq_lyrics, style, voice, subject)
+        
+        print(f"✅ Generated {len(lyrics)} chars of lyrics")
+        
+        return {
+            "success": True,
+            "lyrics": lyrics,
+            "style": style,
+            "voice": voice,
+            "subject": subject,
+            "tokensUsed": 0  # Lyrics generation is FREE!
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Lyrics generation error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================

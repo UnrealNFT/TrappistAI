@@ -69,4 +69,14 @@ export const chat = async (walletAddress, message) => {
   return data
 }
 
+export const generateLyrics = async (walletAddress, style, voice, subject) => {
+  const { data } = await api.post('/api/generate/lyrics', {
+    walletAddress,
+    style,
+    voice,
+    subject
+  })
+  return data
+}
+
 export default api
