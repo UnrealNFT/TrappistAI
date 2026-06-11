@@ -1,5 +1,5 @@
 # PiranAI Bot Dependencies - Lightweight
-python-telegram-bot>=20.0
+python-telegram-bot>=21.0
 flask==3.0.0
 gunicorn==21.2.0
 httpx==0.26.0
