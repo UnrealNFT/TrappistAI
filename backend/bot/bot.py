@@ -1218,7 +1218,14 @@ def main():
 
     # Thread pool : 1 thread par génération audio simultanée possible (50 = 50 users en parallèle)
     executor = ThreadPoolExecutor(max_workers=50, thread_name_prefix="piranai")
-    loop = asyncio.get_event_loop()
+    
+    # Fix for Python 3.10+ - create event loop explicitly
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
     loop.set_default_executor(executor)
 
     app = (
