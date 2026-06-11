@@ -873,17 +873,39 @@ async def generate_music(request: Request, data: GenerateMusicRequest):
 @app.post("/api/generate/3d")
 @limiter.limit("20/minute")
 async def generate_3d(request: Request, data: Generate3DRequest):
-    """Generate 3D model (5 tokens without texture, 20 with texture)"""
+    """Generate 3D model (2 tokens without texture, 30 with texture)"""
     try:
-        tokens_needed = 20 if data.withTexture else 5
+        tokens_needed = 30 if data.withTexture else 2
         
         # Check balance WITHOUT consuming yet
         current_balance = await get_user_balance(data.walletAddress)
         if current_balance < tokens_needed:
             raise HTTPException(status_code=402, detail="Insufficient tokens")
         
-        # Generate 3D FIRST (TODO: implement wavespeed 3D functions)
-        # For now, return mock response - in production, wrap in try/except like music/image
+        # imageUrl can be either:
+        # 1. data:image/png;base64,... (from frontend upload)
+        # 2. https://... (direct URL)
+        
+        image_url = data.imageUrl
+        
+        # If data URL, we need to convert it to a real URL
+        # For now, let's accept it directly since WaveSpeed might support base64
+        # TODO: If WaveSpeed doesn't support data URLs, upload to temporary storage first
+        
+        # Generate 3D
+        try:
+            if data.withTexture:
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None, wavespeed.generate_3d_with_texture, image_url
+                )
+            else:
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None, wavespeed.generate_3d_from_image, image_url
+                )
+        except Exception as gen_error:
+            # Generation failed - DON'T consume tokens
+            print(f"❌ 3D generation failed: {gen_error}")
+            raise HTTPException(status_code=500, detail=f"Generation failed: {str(gen_error)}")
         
         # Only consume tokens if generation succeeded
         consumed = await consume_user_tokens(
@@ -894,9 +916,8 @@ async def generate_3d(request: Request, data: Generate3DRequest):
         
         return {
             "success": True,
-            "url": "https://example.com/model.glb",
-            "tokensUsed": tokens_needed,
-            "message": "3D generation coming soon"
+            "url": url,
+            "tokensUsed": tokens_needed
         }
         
     except HTTPException:

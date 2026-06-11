@@ -101,6 +101,30 @@ def generate_music_minimax(lyrics: str, tags: str = "electronic, dark, cinematic
     return _poll(task_id, max_wait=600)
 
 
+def generate_3d_from_image(image_url: str) -> str:
+    """Generate 3D model with HunyuanV3.1 (no texture, monochrome). Returns GLB URL."""
+    if TEST_MODE:
+        print(f"[MOCK] Generating 3D (no texture) from image...")
+        return "https://example.com/model_notex.glb"  # Mock GLB URL
+    
+    task_id = _submit("wavespeed-ai/hunyuan-3d-v3.1/image-to-3d-rapid", {
+        "image": image_url,
+    })
+    return _poll(task_id, max_wait=300)
+
+
+def generate_3d_with_texture(image_url: str) -> str:
+    """Generate 3D model with Tripo3D v2.5 (with texture/color). Returns GLB URL."""
+    if TEST_MODE:
+        print(f"[MOCK] Generating 3D (with texture) from image...")
+        return "https://example.com/model_tex.glb"  # Mock GLB URL
+    
+    task_id = _submit("tripo3d/v2.5/image-to-3d", {
+        "image": image_url,
+    })
+    return _poll(task_id, max_wait=300)
+
+
 if __name__ == "__main__":
     """Test WaveSpeed connection"""
     print("Testing WaveSpeed API...")
