@@ -1011,7 +1011,7 @@ async def cmd_link(update: Update, context) -> None:
         f"📱 Telegram: @{username}\n"
         f"🆔 User ID: `{uid}`\n\n"
         f"🔗 Tu peux maintenant linker ton compte sur:\n"
-        f"[trappisai.netlify.app/profile](https://trappisai.netlify.app/profile)\n\n"
+        f"[trappistai.netlify.app/profile](https://trappistai.netlify.app/profile)\n\n"
         f"💡 Entre **@{username}** sur le site pour recevoir ton code de vérification ici!",
         parse_mode=ParseMode.MARKDOWN,
         disable_web_page_preview=True,
