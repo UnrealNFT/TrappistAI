@@ -1,21 +1,21 @@
 """
 Shared database functions for PostgreSQL (used by bot and webhook)
 This allows bot and webhook to share telegram_usernames table
-Uses psycopg2 directly (no SQLAlchemy) to avoid Python 3.14 compatibility issues
+Uses psycopg v3 directly (no SQLAlchemy) for Python 3.14 compatibility
 """
 import os
-import psycopg2
+import psycopg
 from contextlib import contextmanager
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 @contextmanager
 def get_pg_connection():
-    """Get PostgreSQL connection using psycopg2"""
+    """Get PostgreSQL connection using psycopg v3"""
     if not DATABASE_URL:
         raise ValueError("DATABASE_URL not configured")
     
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg.connect(DATABASE_URL)
     try:
         yield conn
     finally:

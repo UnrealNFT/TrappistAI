@@ -1069,7 +1069,7 @@ async def cmd_verify(update: Update, context) -> None:
     
     # Verify code in PostgreSQL (read-only, no import needed)
     try:
-        import psycopg2
+        import psycopg
         import os
         from datetime import datetime
         
@@ -1085,7 +1085,7 @@ async def cmd_verify(update: Update, context) -> None:
         
         print(f"🔍 Attempting to verify code {code} for @{username}")
         
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg.connect(DATABASE_URL)
         try:
             with conn.cursor() as cur:
                 # Check if code exists and matches username
@@ -1187,7 +1187,7 @@ async def cmd_verify(update: Update, context) -> None:
         finally:
             conn.close()
             
-    except psycopg2.Error as e:
+    except psycopg.Error as e:
         print(f"❌ PostgreSQL error: {e}")
         import traceback
         traceback.print_exc()
@@ -1202,7 +1202,7 @@ async def cmd_verify(update: Update, context) -> None:
         await update.message.reply_text(
             "❌ *Module manquant*\n\n"
             f"Erreur: `{str(e)}`\n\n"
-            "Contacte @djaf77 - psycopg2 non installé.",
+            "Contacte @djaf77 - psycopg non installé.",
             parse_mode=ParseMode.MARKDOWN,
         )
     except Exception as e:
