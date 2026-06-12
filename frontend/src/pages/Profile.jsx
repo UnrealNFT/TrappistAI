@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { User, Link, CheckCircle, X, Loader2, ExternalLink } from 'lucide-react'
-import { getProfileInfo, linkTelegram, verifyTelegramCode } from '../services/api'
+import { getProfileInfo, linkTelegram, verifyTelegramCode, unlinkTelegram } from '../services/api'
 
 export default function Profile({ wallet }) {
   const [loading, setLoading] = useState(false)
   const [profileData, setProfileData] = useState(null)
   const [telegramUsername, setTelegramUsername] = useState('')
   const [verificationCode, setVerificationCode] = useState('')
+  const [generatedCode, setGeneratedCode] = useState('')
   const [isLinking, setIsLinking] = useState(false)
   const [isVerifying, setIsVerifying] = useState(false)
   const [error, setError] = useState('')
@@ -44,11 +45,12 @@ export default function Profile({ wallet }) {
     setSuccess('')
 
     try {
-      await linkTelegram(wallet, username)
+      const response = await linkTelegram(wallet, username)
+      setGeneratedCode(response.code)
       setIsVerifying(true)
-      setSuccess(`✅ Verification code sent to @${username} on Telegram! Check PiranAI bot.`)
+      setSuccess(`✅ Code generated! Use it on Telegram: /verify ${response.code}`)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to send verification code')
+      setError(err.response?.data?.detail || 'Failed to generate verification code')
     } finally {
       setIsLinking(false)
     }
@@ -80,8 +82,18 @@ export default function Profile({ wallet }) {
   const handleUnlink = async () => {
     if (!confirm('Are you sure you want to unlink your Telegram account?')) return
     
-    // TODO: Implement unlink endpoint
-    setError('Unlink feature coming soon')
+    setLoading(true)
+    setError('')
+    
+    try {
+      await unlinkTelegram(wallet)
+      setSuccess('✅ Telegram account unlinked successfully')
+      await loadProfile()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to unlink Telegram account')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (!wallet) {
@@ -156,50 +168,65 @@ export default function Profile({ wallet }) {
             // Enter verification code
             <div>
               <p className="text-green-400/80 mb-4">
-                ✅ Code sent to <span className="font-bold">@{telegramUsername}</span>
+                ✅ Code generated for <span className="font-bold">@{telegramUsername}</span>
               </p>
+              
+              {/* Display the generated code */}
+              <div className="bg-green-500/10 border-2 border-green-500/50 rounded-lg p-6 mb-6 text-center">
+                <p className="text-sm text-green-400/60 mb-2">Your verification code:</p>
+                <p className="text-4xl font-bold tracking-widest text-green-400 mb-4">{generatedCode}</p>
+                <p className="text-sm text-green-400/80">
+                  Go to <a href="https://t.me/PiraAi_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-400 font-bold">@PiraAi_bot</a> and type:
+                </p>
+                <code className="inline-block mt-2 px-4 py-2 bg-black border border-green-500/30 rounded text-green-400">
+                  /verify {generatedCode}
+                </code>
+              </div>
+              
               <p className="text-sm text-green-400/60 mb-4">
-                Check your messages from <a href="https://t.me/PiranAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-400">@PiranAI_bot</a> and enter the 6-digit code below:
+                After verifying on Telegram, click "Check Status" below.
               </p>
 
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="123456"
-                  maxLength={6}
-                  className="w-full px-4 py-3 bg-black border border-green-500/30 rounded text-center text-2xl tracking-widest focus:outline-none focus:border-green-500"
-                />
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleVerifyCode}
-                    disabled={verificationCode.length !== 6 || loading}
-                    className="flex-1 px-4 py-3 bg-green-500/20 border border-green-500/50 rounded hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed font-bold"
-                  >
-                    {loading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Verifying...
-                      </span>
-                    ) : (
-                      'Verify Code'
-                    )}
-                  </button>
-                  
-                  <button
-                    onClick={() => {
+              <div className="flex gap-3">
+                <button
+                  onClick={async () => {
+                    setLoading(true)
+                    await loadProfile()
+                    const updated = await getProfileInfo(wallet)
+                    if (updated.telegram_verified) {
+                      setSuccess('🎉 Telegram account linked successfully!')
                       setIsVerifying(false)
-                      setVerificationCode('')
-                      setError('')
-                      setSuccess('')
-                    }}
-                    className="px-4 py-3 border border-green-500/30 rounded hover:border-green-500/50"
-                  >
-                    Cancel
-                  </button>
-                </div>
+                      setTelegramUsername('')
+                      setGeneratedCode('')
+                    } else {
+                      setError('Not verified yet. Please type /verify ' + generatedCode + ' on @PiraAi_bot')
+                    }
+                    setLoading(false)
+                  }}
+                  disabled={loading}
+                  className="flex-1 px-4 py-3 bg-green-500/20 border border-green-500/50 rounded hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed font-bold"
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Checking...
+                    </span>
+                  ) : (
+                    'Check Status'
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setIsVerifying(false)
+                    setGeneratedCode('')
+                    setError('')
+                    setSuccess('')
+                  }}
+                  className="px-4 py-3 border border-green-500/30 rounded hover:border-green-500/50"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           ) : (

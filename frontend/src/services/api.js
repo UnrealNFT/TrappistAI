@@ -109,4 +109,11 @@ export const verifyTelegramCode = async (walletAddress, code) => {
   return data
 }
 
+export const unlinkTelegram = async (walletAddress) => {
+  const { data } = await api.post('/api/profile/unlink-telegram', {
+    walletAddress
+  })
+  return data
+}
+
 export default api
