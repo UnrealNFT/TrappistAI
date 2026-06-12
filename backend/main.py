@@ -313,6 +313,9 @@ class LinkTelegramRequest(BaseModel):
     walletAddress: str
     telegramUsername: str
 
+class UnlinkTelegramRequest(BaseModel):
+    walletAddress: str
+
 class VerifyCodeRequest(BaseModel):
     walletAddress: str
     code: str
@@ -320,7 +323,7 @@ class VerifyCodeRequest(BaseModel):
 @app.get("/api/profile/{wallet_address}")
 @limiter.limit("50/minute")
 async def get_profile(request: Request, wallet_address: str):
-    """Get user profile info including Telegram link status"""
+    """Get user profile info including Telegram link status and pending verification code"""
     wallet_normalized = wallet_address.lower().strip()
     
     with get_db_session() as conn:
@@ -346,15 +349,34 @@ async def get_profile(request: Request, wallet_address: str):
                 "wallet_address": wallet_address,
                 "telegram_username": None,
                 "telegram_verified": False,
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now().isoformat(),
+                "pending_code": None
             }
+        
+        # Check for pending verification code
+        pending_code = None
+        if row[0] and not row[2]:  # Has username but not verified
+            code_result = conn.execute(
+                text("""
+                    SELECT verification_code, expires_at
+                    FROM telegram_verification
+                    WHERE wallet_address = :wallet AND verified = FALSE
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """),
+                {"wallet": wallet_normalized}
+            )
+            code_row = code_result.fetchone()
+            if code_row and datetime.now() < code_row[1]:  # Code exists and not expired
+                pending_code = code_row[0]
         
         return {
             "wallet_address": wallet_address,
             "telegram_username": row[0],
             "telegram_user_id": row[1],
             "telegram_verified": bool(row[2]),
-            "created_at": row[3].isoformat() if row[3] else None
+            "created_at": row[3].isoformat() if row[3] else None,
+            "pending_code": pending_code
         }
 
 @app.post("/api/profile/link-telegram")
@@ -475,6 +497,40 @@ async def verify_code(request: Request, data: VerifyCodeRequest):
             "message": "Telegram account verified successfully",
             "telegram_username": username
         }
+
+@app.post("/api/profile/unlink-telegram")
+@limiter.limit("10/minute")
+async def unlink_telegram(request: Request, data: UnlinkTelegramRequest):
+    """Disconnect Telegram account from wallet"""
+    wallet_normalized = data.walletAddress.lower().strip()
+    
+    with get_db_session() as conn:
+        # Clear Telegram data
+        conn.execute(
+            text("""
+                UPDATE users 
+                SET telegram_username = NULL, 
+                    telegram_user_id = NULL, 
+                    telegram_verified = FALSE
+                WHERE wallet_address = :wallet
+            """),
+            {"wallet": wallet_normalized}
+        )
+        
+        # Delete pending verification codes
+        conn.execute(
+            text("DELETE FROM telegram_verification WHERE wallet_address = :wallet"),
+            {"wallet": wallet_normalized}
+        )
+        
+        conn.commit()
+    
+    print(f"🔓 Telegram account unlinked from wallet {wallet_normalized[:10]}...")
+    
+    return {
+        "success": True,
+        "message": "Telegram account disconnected successfully"
+    }
 
 # ============================================
 # TELEGRAM BOT WEBHOOK (Internal)
