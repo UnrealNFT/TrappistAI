@@ -1071,10 +1071,19 @@ async def cmd_verify(update: Update, context) -> None:
     try:
         import psycopg2
         import os
+        from datetime import datetime
         
         DATABASE_URL = os.getenv("DATABASE_URL")
         if not DATABASE_URL:
-            raise ValueError("DATABASE_URL not configured")
+            print("❌ DATABASE_URL not set in environment")
+            await update.message.reply_text(
+                "❌ *Configuration manquante*\n\n"
+                "Contacte @djaf77 - DATABASE_URL non configuré.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+        
+        print(f"🔍 Attempting to verify code {code} for @{username}")
         
         conn = psycopg2.connect(DATABASE_URL)
         try:
@@ -1091,6 +1100,7 @@ async def cmd_verify(update: Update, context) -> None:
                 result = cur.fetchone()
                 
                 if not result:
+                    print(f"❌ Code {code} not found in database")
                     await update.message.reply_text(
                         "❌ *Code introuvable*\n\n"
                         "Vérifie que tu as bien copié le code depuis le site.",
@@ -1099,6 +1109,7 @@ async def cmd_verify(update: Update, context) -> None:
                     return
                 
                 wallet, stored_username, expires_at, verified = result
+                print(f"✓ Code found: wallet={wallet[:10]}..., username={stored_username}, verified={verified}")
                 
                 if verified:
                     await update.message.reply_text(
@@ -1108,7 +1119,21 @@ async def cmd_verify(update: Update, context) -> None:
                     )
                     return
                 
-                if datetime.now() > expires_at:
+                # Handle timezone-aware comparison
+                from datetime import timezone
+                if isinstance(expires_at, str):
+                    from dateutil import parser as dateutil_parser
+                    expires_at = dateutil_parser.parse(expires_at)
+                
+                # Make both datetime objects timezone-aware for comparison
+                now = datetime.now(timezone.utc)
+                if expires_at.tzinfo is None:
+                    # PostgreSQL timestamp is UTC, make it timezone-aware
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                
+                print(f"⏰ Expiration check: now={now.isoformat()}, expires={expires_at.isoformat()}")
+                
+                if now > expires_at:
                     await update.message.reply_text(
                         "❌ *Code expiré*\n\n"
                         "Génère un nouveau code sur le site (valable 10 min).",
@@ -1117,6 +1142,7 @@ async def cmd_verify(update: Update, context) -> None:
                     return
                 
                 if stored_username.lower() != username.lower():
+                    print(f"❌ Username mismatch: expected {stored_username}, got {username}")
                     await update.message.reply_text(
                         f"❌ *Username incorrect*\n\n"
                         f"Ce code est pour @{stored_username}, mais tu es @{username}.\n\n"
@@ -1161,12 +1187,31 @@ async def cmd_verify(update: Update, context) -> None:
         finally:
             conn.close()
             
+    except psycopg2.Error as e:
+        print(f"❌ PostgreSQL error: {e}")
+        import traceback
+        traceback.print_exc()
+        await update.message.reply_text(
+            "❌ *Erreur de base de données*\n\n"
+            f"Erreur: `{str(e)[:100]}`\n\n"
+            "Contacte @djaf77 si le problème persiste.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        await update.message.reply_text(
+            "❌ *Module manquant*\n\n"
+            f"Erreur: `{str(e)}`\n\n"
+            "Contacte @djaf77 - psycopg2 non installé.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
     except Exception as e:
         print(f"❌ Failed to verify code: {e}")
         import traceback
         traceback.print_exc()
         await update.message.reply_text(
             "❌ *Erreur lors de la vérification*\n\n"
+            f"Erreur: `{str(e)[:100]}`\n\n"
             "Réessaye dans quelques secondes.",
             parse_mode=ParseMode.MARKDOWN,
         )
