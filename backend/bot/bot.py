@@ -1139,14 +1139,22 @@ async def cmd_verify(update: Update, context) -> None:
                     WHERE wallet_address = %s
                 """, (uid, wallet))
                 
+                # Get user's token balance
+                cur.execute("""
+                    SELECT tokens FROM users WHERE wallet_address = %s
+                """, (wallet,))
+                balance_row = cur.fetchone()
+                tokens = balance_row[0] if balance_row else 0
+                
                 conn.commit()
                 
-                print(f"✅ Verified @{username} (uid={uid}) for wallet {wallet[:10]}... with code {code}")
+                print(f"✅ Verified @{username} (uid={uid}) for wallet {wallet[:10]}... with code {code} - Balance: {tokens} tokens")
                 
                 await update.message.reply_text(
                     "✅ *Compte vérifié avec succès!*\n\n"
                     f"📱 Telegram: @{username}\n"
-                    f"💼 Wallet: `{wallet[:20]}...`\n\n"
+                    f"💼 Wallet: `{wallet[:20]}...`\n"
+                    f"💰 Solde: *{tokens} token(s)*\n\n"
                     "🎨 Tes générations sont maintenant synchronisées entre le site et Telegram!",
                     parse_mode=ParseMode.MARKDOWN,
                 )
