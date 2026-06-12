@@ -1268,16 +1268,11 @@ async def cmd_topup(update: Update, context) -> None:
     uid = update.effective_user.id
     bal = get_tokens(uid)
     await update.message.reply_text(
-        f"🔋 *Recharge PiranAI*\n\n"
-        f"Solde actuel: *{bal} token(s)*\n\n"
-        "📦 *Packs disponibles:*\n"
-        "\u2022 50 tokens = *$1 USDC*\n"
-        "\u2022 200 tokens = *$3 USDC*\n"
-        "\u2022 1 000 tokens = *$10 USDC*\n\n"
-        "💳 Paiement crypto USDC/Solana\n"
-        "_Contacte @PiranAI\\_Support pour recharger manuellement_\n"
-        "_(Paiement automatique Cryptomus bient\u00f4t disponible)_",
-        parse_mode=ParseMode.MARKDOWN,
+        f"� <b>Solde actuel:</b> {bal} token(s)\n\n"
+        "🔋 <b>Recharge tes tokens sur le site:</b>\n"
+        "👉 https://trappistai.netlify.app/buy\n\n"
+        "Paiement sécurisé en crypto (CSPR)",
+        parse_mode=ParseMode.HTML,
     )
 
 
