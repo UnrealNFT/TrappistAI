@@ -1030,6 +1030,72 @@ async def cmd_link(update: Update, context) -> None:
         disable_web_page_preview=True,
     )
 
+async def cmd_code(update: Update, context) -> None:
+    """Generate verification code for TrappistAI website linking"""
+    user = update.effective_user
+    uid = user.id
+    username = user.username
+    
+    if not username:
+        await update.message.reply_text(
+            "❌ *Pas de username Telegram détecté*\n\n"
+            "Configure un @username dans Telegram Settings pour obtenir un code.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    
+    # Store username mapping
+    store_username_mapping(uid, username)
+    
+    # Generate 6-digit code
+    import random
+    from datetime import datetime, timedelta
+    code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+    expires_at = datetime.now() + timedelta(minutes=10)
+    
+    # Store in PostgreSQL
+    try:
+        from shared_db import get_pg_connection
+        import psycopg2
+        
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                # Delete old codes for this username
+                cur.execute(
+                    "DELETE FROM telegram_verification WHERE telegram_username = %s AND verified = FALSE",
+                    (username.lower(),)
+                )
+                
+                # Insert new code (wallet_address is NULL, will be filled when user verifies)
+                cur.execute("""
+                    INSERT INTO telegram_verification 
+                    (wallet_address, telegram_username, verification_code, expires_at, verified)
+                    VALUES ('', %s, %s, %s, FALSE)
+                """, (username.lower(), code, expires_at))
+                
+                conn.commit()
+        
+        print(f"✅ Generated code {code} for @{username}")
+        
+        await update.message.reply_text(
+            f"🔐 *Ton code de vérification*\n\n"
+            f"Code: `{code}`\n\n"
+            f"📱 Entre ce code sur:\n"
+            f"[trappistai.netlify.app/profile](https://trappistai.netlify.app/profile)\n\n"
+            f"⏰ Valide pendant 10 minutes\n"
+            f"💡 Assure-toi d'avoir d'abord enregistré @{username} sur le site!",
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True,
+        )
+        
+    except Exception as e:
+        print(f"❌ Failed to generate code: {e}")
+        await update.message.reply_text(
+            "❌ *Erreur lors de la génération du code*\n\n"
+            "Réessaye dans quelques secondes.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
 async def cmd_help(update: Update, context) -> None:
     await update.message.reply_text(
         "📖 *Aide PiranAI*\n\n"
@@ -1298,6 +1364,7 @@ def main():
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("link",    cmd_link))
+    app.add_handler(CommandHandler("code",    cmd_code))
     app.add_handler(CommandHandler("help",    cmd_help))
     app.add_handler(CommandHandler("image",   cmd_image))
     app.add_handler(CommandHandler("balance", cmd_balance))
