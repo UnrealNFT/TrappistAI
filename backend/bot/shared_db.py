@@ -59,3 +59,91 @@ def get_user_id_by_username_pg(username: str) -> int | None:
     except Exception as e:
         print(f"⚠️ Failed to query PostgreSQL: {e}")
         return None
+
+def get_tokens_pg(telegram_user_id: int) -> int:
+    """Get token balance from PostgreSQL users table"""
+    if not DATABASE_URL:
+        return 0
+    
+    try:
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT tokens FROM users WHERE telegram_user_id = %s",
+                    (telegram_user_id,)
+                )
+                result = cur.fetchone()
+                return result[0] if result else 0
+    except Exception as e:
+        print(f"⚠️ Failed to get tokens from PostgreSQL: {e}")
+        return 0
+
+def consume_tokens_pg(telegram_user_id: int, amount: int, admin_username: str = "") -> bool:
+    """
+    Consume tokens from PostgreSQL. 
+    Admin users (by telegram_username match) always pass without consuming.
+    Returns True if successful, False if insufficient tokens.
+    """
+    if not DATABASE_URL:
+        return False
+    
+    try:
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                # Check if user is admin
+                if admin_username:
+                    clean_admin = admin_username.lstrip("@").lower()
+                    cur.execute(
+                        "SELECT telegram_username FROM users WHERE telegram_user_id = %s",
+                        (telegram_user_id,)
+                    )
+                    result = cur.fetchone()
+                    if result and result[0] and result[0].lower() == clean_admin:
+                        print(f"👑 Admin @{clean_admin} bypass token check")
+                        return True
+                
+                # Get current balance
+                cur.execute(
+                    "SELECT tokens FROM users WHERE telegram_user_id = %s",
+                    (telegram_user_id,)
+                )
+                result = cur.fetchone()
+                if not result or result[0] < amount:
+                    print(f"❌ Insufficient tokens: {result[0] if result else 0} < {amount}")
+                    return False
+                
+                # Deduct tokens
+                cur.execute(
+                    "UPDATE users SET tokens = tokens - %s WHERE telegram_user_id = %s",
+                    (amount, telegram_user_id)
+                )
+                conn.commit()
+                print(f"✅ Consumed {amount} tokens from user {telegram_user_id}")
+                return True
+    except Exception as e:
+        print(f"⚠️ Failed to consume tokens from PostgreSQL: {e}")
+        return False
+
+def add_tokens_pg(telegram_user_id: int, amount: int) -> int:
+    """Add tokens to PostgreSQL users table. Returns new balance."""
+    if not DATABASE_URL:
+        return 0
+    
+    try:
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE users 
+                    SET tokens = tokens + %s 
+                    WHERE telegram_user_id = %s
+                    RETURNING tokens
+                """, (amount, telegram_user_id))
+                result = cur.fetchone()
+                conn.commit()
+                new_balance = result[0] if result else 0
+                print(f"✅ Added {amount} tokens to user {telegram_user_id}, new balance: {new_balance}")
+                return new_balance
+    except Exception as e:
+        print(f"⚠️ Failed to add tokens to PostgreSQL: {e}")
+        return 0
+

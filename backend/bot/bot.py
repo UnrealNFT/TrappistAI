@@ -16,11 +16,20 @@ import wavespeed
 
 # Import shared PostgreSQL functions
 try:
-    from shared_db import store_username_mapping_pg, get_user_id_by_username_pg
+    from shared_db import (
+        store_username_mapping_pg, 
+        get_user_id_by_username_pg,
+        get_tokens_pg,
+        consume_tokens_pg,
+        add_tokens_pg
+    )
 except ImportError:
     print("⚠️ shared_db.py not found - PostgreSQL sync disabled")
     store_username_mapping_pg = lambda *args: None
     get_user_id_by_username_pg = lambda *args: None
+    get_tokens_pg = lambda *args: 0
+    consume_tokens_pg = lambda *args: False
+    add_tokens_pg = lambda *args: 0
 
 load_dotenv()
 logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s", level=logging.INFO)
@@ -33,7 +42,10 @@ OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL", "llama3.2")
 GROQ_KEY          = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL        = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
 DB_PATH           = os.getenv("DB_PATH",      "piranai.db")
+DATABASE_URL      = os.getenv("DATABASE_URL", "")  # PostgreSQL connection
 ADMIN_USERNAME    = os.getenv("ADMIN_USERNAME", "djaf77").lstrip("@").lower()
+
+USE_POSTGRES = bool(DATABASE_URL)  # Use PostgreSQL if configured, else SQLite
 
 # ─── Mémoire de conversation ─────────────────────────────────────────────────
 _conv_history: dict[int, list] = {}  # user_id → derniers messages
@@ -56,10 +68,18 @@ def is_new_user(user_id: int) -> bool:
     return _db.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,)).fetchone() is None
 
 def get_tokens(user_id: int) -> int:
+    """Get token balance - uses PostgreSQL if configured, else SQLite"""
+    if USE_POSTGRES:
+        return get_tokens_pg(user_id)
+    # SQLite fallback
     row = _db.execute("SELECT tokens FROM users WHERE user_id=?", (user_id,)).fetchone()
     return row[0] if row else 0
 
 def add_tokens(user_id: int, amount: int) -> int:
+    """Add tokens - uses PostgreSQL if configured, else SQLite"""
+    if USE_POSTGRES:
+        return add_tokens_pg(user_id, amount)
+    # SQLite fallback
     _db.execute(
         "INSERT INTO users(user_id, tokens) VALUES(?,?) "
         "ON CONFLICT(user_id) DO UPDATE SET tokens=tokens+?",
@@ -69,7 +89,13 @@ def add_tokens(user_id: int, amount: int) -> int:
     return get_tokens(user_id)
 
 def consume_tokens(user_id: int, amount: int, username: str = "") -> bool:
-    """Admin (by username) always passes. Others need enough tokens."""
+    """
+    Consume tokens - uses PostgreSQL if configured, else SQLite.
+    Admin (by username) always passes.
+    """
+    if USE_POSTGRES:
+        return consume_tokens_pg(user_id, amount, ADMIN_USERNAME if username else "")
+    # SQLite fallback
     if username and username.lstrip("@").lower() == ADMIN_USERNAME:
         return True
     if get_tokens(user_id) < amount:
