@@ -1030,8 +1030,8 @@ async def cmd_link(update: Update, context) -> None:
         disable_web_page_preview=True,
     )
 
-async def cmd_code(update: Update, context) -> None:
-    """Generate verification code for TrappistAI website linking"""
+async def cmd_verify(update: Update, context) -> None:
+    """Verify code from TrappistAI website (user types: /verify 123456)"""
     user = update.effective_user
     uid = user.id
     username = user.username
@@ -1039,59 +1039,126 @@ async def cmd_code(update: Update, context) -> None:
     if not username:
         await update.message.reply_text(
             "❌ *Pas de username Telegram détecté*\n\n"
-            "Configure un @username dans Telegram Settings pour obtenir un code.",
+            "Configure un @username dans Telegram Settings.",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
     
-    # Store username mapping
+    # Get code from command args
+    if not context.args or len(context.args) != 1:
+        await update.message.reply_text(
+            "❌ *Format incorrect*\n\n"
+            "Usage: `/verify 123456`\n\n"
+            "💡 Obtiens ton code sur trappistai.netlify.app/profile",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    
+    code = context.args[0].strip()
+    
+    if len(code) != 6 or not code.isdigit():
+        await update.message.reply_text(
+            "❌ *Code invalide*\n\n"
+            "Le code doit être 6 chiffres.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    
+    # Store username mapping first
     store_username_mapping(uid, username)
     
-    # Generate 6-digit code
-    import random
-    from datetime import datetime, timedelta
-    code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-    expires_at = datetime.now() + timedelta(minutes=10)
-    
-    # Store in PostgreSQL
+    # Verify code in PostgreSQL (read-only, no import needed)
     try:
-        from shared_db import get_pg_connection
         import psycopg2
+        import os
         
-        with get_pg_connection() as conn:
+        DATABASE_URL = os.getenv("DATABASE_URL")
+        if not DATABASE_URL:
+            raise ValueError("DATABASE_URL not configured")
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
             with conn.cursor() as cur:
-                # Delete old codes for this username
-                cur.execute(
-                    "DELETE FROM telegram_verification WHERE telegram_username = %s AND verified = FALSE",
-                    (username.lower(),)
-                )
-                
-                # Insert new code (wallet_address is NULL, will be filled when user verifies)
+                # Check if code exists and matches username
                 cur.execute("""
-                    INSERT INTO telegram_verification 
-                    (wallet_address, telegram_username, verification_code, expires_at, verified)
-                    VALUES ('', %s, %s, %s, FALSE)
-                """, (username.lower(), code, expires_at))
+                    SELECT wallet_address, telegram_username, expires_at, verified
+                    FROM telegram_verification
+                    WHERE verification_code = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (code,))
+                
+                result = cur.fetchone()
+                
+                if not result:
+                    await update.message.reply_text(
+                        "❌ *Code introuvable*\n\n"
+                        "Vérifie que tu as bien copié le code depuis le site.",
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                    return
+                
+                wallet, stored_username, expires_at, verified = result
+                
+                if verified:
+                    await update.message.reply_text(
+                        "❌ *Code déjà utilisé*\n\n"
+                        "Génère un nouveau code sur le site.",
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                    return
+                
+                if datetime.now() > expires_at:
+                    await update.message.reply_text(
+                        "❌ *Code expiré*\n\n"
+                        "Génère un nouveau code sur le site (valable 10 min).",
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                    return
+                
+                if stored_username.lower() != username.lower():
+                    await update.message.reply_text(
+                        f"❌ *Username incorrect*\n\n"
+                        f"Ce code est pour @{stored_username}, mais tu es @{username}.\n\n"
+                        f"Enregistre @{username} sur le site d'abord.",
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                    return
+                
+                # Mark as verified and store telegram_user_id
+                cur.execute("""
+                    UPDATE telegram_verification
+                    SET verified = TRUE
+                    WHERE verification_code = %s
+                """, (code,))
+                
+                # Also update users table
+                cur.execute("""
+                    UPDATE users
+                    SET telegram_verified = TRUE, telegram_user_id = %s
+                    WHERE wallet_address = %s
+                """, (uid, wallet))
                 
                 conn.commit()
-        
-        print(f"✅ Generated code {code} for @{username}")
-        
-        await update.message.reply_text(
-            f"🔐 *Ton code de vérification*\n\n"
-            f"Code: `{code}`\n\n"
-            f"📱 Entre ce code sur:\n"
-            f"[trappistai.netlify.app/profile](https://trappistai.netlify.app/profile)\n\n"
-            f"⏰ Valide pendant 10 minutes\n"
-            f"💡 Assure-toi d'avoir d'abord enregistré @{username} sur le site!",
-            parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=True,
-        )
-        
+                
+                print(f"✅ Verified @{username} (uid={uid}) for wallet {wallet[:10]}... with code {code}")
+                
+                await update.message.reply_text(
+                    "✅ *Compte vérifié avec succès!*\n\n"
+                    f"📱 Telegram: @{username}\n"
+                    f"💼 Wallet: `{wallet[:20]}...`\n\n"
+                    "🎨 Tes générations sont maintenant synchronisées entre le site et Telegram!",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+        finally:
+            conn.close()
+            
     except Exception as e:
-        print(f"❌ Failed to generate code: {e}")
+        print(f"❌ Failed to verify code: {e}")
+        import traceback
+        traceback.print_exc()
         await update.message.reply_text(
-            "❌ *Erreur lors de la génération du code*\n\n"
+            "❌ *Erreur lors de la vérification*\n\n"
             "Réessaye dans quelques secondes.",
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -1364,7 +1431,7 @@ def main():
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("link",    cmd_link))
-    app.add_handler(CommandHandler("code",    cmd_code))
+    app.add_handler(CommandHandler("verify",  cmd_verify))
     app.add_handler(CommandHandler("help",    cmd_help))
     app.add_handler(CommandHandler("image",   cmd_image))
     app.add_handler(CommandHandler("balance", cmd_balance))
