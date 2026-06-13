@@ -1320,6 +1320,96 @@ async def cmd_topup(update: Update, context) -> None:
     )
 
 
+# ─── Tokenize Assets as RWA ──────────────────────────────────────────────────
+
+async def on_tokenize_asset(update: Update, context) -> None:
+    """Handle tokenize button clicks - mint RWA token via backend API."""
+    q = update.callback_query
+    await q.answer()
+    
+    data = q.data  # Format: "tokenize:{type}:{url}:{prompt}"
+    
+    # Handle skip
+    if data == "tokenize:skip":
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)  # Remove buttons
+        except Exception:
+            pass
+        return
+    
+    parts = data.split(":", 3)
+    if len(parts) < 4:
+        await q.edit_message_text("❌ Données invalides")
+        return
+    
+    _, asset_type, asset_url, prompt = parts
+    uid = update.effective_user.id
+    
+    # Get user's wallet address
+    wallet = get_wallet_by_telegram_id_pg(uid)
+    if not wallet:
+        await q.edit_message_text(
+            "❌ *Tu dois d'abord connecter ton wallet Casper*\n\n"
+            "👉 Va sur https://trappistai.netlify.app/profile\n"
+            "🔗 Connecte ton wallet et lie ton compte Telegram\n\n"
+            "Ensuite tu pourras tokenizer tes créations !",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    
+    # Show progress
+    await q.edit_message_text(
+        f"💎 *Tokenization en cours...*\n\n"
+        f"Type: {asset_type}\n"
+        f"Wallet: `{wallet[:20]}...`",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    
+    try:
+        # Call backend API to mint RWA token
+        response = req.post(
+            f"{BACKEND_API_URL}/api/rwa/mint",
+            json={
+                "walletAddress": wallet,
+                "assetType": asset_type,
+                "assetUrl": asset_url,
+                "prompt": prompt,
+                "model": "wavespeed",
+                "telegramUserId": uid,
+            },
+            timeout=10,
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            token_id = data.get("tokenId", "?")
+            await q.edit_message_text(
+                f"✅ *RWA Token créé !*\n\n"
+                f"🎫 Token ID: `#{token_id}`\n"
+                f"💎 Type: {asset_type}\n\n"
+                f"👉 Voir tes NFTs: https://trappistai.netlify.app/my-rwa\n"
+                f"💰 Vendre sur le marketplace: https://trappistai.netlify.app/marketplace",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            logger.info("Tokenized %s for user %s: token #%s", asset_type, uid, token_id)
+        else:
+            error_msg = response.json().get("detail", "Unknown error")
+            await q.edit_message_text(
+                f"❌ *Échec de la tokenization*\n\n"
+                f"Erreur: `{error_msg[:200]}`\n\n"
+                "Contacte @Djaf77 si le problème persiste.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+    except Exception as e:
+        logger.error("Tokenize API error: %s", e)
+        await q.edit_message_text(
+            f"❌ *Erreur de connexion à l'API*\n\n"
+            f"`{str(e)[:200]}`\n\n"
+            "Vérifie que le backend est en ligne.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+
 async def cmd_text(update: Update, context) -> None:
     prompt = " ".join(context.args).strip()
     if not prompt:
