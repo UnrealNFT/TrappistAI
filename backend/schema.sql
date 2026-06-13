@@ -49,6 +49,28 @@ CREATE INDEX idx_generations_wallet ON generations(wallet_address);
 CREATE INDEX idx_generations_type ON generations(type);
 CREATE INDEX idx_generations_created ON generations(created_at DESC);
 
+-- RWA Tokens table (AI assets tokenized as NFTs)
+CREATE TABLE IF NOT EXISTS rwa_tokens (
+    token_id BIGSERIAL PRIMARY KEY,
+    wallet_address VARCHAR(255) NOT NULL,
+    asset_type VARCHAR(20) NOT NULL,  -- 'image', 'music', '3d'
+    ipfs_hash VARCHAR(100) NOT NULL,
+    asset_url TEXT NOT NULL,
+    prompt TEXT,
+    model VARCHAR(100),
+    telegram_user_id BIGINT,
+    cspr_tx_hash VARCHAR(100),
+    metadata JSONB,  -- Additional metadata (dimensions, duration, etc)
+    fractional BOOLEAN DEFAULT FALSE,
+    total_shares INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_rwa_wallet ON rwa_tokens(wallet_address);
+CREATE INDEX idx_rwa_telegram ON rwa_tokens(telegram_user_id);
+CREATE INDEX idx_rwa_type ON rwa_tokens(asset_type);
+CREATE INDEX idx_rwa_created ON rwa_tokens(created_at DESC);
+
 -- Telegram verification table for linking accounts
 CREATE TABLE IF NOT EXISTS telegram_verification (
     id SERIAL PRIMARY KEY,

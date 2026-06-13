@@ -1500,6 +1500,195 @@ async def generate_lyrics(request: Request, data: GenerateLyricsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
+# RWA TOKENIZATION ENDPOINTS
+# ============================================
+
+class MintRWARequest(BaseModel):
+    walletAddress: str
+    assetType: str  # 'image', 'music', '3d'
+    assetUrl: str
+    ipfsHash: str = ""  # Will be added later
+    prompt: str = ""
+    model: str = ""
+    telegramUserId: int = None
+    metadata: dict = {}
+
+class RWAToken(BaseModel):
+    token_id: int
+    wallet_address: str
+    asset_type: str
+    ipfs_hash: str
+    asset_url: str
+    prompt: str
+    model: str
+    telegram_user_id: int
+    cspr_tx_hash: str
+    metadata: dict
+    fractional: bool
+    total_shares: int
+    created_at: str
+
+@app.post("/api/rwa/mint")
+@limiter.limit("10/minute")
+async def mint_rwa_token(request: Request, data: MintRWARequest):
+    """
+    Mint a new RWA token (NFT) for an AI-generated asset
+    TODO: Connect to Casper smart contract
+    """
+    try:
+        print(f"🎨 Minting RWA token: {data.assetType} for {data.walletAddress}")
+        
+        # Validate wallet address
+        if not data.walletAddress or len(data.walletAddress) < 10:
+            raise HTTPException(status_code=400, detail="Invalid wallet address")
+        
+        # Validate asset type
+        if data.assetType not in ['image', 'music', '3d']:
+            raise HTTPException(status_code=400, detail="Invalid asset type")
+        
+        # Insert into database
+        with get_db_session() as session:
+            result = session.execute(text("""
+                INSERT INTO rwa_tokens (
+                    wallet_address, asset_type, ipfs_hash, asset_url, 
+                    prompt, model, telegram_user_id, metadata
+                )
+                VALUES (
+                    :wallet, :type, :ipfs, :url, 
+                    :prompt, :model, :telegram_id, :metadata::jsonb
+                )
+                RETURNING token_id, created_at
+            """), {
+                "wallet": data.walletAddress,
+                "type": data.assetType,
+                "ipfs": data.ipfsHash or "",
+                "url": data.assetUrl,
+                "prompt": data.prompt,
+                "model": data.model,
+                "telegram_id": data.telegramUserId,
+                "metadata": str(data.metadata) if data.metadata else "{}"
+            })
+            session.commit()
+            
+            row = result.fetchone()
+            token_id = row[0]
+            created_at = row[1]
+        
+        print(f"✅ RWA token #{token_id} minted!")
+        
+        return {
+            "success": True,
+            "tokenId": token_id,
+            "message": f"RWA token #{token_id} successfully minted!",
+            "explorerUrl": f"https://cspr.live/token/{token_id}",  # TODO: Real explorer
+            "createdAt": created_at.isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ RWA mint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/rwa/my-tokens/{wallet_address}")
+@limiter.limit("30/minute")
+async def get_my_rwa_tokens(request: Request, wallet_address: str):
+    """Get all RWA tokens owned by a wallet"""
+    try:
+        print(f"📋 Fetching RWA tokens for {wallet_address}")
+        
+        with get_db_session() as session:
+            result = session.execute(text("""
+                SELECT 
+                    token_id, wallet_address, asset_type, ipfs_hash, asset_url,
+                    prompt, model, telegram_user_id, cspr_tx_hash, metadata,
+                    fractional, total_shares, created_at
+                FROM rwa_tokens
+                WHERE wallet_address = :wallet
+                ORDER BY created_at DESC
+            """), {"wallet": wallet_address})
+            
+            tokens = []
+            for row in result:
+                tokens.append({
+                    "tokenId": row[0],
+                    "walletAddress": row[1],
+                    "assetType": row[2],
+                    "ipfsHash": row[3],
+                    "assetUrl": row[4],
+                    "prompt": row[5],
+                    "model": row[6],
+                    "telegramUserId": row[7],
+                    "csprTxHash": row[8],
+                    "metadata": row[9] if row[9] else {},
+                    "fractional": row[10],
+                    "totalShares": row[11],
+                    "createdAt": row[12].isoformat()
+                })
+        
+        print(f"✅ Found {len(tokens)} RWA tokens")
+        
+        return {
+            "success": True,
+            "count": len(tokens),
+            "tokens": tokens
+        }
+        
+    except Exception as e:
+        print(f"❌ RWA fetch error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/rwa/token/{token_id}")
+@limiter.limit("30/minute")
+async def get_rwa_token(request: Request, token_id: int):
+    """Get a specific RWA token by ID"""
+    try:
+        print(f"🔍 Fetching RWA token #{token_id}")
+        
+        with get_db_session() as session:
+            result = session.execute(text("""
+                SELECT 
+                    token_id, wallet_address, asset_type, ipfs_hash, asset_url,
+                    prompt, model, telegram_user_id, cspr_tx_hash, metadata,
+                    fractional, total_shares, created_at
+                FROM rwa_tokens
+                WHERE token_id = :id
+            """), {"id": token_id})
+            
+            row = result.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Token not found")
+            
+            token = {
+                "tokenId": row[0],
+                "walletAddress": row[1],
+                "assetType": row[2],
+                "ipfsHash": row[3],
+                "assetUrl": row[4],
+                "prompt": row[5],
+                "model": row[6],
+                "telegramUserId": row[7],
+                "csprTxHash": row[8],
+                "metadata": row[9] if row[9] else {},
+                "fractional": row[10],
+                "totalShares": row[11],
+                "createdAt": row[12].isoformat()
+            }
+        
+        print(f"✅ Token #{token_id} found")
+        
+        return {
+            "success": True,
+            "token": token
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ RWA token fetch error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================
 # ERROR HANDLERS
 # ============================================
 

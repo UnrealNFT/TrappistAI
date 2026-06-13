@@ -6,6 +6,7 @@ import Home from './pages/Home'
 import Generate from './pages/Generate'
 import Profile from './pages/Profile'
 import BuyCredits from './pages/BuyCredits'
+import MyRWA from './pages/MyRWA'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
 import { getBalance } from './services/api'
@@ -164,6 +165,11 @@ function App() {
                   balance={balance}
                   provider={provider}
                   onPurchaseComplete={refreshBalance}
+                />
+              } />
+              <Route path="/my-rwa" element={
+                <MyRWA 
+                  wallet={wallet}
                 />
               } />
             </Routes>
