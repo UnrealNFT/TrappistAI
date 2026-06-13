@@ -17,7 +17,8 @@ import wavespeed
 # Import shared PostgreSQL functions
 try:
     from shared_db import (
-        store_username_mapping_pg, 
+        store_username_mapping_pg,
+        get_wallet_by_telegram_id_pg, 
         get_user_id_by_username_pg,
         get_tokens_pg,
         consume_tokens_pg,
@@ -43,6 +44,7 @@ GROQ_KEY          = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL        = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
 DB_PATH           = os.getenv("DB_PATH",      "piranai.db")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")  # PostgreSQL connection
+BACKEND_API_URL   = os.getenv("BACKEND_API_URL", "https://trappistai-backend.onrender.com")
 ADMIN_USERNAME    = os.getenv("ADMIN_USERNAME", "djaf77").lstrip("@").lower()
 
 USE_POSTGRES = bool(DATABASE_URL)  # Use PostgreSQL if configured, else SQLite
@@ -558,12 +560,20 @@ async def _generate_and_send(update: Update, context) -> int:
             await msg.delete()
         except Exception:
             pass
+        
+        # Create tokenize keyboard
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💎 Tokenize as RWA (5 CSPR)", callback_data=f"tokenize:music:{url}:{label[:50]}")],
+            [InlineKeyboardButton("❌ Non merci", callback_data="tokenize:skip")]
+        ])
+        
         await update.effective_message.reply_audio(
             audio=url,
             caption=f"🎵 *{label}* {vi}\n🎸 `{tags}`\n\n[Lien direct]({url})",
             parse_mode=ParseMode.MARKDOWN,
             title=f"PiranAI — {label}",
             performer="HeartMuLa x WaveSpeed",
+            reply_markup=keyboard,
         )
         logger.info("Music [%s/%s] %s → %s", label, voice, update.effective_user.id, url)
 
@@ -828,10 +838,18 @@ async def cmd_image(update: Update, context) -> None:
     try:
         url = await asyncio.get_event_loop().run_in_executor(None, wavespeed.generate_image, prompt)
         await msg.delete()
+        
+        # Create tokenize keyboard
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💎 Tokenize as RWA (5 CSPR)", callback_data=f"tokenize:image:{url}:{prompt[:100]}")],
+            [InlineKeyboardButton("❌ Non merci", callback_data="tokenize:skip")]
+        ])
+        
         await update.message.reply_photo(
             photo=url,
             caption=f"🎨 *{prompt[:80]}*\n\n[Lien direct]({url})",
             parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboard,
         )
         logger.info("Image %s: %s", update.effective_user.id, url)
     except Exception as e:
@@ -1502,6 +1520,9 @@ def main():
         per_chat=True,
     )
     app.add_handler(conv_3d)
+
+    # Tokenize callback (must be before other handlers to avoid conflicts)
+    app.add_handler(CallbackQueryHandler(on_tokenize_asset, pattern=r"^tokenize:"))
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("link",    cmd_link))

@@ -147,3 +147,28 @@ def add_tokens_pg(telegram_user_id: int, amount: int) -> int:
         print(f"⚠️ Failed to add tokens to PostgreSQL: {e}")
         return 0
 
+
+def get_wallet_by_telegram_id_pg(telegram_user_id: int) -> str:
+    """
+    Get wallet address for a Telegram user from PostgreSQL.
+    Returns wallet address or empty string if not found/verified.
+    """
+    if not DATABASE_URL:
+        return ""
+    
+    try:
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT wallet_address 
+                    FROM users 
+                    WHERE telegram_user_id = %s 
+                      AND telegram_verified = TRUE
+                    LIMIT 1
+                """, (telegram_user_id,))
+                result = cur.fetchone()
+                return result[0] if result else ""
+    except Exception as e:
+        print(f"⚠️ Failed to get wallet from PostgreSQL: {e}")
+        return ""
+
