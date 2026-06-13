@@ -7,6 +7,7 @@ import os
 import asyncio
 import random
 import requests
+import psycopg2
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
@@ -25,6 +26,14 @@ from db import get_db_session, get_user_balance, consume_user_tokens, get_paymen
 import wavespeed
 
 load_dotenv()
+
+# Database connection helper for marketplace endpoints
+def get_db_connection():
+    """Get PostgreSQL connection using psycopg2 (for Python 3.10 backend)"""
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    if not DATABASE_URL:
+        raise ValueError("DATABASE_URL not configured")
+    return psycopg2.connect(DATABASE_URL)
 
 # Groq Configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
