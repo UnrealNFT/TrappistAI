@@ -7,6 +7,7 @@ import Generate from './pages/Generate'
 import Profile from './pages/Profile'
 import BuyCredits from './pages/BuyCredits'
 import MyRWA from './pages/MyRWA'
+import Marketplace from './pages/Marketplace'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
 import { getBalance } from './services/api'
@@ -169,6 +170,11 @@ function App() {
               } />
               <Route path="/my-rwa" element={
                 <MyRWA 
+                  wallet={wallet}
+                />
+              } />
+              <Route path="/marketplace" element={
+                <Marketplace 
                   wallet={wallet}
                 />
               } />

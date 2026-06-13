@@ -1689,6 +1689,442 @@ async def get_rwa_token(request: Request, token_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
+# RWA MARKETPLACE ENDPOINTS
+# ============================================
+
+class CreateListingRequest(BaseModel):
+    tokenId: int
+    sellerWallet: str
+    partsForSale: int
+    pricePerPart: float
+
+class BuyPartsRequest(BaseModel):
+    listingId: int
+    buyerWallet: str
+    partsToBuy: int
+    csprTxHash: Optional[str] = None
+
+@app.post("/api/marketplace/list")
+async def create_listing(request: CreateListingRequest):
+    """
+    List RWA token for sale on marketplace
+    """
+    try:
+        print(f"📝 Creating listing for token {request.tokenId}...")
+        
+        # Verify token exists and seller owns it
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if token exists
+        cursor.execute("""
+            SELECT wallet_address, total_shares, fractional
+            FROM rwa_tokens
+            WHERE token_id = %s
+        """, (request.tokenId,))
+        
+        token = cursor.fetchone()
+        if not token:
+            raise HTTPException(status_code=404, detail="Token not found")
+        
+        token_owner, total_shares, is_fractional = token
+        
+        # Verify seller owns the token (for now, check creator)
+        if token_owner.lower() != request.sellerWallet.lower():
+            # Check if seller has ownership in rwa_ownership table
+            cursor.execute("""
+                SELECT shares_owned
+                FROM rwa_ownership
+                WHERE token_id = %s AND wallet_address = %s
+            """, (request.tokenId, request.sellerWallet))
+            
+            ownership = cursor.fetchone()
+            if not ownership:
+                raise HTTPException(status_code=403, detail="Seller does not own this token")
+            
+            owned_shares = ownership[0]
+        else:
+            # Creator owns all shares initially
+            owned_shares = total_shares
+        
+        # Verify seller has enough shares
+        if request.partsForSale > owned_shares:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Insufficient shares. You own {owned_shares}, trying to sell {request.partsForSale}"
+            )
+        
+        # Create listing
+        cursor.execute("""
+            INSERT INTO rwa_listings 
+            (token_id, seller_wallet, listing_type, parts_for_sale, price_per_part, status)
+            VALUES (%s, %s, %s, %s, %s, 'active')
+            RETURNING listing_id
+        """, (
+            request.tokenId,
+            request.sellerWallet,
+            'fractional',
+            request.partsForSale,
+            request.pricePerPart
+        ))
+        
+        listing_id = cursor.fetchone()[0]
+        conn.commit()
+        
+        print(f"✅ Listing {listing_id} created for token {request.tokenId}")
+        
+        return {
+            "success": True,
+            "listingId": listing_id,
+            "message": f"Listed {request.partsForSale} parts at {request.pricePerPart} CSPR/part"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Create listing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.post("/api/marketplace/buy")
+async def buy_parts(request: BuyPartsRequest):
+    """
+    Buy parts of RWA token from marketplace
+    """
+    try:
+        print(f"💰 Processing purchase for listing {request.listingId}...")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get listing details
+        cursor.execute("""
+            SELECT l.token_id, l.seller_wallet, l.parts_for_sale, l.parts_sold, 
+                   l.price_per_part, l.status, t.asset_type, t.asset_url, t.prompt
+            FROM rwa_listings l
+            JOIN rwa_tokens t ON l.token_id = t.token_id
+            WHERE l.listing_id = %s
+        """, (request.listingId,))
+        
+        listing = cursor.fetchone()
+        if not listing:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        
+        token_id, seller_wallet, parts_for_sale, parts_sold, price_per_part, status, asset_type, asset_url, prompt = listing
+        
+        # Verify listing is active
+        if status != 'active':
+            raise HTTPException(status_code=400, detail="Listing is not active")
+        
+        # Calculate available parts
+        available_parts = parts_for_sale - parts_sold
+        
+        # Verify enough parts available
+        if request.partsToBuy > available_parts:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough parts available. Available: {available_parts}, requested: {request.partsToBuy}"
+            )
+        
+        # Calculate total price
+        total_price = request.partsToBuy * price_per_part
+        
+        # Update listing (increment parts_sold)
+        cursor.execute("""
+            UPDATE rwa_listings
+            SET parts_sold = parts_sold + %s,
+                status = CASE 
+                    WHEN parts_sold + %s >= parts_for_sale THEN 'sold'
+                    ELSE 'active'
+                END,
+                updated_at = NOW()
+            WHERE listing_id = %s
+        """, (request.partsToBuy, request.partsToBuy, request.listingId))
+        
+        # Update or create ownership for buyer
+        cursor.execute("""
+            INSERT INTO rwa_ownership (token_id, wallet_address, shares_owned, acquired_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (token_id, wallet_address)
+            DO UPDATE SET 
+                shares_owned = rwa_ownership.shares_owned + %s,
+                acquired_at = NOW()
+        """, (token_id, request.buyerWallet, request.partsToBuy, request.partsToBuy))
+        
+        # Record transaction
+        cursor.execute("""
+            INSERT INTO rwa_transactions 
+            (token_id, listing_id, buyer_wallet, seller_wallet, parts_bought, price_per_part, total_price, cspr_tx_hash)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING transaction_id
+        """, (
+            token_id,
+            request.listingId,
+            request.buyerWallet,
+            seller_wallet,
+            request.partsToBuy,
+            price_per_part,
+            total_price,
+            request.csprTxHash
+        ))
+        
+        transaction_id = cursor.fetchone()[0]
+        conn.commit()
+        
+        print(f"✅ Purchase complete! Transaction {transaction_id}")
+        
+        return {
+            "success": True,
+            "transactionId": transaction_id,
+            "partsBought": request.partsToBuy,
+            "totalPrice": float(total_price),
+            "message": f"Successfully purchased {request.partsToBuy} parts for {total_price} CSPR"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Buy parts error: {str(e)}")
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/marketplace/listings")
+async def get_marketplace_listings(status: str = "active"):
+    """
+    Get all marketplace listings
+    """
+    try:
+        print(f"📋 Fetching marketplace listings (status: {status})...")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                l.listing_id,
+                l.token_id,
+                l.seller_wallet,
+                l.parts_for_sale,
+                l.parts_sold,
+                l.price_per_part,
+                l.status,
+                l.created_at,
+                t.asset_type,
+                t.asset_url,
+                t.prompt,
+                t.model,
+                t.total_shares,
+                t.ipfs_hash
+            FROM rwa_listings l
+            JOIN rwa_tokens t ON l.token_id = t.token_id
+            WHERE l.status = %s
+            ORDER BY l.created_at DESC
+        """, (status,))
+        
+        listings = []
+        for row in cursor.fetchall():
+            listing_id, token_id, seller_wallet, parts_for_sale, parts_sold, price_per_part, \
+            status, created_at, asset_type, asset_url, prompt, model, total_shares, ipfs_hash = row
+            
+            available_parts = parts_for_sale - parts_sold
+            
+            listings.append({
+                "listingId": listing_id,
+                "tokenId": token_id,
+                "sellerWallet": seller_wallet,
+                "partsForSale": parts_for_sale,
+                "partsSold": parts_sold,
+                "availableParts": available_parts,
+                "pricePerPart": float(price_per_part),
+                "totalValue": float(price_per_part * available_parts),
+                "status": status,
+                "createdAt": created_at.isoformat(),
+                "asset": {
+                    "type": asset_type,
+                    "url": asset_url,
+                    "prompt": prompt,
+                    "model": model,
+                    "totalShares": total_shares,
+                    "ipfsHash": ipfs_hash
+                }
+            })
+        
+        print(f"✅ Found {len(listings)} listings")
+        
+        return {
+            "success": True,
+            "listings": listings,
+            "count": len(listings)
+        }
+        
+    except Exception as e:
+        print(f"❌ Get listings error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/marketplace/listing/{listing_id}")
+async def get_listing_details(listing_id: int):
+    """
+    Get detailed info about a specific listing
+    """
+    try:
+        print(f"🔍 Fetching listing {listing_id} details...")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                l.listing_id,
+                l.token_id,
+                l.seller_wallet,
+                l.parts_for_sale,
+                l.parts_sold,
+                l.price_per_part,
+                l.status,
+                l.created_at,
+                t.asset_type,
+                t.asset_url,
+                t.prompt,
+                t.model,
+                t.total_shares,
+                t.ipfs_hash,
+                t.metadata
+            FROM rwa_listings l
+            JOIN rwa_tokens t ON l.token_id = t.token_id
+            WHERE l.listing_id = %s
+        """, (listing_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        
+        listing_id, token_id, seller_wallet, parts_for_sale, parts_sold, price_per_part, \
+        status, created_at, asset_type, asset_url, prompt, model, total_shares, ipfs_hash, metadata = row
+        
+        available_parts = parts_for_sale - parts_sold
+        
+        # Get transaction history for this listing
+        cursor.execute("""
+            SELECT transaction_id, buyer_wallet, parts_bought, total_price, created_at
+            FROM rwa_transactions
+            WHERE listing_id = %s
+            ORDER BY created_at DESC
+        """, (listing_id,))
+        
+        transactions = []
+        for tx_row in cursor.fetchall():
+            tx_id, buyer, parts, price, tx_time = tx_row
+            transactions.append({
+                "transactionId": tx_id,
+                "buyer": buyer,
+                "partsBought": parts,
+                "price": float(price),
+                "timestamp": tx_time.isoformat()
+            })
+        
+        listing_details = {
+            "listingId": listing_id,
+            "tokenId": token_id,
+            "sellerWallet": seller_wallet,
+            "partsForSale": parts_for_sale,
+            "partsSold": parts_sold,
+            "availableParts": available_parts,
+            "pricePerPart": float(price_per_part),
+            "status": status,
+            "createdAt": created_at.isoformat(),
+            "asset": {
+                "type": asset_type,
+                "url": asset_url,
+                "prompt": prompt,
+                "model": model,
+                "totalShares": total_shares,
+                "ipfsHash": ipfs_hash,
+                "metadata": metadata
+            },
+            "transactions": transactions
+        }
+        
+        print(f"✅ Listing {listing_id} details fetched")
+        
+        return {
+            "success": True,
+            "listing": listing_details
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Get listing details error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.delete("/api/marketplace/listing/{listing_id}")
+async def cancel_listing(listing_id: int, wallet_address: str):
+    """
+    Cancel an active listing
+    """
+    try:
+        print(f"🚫 Cancelling listing {listing_id}...")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verify listing exists and belongs to wallet
+        cursor.execute("""
+            SELECT seller_wallet, status
+            FROM rwa_listings
+            WHERE listing_id = %s
+        """, (listing_id,))
+        
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        
+        seller_wallet, status = result
+        
+        if seller_wallet.lower() != wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Not authorized to cancel this listing")
+        
+        if status != 'active':
+            raise HTTPException(status_code=400, detail="Can only cancel active listings")
+        
+        # Cancel listing
+        cursor.execute("""
+            UPDATE rwa_listings
+            SET status = 'cancelled', updated_at = NOW()
+            WHERE listing_id = %s
+        """, (listing_id,))
+        
+        conn.commit()
+        
+        print(f"✅ Listing {listing_id} cancelled")
+        
+        return {
+            "success": True,
+            "message": "Listing cancelled successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Cancel listing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+# ============================================
 # ERROR HANDLERS
 # ============================================
 
