@@ -1555,7 +1555,7 @@ async def mint_rwa_token(request: Request, data: MintRWARequest):
                 )
                 VALUES (
                     :wallet, :type, :ipfs, :url, 
-                    :prompt, :model, :telegram_id, :metadata::jsonb
+                    :prompt, :model, :telegram_id, CAST(:metadata AS jsonb)
                 )
                 RETURNING token_id, created_at
             """), {
