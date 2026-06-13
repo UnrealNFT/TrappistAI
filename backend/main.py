@@ -1577,11 +1577,23 @@ async def mint_rwa_token(request: Request, data: MintRWARequest):
                 "telegram_id": data.telegramUserId,
                 "metadata": str(data.metadata) if data.metadata else "{}"
             })
-            session.commit()
             
             row = result.fetchone()
             token_id = row[0]
             created_at = row[1]
+            
+            # Give 100% ownership to creator
+            session.execute(text("""
+                INSERT INTO rwa_ownership (token_id, wallet_address, shares_owned)
+                VALUES (:token_id, :wallet, 100)
+                ON CONFLICT (token_id, wallet_address) 
+                DO UPDATE SET shares_owned = rwa_ownership.shares_owned + 100
+            """), {
+                "token_id": token_id,
+                "wallet": data.walletAddress
+            })
+            
+            session.commit()
         
         print(f"✅ RWA token #{token_id} minted!")
         
@@ -2128,6 +2140,59 @@ async def cancel_listing(listing_id: int, wallet_address: str):
         raise
     except Exception as e:
         print(f"❌ Cancel listing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+# ============================================
+# ADMIN ENDPOINTS
+# ============================================
+
+@app.post("/api/admin/fix-ownership")
+async def fix_existing_token_ownership():
+    """
+    One-time fix: Give 100% ownership to creators of existing tokens without ownership entries
+    DELETE THIS ENDPOINT after running once!
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Find tokens without ownership
+        cursor.execute("""
+            SELECT token_id, wallet_address, asset_type, prompt
+            FROM rwa_tokens
+            WHERE token_id NOT IN (
+                SELECT DISTINCT token_id FROM rwa_ownership
+            )
+        """)
+        
+        tokens_to_fix = cursor.fetchall()
+        fixed_count = 0
+        
+        for token_id, wallet_address, asset_type, prompt in tokens_to_fix:
+            cursor.execute("""
+                INSERT INTO rwa_ownership (token_id, wallet_address, shares_owned)
+                VALUES (%s, %s, 100)
+                ON CONFLICT (token_id, wallet_address) DO NOTHING
+            """, (token_id, wallet_address))
+            fixed_count += 1
+            print(f"✅ Fixed ownership for token #{token_id} ({asset_type})")
+        
+        conn.commit()
+        
+        return {
+            "success": True,
+            "message": f"Fixed ownership for {fixed_count} tokens",
+            "tokens": [
+                {"tokenId": t[0], "wallet": t[1], "type": t[2], "prompt": t[3]} 
+                for t in tokens_to_fix
+            ]
+        }
+        
+    except Exception as e:
+        print(f"❌ Fix ownership error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cursor.close()
