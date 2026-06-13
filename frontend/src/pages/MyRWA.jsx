@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Gem, Image, Music, Box, ExternalLink, Calendar, Hash } from 'lucide-react';
+import { Gem, Image, Music, Box, ExternalLink, Calendar, Hash, Store, X } from 'lucide-react';
 
 const MyRWA = ({ wallet }) => {
   const [tokens, setTokens] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showListModal, setShowListModal] = useState(false);
+  const [selectedToken, setSelectedToken] = useState(null);
+  const [listForm, setListForm] = useState({
+    partsForSale: 50,
+    pricePerPart: 10
+  });
+  const [listLoading, setListLoading] = useState(false);
 
   useEffect(() => {
     if (wallet) {
@@ -58,6 +65,49 @@ const MyRWA = ({ wallet }) => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const handleListClick = (token) => {
+    setSelectedToken(token);
+    setShowListModal(true);
+  };
+
+  const handleListSubmit = async () => {
+    if (!selectedToken || !wallet) return;
+
+    try {
+      setListLoading(true);
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      
+      const response = await fetch(`${API_URL}/api/marketplace/list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tokenId: selectedToken.tokenId,
+          sellerWallet: wallet,
+          partsForSale: listForm.partsForSale,
+          pricePerPart: listForm.pricePerPart
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to create listing');
+      }
+
+      alert(`✅ Listed successfully! Listing ID: #${data.listingId}`);
+      setShowListModal(false);
+      
+      // Redirect to marketplace
+      window.location.href = '/marketplace';
+
+    } catch (err) {
+      console.error('List error:', err);
+      alert('❌ ' + err.message);
+    } finally {
+      setListLoading(false);
+    }
   };
 
   if (!wallet) {
@@ -201,6 +251,14 @@ const MyRWA = ({ wallet }) => {
                       </a>
                     )}
                     
+                    <button
+                      onClick={() => handleListClick(token)}
+                      className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Store className="w-4 h-4" />
+                      List
+                    </button>
+                    
                     {token.csprTxHash && (
                       <a
                         href={`https://cspr.live/deploy/${token.csprTxHash}`}
@@ -219,6 +277,95 @@ const MyRWA = ({ wallet }) => {
           </div>
         )}
       </div>
+
+      {/* List Modal */}
+      {showListModal && selectedToken && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-purple-500/50 rounded-lg max-w-md w-full p-6 relative">
+            {/* Close button */}
+            <button
+              onClick={() => setShowListModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header */}
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-white mb-2">List on Marketplace</h2>
+              <p className="text-gray-400 text-sm">
+                Token #{selectedToken.tokenId}: {selectedToken.prompt}
+              </p>
+            </div>
+
+            {/* Form */}
+            <div className="space-y-4">
+              {/* Parts for Sale */}
+              <div>
+                <label className="block text-white font-medium mb-2">
+                  Parts to Sell (1-100)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={listForm.partsForSale}
+                  onChange={(e) => setListForm({ ...listForm, partsForSale: parseInt(e.target.value) || 1 })}
+                  className="w-full bg-gray-800 border border-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:border-purple-500"
+                />
+                <p className="text-gray-500 text-xs mt-1">
+                  You'll keep {100 - listForm.partsForSale}% ownership
+                </p>
+              </div>
+
+              {/* Price per Part */}
+              <div>
+                <label className="block text-white font-medium mb-2">
+                  Price per Part (CSPR)
+                </label>
+                <input
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  value={listForm.pricePerPart}
+                  onChange={(e) => setListForm({ ...listForm, pricePerPart: parseFloat(e.target.value) || 0.1 })}
+                  className="w-full bg-gray-800 border border-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:border-purple-500"
+                />
+                <p className="text-gray-500 text-xs mt-1">
+                  Total: {(listForm.partsForSale * listForm.pricePerPart).toFixed(2)} CSPR for all parts
+                </p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowListModal(false)}
+                className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleListSubmit}
+                disabled={listLoading}
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {listLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Listing...
+                  </>
+                ) : (
+                  <>
+                    <Store className="w-4 h-4" />
+                    List for Sale
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
