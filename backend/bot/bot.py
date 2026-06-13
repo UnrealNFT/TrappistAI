@@ -1385,7 +1385,12 @@ async def on_tokenize_asset(update: Update, context) -> None:
     # Get user's wallet address
     wallet = get_wallet_by_telegram_id_pg(uid)
     if not wallet:
-        await q.edit_message_text(
+        # Remove buttons and send new message (can't edit_message_text on photo/audio)
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await q.message.reply_text(
             "❌ *Tu dois d'abord connecter ton wallet Casper*\n\n"
             "👉 Va sur https://trappistai.netlify.app/profile\n"
             "🔗 Connecte ton wallet et lie ton compte Telegram\n\n"
@@ -1394,16 +1399,18 @@ async def on_tokenize_asset(update: Update, context) -> None:
         )
         return
     
-    # Show progress
+    # Remove buttons and send progress message
     try:
-        await q.edit_message_text(
-            f"💎 *Tokenization en cours...*\n\n"
-            f"Type: {asset_type}\n"
-            f"Wallet: `{wallet[:20]}...`",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await q.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
+    
+    progress_msg = await q.message.reply_text(
+        f"💎 *Tokenization en cours...*\n\n"
+        f"Type: {asset_type}\n"
+        f"Wallet: `{wallet[:20]}...`",
+        parse_mode=ParseMode.MARKDOWN,
+    )
     
     try:
         # Call backend API to mint RWA token
@@ -1423,7 +1430,7 @@ async def on_tokenize_asset(update: Update, context) -> None:
         if response.status_code == 200:
             data = response.json()
             token_id = data.get("tokenId", "?")
-            await q.edit_message_text(
+            await progress_msg.edit_text(
                 f"✅ *RWA Token créé !*\n\n"
                 f"🎫 Token ID: `#{token_id}`\n"
                 f"💎 Type: {asset_type}\n\n"
@@ -1437,7 +1444,7 @@ async def on_tokenize_asset(update: Update, context) -> None:
             del _tokenize_data[short_id]
         else:
             error_msg = response.json().get("detail", "Unknown error")
-            await q.edit_message_text(
+            await progress_msg.edit_text(
                 f"❌ *Échec de la tokenization*\n\n"
                 f"Erreur: `{error_msg[:200]}`\n\n"
                 "Contacte @Djaf77 si le problème persiste.",
@@ -1445,7 +1452,7 @@ async def on_tokenize_asset(update: Update, context) -> None:
             )
     except Exception as e:
         logger.error("Tokenize API error: %s", e)
-        await q.edit_message_text(
+        await progress_msg.edit_text(
             f"❌ *Erreur de connexion à l'API*\n\n"
             f"`{str(e)[:200]}`\n\n"
             "Vérifie que le backend est en ligne.",
