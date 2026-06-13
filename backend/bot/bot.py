@@ -837,7 +837,10 @@ async def cmd_image(update: Update, context) -> None:
     msg = await update.message.reply_text("⏳ Génération en cours…")
     try:
         url = await asyncio.get_event_loop().run_in_executor(None, wavespeed.generate_image, prompt)
-        await msg.delete()
+        try:
+            await msg.delete()
+        except Exception:
+            pass
         
         # Create tokenize keyboard
         keyboard = InlineKeyboardMarkup([
@@ -853,7 +856,11 @@ async def cmd_image(update: Update, context) -> None:
         )
         logger.info("Image %s: %s", update.effective_user.id, url)
     except Exception as e:
-        await msg.edit_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        logger.error("Image generation error: %s", e)
+        try:
+            await msg.edit_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            await update.message.reply_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
 
 
 # ─── /pira3d ─────────────────────────────────────────────────────────────────
