@@ -53,6 +53,10 @@ USE_POSTGRES = bool(DATABASE_URL)  # Use PostgreSQL if configured, else SQLite
 _conv_history: dict[int, list] = {}  # user_id → derniers messages
 _last_msg: dict[int, float] = {}     # user_id → timestamp dernière requête chat
 
+# ─── Tokenization data storage (avoid callback_data length limit) ────────────
+_tokenize_data: dict[str, dict] = {}  # short_id → {type, url, prompt}
+_tokenize_counter = 0
+
 # ─── Token DB ────────────────────────────────────────────────────────────────────
 _db = sqlite3.connect(DB_PATH, check_same_thread=False)
 _db.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, tokens INTEGER DEFAULT 0)")
@@ -134,6 +138,26 @@ def get_user_id_by_username(username: str) -> int | None:
         (clean_username,)
     ).fetchone()
     return row[0] if row else None
+
+# ─── Tokenization helpers ────────────────────────────────────────────────────
+
+def create_tokenize_keyboard(asset_type: str, url: str, prompt: str) -> InlineKeyboardMarkup:
+    """Create tokenize keyboard with short callback_data to avoid 64-byte limit."""
+    global _tokenize_counter
+    _tokenize_counter += 1
+    short_id = f"t{_tokenize_counter}"
+    
+    # Store data in memory
+    _tokenize_data[short_id] = {
+        "type": asset_type,
+        "url": url,
+        "prompt": prompt
+    }
+    
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💎 Tokenize as RWA (5 CSPR)", callback_data=f"tokenize:{short_id}")],
+        [InlineKeyboardButton("❌ Non merci", callback_data="tokenize:skip")]
+    ])
 
 # (style_key) -> (tags, emoji+label)
 # Styles musicaux — tags libres sans BPM/instruments imposés
@@ -561,11 +585,8 @@ async def _generate_and_send(update: Update, context) -> int:
         except Exception:
             pass
         
-        # Create tokenize keyboard
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💎 Tokenize as RWA (5 CSPR)", callback_data=f"tokenize:music:{url}:{label[:50]}")],
-            [InlineKeyboardButton("❌ Non merci", callback_data="tokenize:skip")]
-        ])
+        # Create tokenize keyboard with short callback_data
+        keyboard = create_tokenize_keyboard("music", url, label)
         
         await update.effective_message.reply_audio(
             audio=url,
@@ -842,11 +863,8 @@ async def cmd_image(update: Update, context) -> None:
         except Exception:
             pass
         
-        # Create tokenize keyboard
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💎 Tokenize as RWA (5 CSPR)", callback_data=f"tokenize:image:{url}:{prompt[:100]}")],
-            [InlineKeyboardButton("❌ Non merci", callback_data="tokenize:skip")]
-        ])
+        # Create tokenize keyboard with short callback_data
+        keyboard = create_tokenize_keyboard("image", url, prompt)
         
         await update.message.reply_photo(
             photo=url,
@@ -1334,7 +1352,7 @@ async def on_tokenize_asset(update: Update, context) -> None:
     q = update.callback_query
     await q.answer()
     
-    data = q.data  # Format: "tokenize:{type}:{url}:{prompt}"
+    data = q.data  # Format: "tokenize:{short_id}" or "tokenize:skip"
     
     # Handle skip
     if data == "tokenize:skip":
@@ -1344,12 +1362,24 @@ async def on_tokenize_asset(update: Update, context) -> None:
             pass
         return
     
-    parts = data.split(":", 3)
-    if len(parts) < 4:
+    # Extract short_id from callback_data
+    parts = data.split(":", 1)
+    if len(parts) < 2:
         await q.edit_message_text("❌ Données invalides")
         return
     
-    _, asset_type, asset_url, prompt = parts
+    short_id = parts[1]
+    
+    # Get data from memory
+    if short_id not in _tokenize_data:
+        await q.edit_message_text("❌ Session expirée, régénère ton contenu")
+        return
+    
+    asset_info = _tokenize_data[short_id]
+    asset_type = asset_info["type"]
+    asset_url = asset_info["url"]
+    prompt = asset_info["prompt"]
+    
     uid = update.effective_user.id
     
     # Get user's wallet address
@@ -1365,12 +1395,15 @@ async def on_tokenize_asset(update: Update, context) -> None:
         return
     
     # Show progress
-    await q.edit_message_text(
-        f"💎 *Tokenization en cours...*\n\n"
-        f"Type: {asset_type}\n"
-        f"Wallet: `{wallet[:20]}...`",
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    try:
+        await q.edit_message_text(
+            f"💎 *Tokenization en cours...*\n\n"
+            f"Type: {asset_type}\n"
+            f"Wallet: `{wallet[:20]}...`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    except Exception:
+        pass
     
     try:
         # Call backend API to mint RWA token
@@ -1399,6 +1432,9 @@ async def on_tokenize_asset(update: Update, context) -> None:
                 parse_mode=ParseMode.MARKDOWN,
             )
             logger.info("Tokenized %s for user %s: token #%s", asset_type, uid, token_id)
+            
+            # Clean up memory
+            del _tokenize_data[short_id]
         else:
             error_msg = response.json().get("detail", "Unknown error")
             await q.edit_message_text(
