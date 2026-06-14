@@ -1031,7 +1031,7 @@ async def on_3d_quality(update: Update, context) -> int:
         )
         
         # Create viewer link
-        viewer_url = f"https://trappist.land/?url={urllib.parse.quote(glb_url)}"
+        viewer_url = f"https://trappist.land/viewer3d.html?url={urllib.parse.quote(glb_url)}"
         
         # Send GLB file
         texture_info = "with texture" if use_texture else "without texture"
