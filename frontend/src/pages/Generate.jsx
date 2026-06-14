@@ -439,7 +439,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
 
       // Save/Share image handlers
       if (action.startsWith('save_image:')) {
-        const parts = action.replace('save_image:', '').split(':')
+        const parts = action.replace('save_image:', '').split('|||')
         const imageUrl = parts[0]
         const description = parts[1] || 'Image generation'
         const walletToUse = wallet || 'test_wallet_01234567890abcdef'
@@ -466,7 +466,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       }
 
       if (action.startsWith('share_image:')) {
-        const parts = action.replace('share_image:', '').split(':')
+        const parts = action.replace('share_image:', '').split('|||')
         const imageUrl = parts[0]
         const description = parts[1] || 'Image generation'
         const walletToUse = wallet || 'test_wallet_01234567890abcdef'
@@ -697,8 +697,8 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
           
           // Add save/share buttons for image
           addMessage('assistant', '💾 **Save your creation:**', [
-            { label: '💾 Save to Gallery (Private)', action: `save_image:${res.url}:${args}` },
-            { label: '📤 Save & Share (Public)', action: `share_image:${res.url}:${args}` }
+            { label: '💾 Save to Gallery (Private)', action: `save_image:${res.url}|||${args}` },
+            { label: '📤 Save & Share (Public)', action: `share_image:${res.url}|||${args}` }
           ])
           
           await onBalanceUpdate()
