@@ -284,7 +284,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
               payer_wallet: wallet,
               recipient_wallet: paymentData.recipient,
               amount: paymentData.amount,
-              status: 'confirmed',
+              status: 'completed',  // Backend expects "completed" not "confirmed"
               tx_hash: `x402_tx_${Date.now()}`,
               signature: 'test_signature_remove_in_production'
             })
