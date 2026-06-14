@@ -1056,16 +1056,16 @@ async def on_3d_quality(update: Update, context) -> int:
         return ConversationHandler.END
     
     # Download GLB file and send
+    viewer_url = f"https://trappist.land/viewer3d.html?url={urllib.parse.quote(glb_url)}"
+    texture_info = "with texture" if use_texture else "without texture"
+    
     try:
+        # Download with longer timeout (GLB files can be large)
         glb_data = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: req.get(glb_url, timeout=60).content
+            None, lambda: req.get(glb_url, timeout=180).content
         )
         
-        # Create viewer link
-        viewer_url = f"https://trappist.land/viewer3d.html?url={urllib.parse.quote(glb_url)}"
-        
         # Send GLB file
-        texture_info = "with texture" if use_texture else "without texture"
         await q.message.reply_document(
             document=glb_data,
             caption=f"✅ *3D Model generated!* ({texture_info})\n\n"
@@ -1078,7 +1078,15 @@ async def on_3d_quality(update: Update, context) -> int:
         logger.info("3D model [%s]: %s (%s)", uid, glb_url, texture_info)
     except Exception as e:
         logger.error("3D file download/send error: %s", e)
-        await q.message.reply_text(f"❌ Error downloading model: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        # Fallback: send viewer link even if download failed
+        await q.message.reply_text(
+            f"✅ *3D Model generated!* ({texture_info})\n\n"
+            f"⚠️ File too large to download directly.\n"
+            f"🔗 [View in 3D]({viewer_url})\n"
+            f"💾 [Direct download]({glb_url})",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        logger.info("3D model [%s]: %s (link only, download failed)", uid, glb_url)
     
     context.user_data.clear()
     return ConversationHandler.END
