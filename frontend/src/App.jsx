@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
@@ -6,7 +6,6 @@ import Home from './pages/Home'
 import Generate from './pages/Generate'
 import Profile from './pages/Profile'
 import BuyCredits from './pages/BuyCredits'
-import MyRWA from './pages/MyRWA'
 import Marketplace from './pages/Marketplace'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
@@ -168,11 +167,7 @@ function App() {
                   onPurchaseComplete={refreshBalance}
                 />
               } />
-              <Route path="/my-rwa" element={
-                <MyRWA 
-                  wallet={wallet}
-                />
-              } />
+              <Route path="/my-rwa" element={<Navigate to="/profile" replace />} />
               <Route path="/marketplace" element={
                 <Marketplace 
                   wallet={wallet}
