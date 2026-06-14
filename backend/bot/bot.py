@@ -829,7 +829,7 @@ async def on_preview(update: Update, context) -> int:
             )
             return S_PREVIEW
         except Exception as e:
-            await q.edit_message_text(f"❌ Erreur IA: `{str(e)[:150]}`", parse_mode=ParseMode.MARKDOWN)
+            await q.edit_message_text(f"❌ AI Error: `{str(e)[:150]}`", parse_mode=ParseMode.MARKDOWN)
             return ConversationHandler.END
 
     if action == "edit":
@@ -857,7 +857,7 @@ async def on_cancel_cb(update: Update, context) -> int:
 
 async def cmd_cancel(update: Update, context) -> int:
     context.user_data.clear()
-    await update.message.reply_text("❌ Annulé.")
+    await update.message.reply_text("❌ Cancelled.")
     return ConversationHandler.END
 
 
@@ -1073,7 +1073,7 @@ async def cmd_start(update: Update, context) -> None:
         store_username_mapping(uid, user.username)
     
     if is_admin(user):
-        bonus = "\n\n🔑 *Mode admin actif — accès illimité*"
+        bonus = "\n\n🔑 *Admin mode active — unlimited access*"
     elif is_new_user(uid):
         _db.execute("INSERT OR IGNORE INTO users(user_id, tokens) VALUES(?,0)", (uid,))
         _db.commit()
@@ -1082,12 +1082,12 @@ async def cmd_start(update: Update, context) -> None:
         bal = get_tokens(uid)
         bonus = f"\n\n💰 Your balance: *{bal} token(s)*"
     await update.message.reply_text(
-        "🎨 *TrappistAI* — Images & Musique IA\n\n"
+        "🎨 *TrappistAI* — AI Images & Music\n\n"
         "🖼 */image* `prompt` → FLUX.1 image *(~5s)* — *1 token*\n"
-        "🎵 */music* → Chanson complète *(2-3 min)* — *10 tokens*\n"
-        "💬 */text* `question` → Chat Llama 3.3 *(free)*\n"
-        "💰 */balance* → Voir tes tokens\n"
-        "🔋 */topup* → Recharger des tokens"
+        "🎵 */music* → Complete song *(2-3 min)* — *10 tokens*\n"
+        "💬 */text* `question` → Llama 3.3 chat *(free)*\n"
+        "💰 */balance* → Check your tokens\n"
+        "🔋 */topup* → Buy more tokens"
         f"{bonus}",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -1100,8 +1100,8 @@ async def cmd_link(update: Update, context) -> None:
     
     if not username:
         await update.message.reply_text(
-            "❌ *Pas de username Telegram détecté*\n\n"
-            "Configure un @username dans Telegram Settings pour utiliser cette fonctionnalité.",
+            "❌ *No Telegram username detected*\n\n"
+            "Set up a @username in Telegram Settings to use this feature.",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -1110,12 +1110,12 @@ async def cmd_link(update: Update, context) -> None:
     store_username_mapping(uid, username)
     
     await update.message.reply_text(
-        f"✅ *Compte lié avec succès!*\n\n"
+        f"✅ *Account linked successfully!*\n\n"
         f"📱 Telegram: @{username}\n"
         f"🆔 User ID: `{uid}`\n\n"
         f"🔗 You can now link your account at:\n"
         f"[trappist.land/profile](https://trappist.land/profile)\n\n"
-        f"💡 Entre **@{username}** sur le site pour recevoir ton code de vérification ici!",
+        f"💡 Enter **@{username}** on the website to receive your verification code here!",
         parse_mode=ParseMode.MARKDOWN,
         disable_web_page_preview=True,
     )
@@ -1128,8 +1128,8 @@ async def cmd_verify(update: Update, context) -> None:
     
     if not username:
         await update.message.reply_text(
-            "❌ *Pas de username Telegram détecté*\n\n"
-            "Configure un @username dans Telegram Settings.",
+            "❌ *No Telegram username detected*\n\n"
+            "Set up a @username in Telegram Settings.",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -1137,9 +1137,9 @@ async def cmd_verify(update: Update, context) -> None:
     # Get code from command args
     if not context.args or len(context.args) != 1:
         await update.message.reply_text(
-            "❌ *Format incorrect*\n\n"
+            "❌ *Incorrect format*\n\n"
             "Usage: `/verify 123456`\n\n"
-            "💡 Obtiens ton code sur trappist.land/profile",
+            "💡 Get your code at trappist.land/profile",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -1148,8 +1148,8 @@ async def cmd_verify(update: Update, context) -> None:
     
     if len(code) != 6 or not code.isdigit():
         await update.message.reply_text(
-            "❌ *Code invalide*\n\n"
-            "Le code doit être 6 chiffres.",
+            "❌ *Invalid code*\n\n"
+            "Code must be 6 digits.",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -1192,7 +1192,7 @@ async def cmd_verify(update: Update, context) -> None:
                 if not result:
                     print(f"❌ Code {code} not found in database")
                     await update.message.reply_text(
-                        "❌ *Code introuvable*\n\n"
+                        "❌ *Code not found*\n\n"
                         "Make sure you copied the code from the website.",
                         parse_mode=ParseMode.MARKDOWN,
                     )
@@ -1203,8 +1203,8 @@ async def cmd_verify(update: Update, context) -> None:
                 
                 if verified:
                     await update.message.reply_text(
-                        "❌ *Code déjà utilisé*\n\n"
-                        "Génère un nouveau code sur le site.",
+                        "❌ *Code already used*\n\n"
+                        "Generate a new code on the website.",
                         parse_mode=ParseMode.MARKDOWN,
                     )
                     return
@@ -1225,8 +1225,8 @@ async def cmd_verify(update: Update, context) -> None:
                 
                 if now > expires_at:
                     await update.message.reply_text(
-                        "❌ *Code expiré*\n\n"
-                        "Génère un nouveau code sur le site (valable 10 min).",
+                        "❌ *Code expired*\n\n"
+                        "Generate a new code on the website (valid for 10 min).",
                         parse_mode=ParseMode.MARKDOWN,
                     )
                     return
@@ -1234,9 +1234,9 @@ async def cmd_verify(update: Update, context) -> None:
                 if stored_username.lower() != username.lower():
                     print(f"❌ Username mismatch: expected {stored_username}, got {username}")
                     await update.message.reply_text(
-                        f"❌ *Username incorrect*\n\n"
+                        f"❌ *Incorrect username*\n\n"
                         f"This code is for @{stored_username}, but you are @{username}.\n\n"
-                        f"Enregistre @{username} sur le site d'abord.",
+                        f"Register @{username} on the website first.",
                         parse_mode=ParseMode.MARKDOWN,
                     )
                     return
@@ -1283,7 +1283,7 @@ async def cmd_verify(update: Update, context) -> None:
         traceback.print_exc()
         await update.message.reply_text(
             "❌ *Database error*\n\n"
-            f"Erreur: `{str(e)[:100]}`\n\n"
+            f"Error: `{str(e)[:100]}`\n\n"
             "Contact @djaf77 if the problem persists.",
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -1291,7 +1291,7 @@ async def cmd_verify(update: Update, context) -> None:
         print(f"❌ Import error: {e}")
         await update.message.reply_text(
             "❌ *Missing module*\n\n"
-            f"Erreur: `{str(e)}`\n\n"
+            f"Error: `{str(e)}`\n\n"
             "Contact @djaf77 - psycopg not installed.",
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -1300,8 +1300,8 @@ async def cmd_verify(update: Update, context) -> None:
         import traceback
         traceback.print_exc()
         await update.message.reply_text(
-            "❌ *Erreur lors de la vérification*\n\n"
-            f"Erreur: `{str(e)[:100]}`\n\n"
+            "❌ *Verification error*\n\n"
+            f"Error: `{str(e)[:100]}`\n\n"
             "Try again in a few seconds.",
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -1309,10 +1309,10 @@ async def cmd_verify(update: Update, context) -> None:
 async def cmd_help(update: Update, context) -> None:
     await update.message.reply_text(
         "📖 *TrappistAI Help*\n\n"
-        "🖼 */image* `prompt` — image FLUX.1 **(1 token)**\n"
+        "🖼 */image* `prompt` — FLUX.1 image **(1 token)**\n"
         "🎵 */music* — wizard style→voice→theme→lyrics **(10 tokens)**\n"
-        "💬 */text* `question` — AI chat Llama 3.3 **(free)**\n"
-        "💰 */balance* — see your balance\n"
+        "💬 */text* `question` — Llama 3.3 AI chat **(free)**\n"
+        "💰 */balance* — check your balance\n"
         "🔋 */topup* — buy more tokens\n"
         "🔗 */link* — link with TrappistAI website\n\n"
         "⚡ WaveSpeed + HeartMuLa + Groq",
@@ -1322,16 +1322,16 @@ async def cmd_help(update: Update, context) -> None:
 
 async def cmd_about(update: Update, context) -> None:
     await update.message.reply_text(
-        "🧠 *Stack IA — TrappistAI*\n\n"
+        "🧠 *AI Stack — TrappistAI*\n\n"
         "🎵 *Music — HeartMuLa*\n"
-        "┣ HeartMuLa LLM : *3B paramètres* (Llama 3.2 backbone)\n"
-        "┣ HeartCodec : *1.5B params* — tokenizer audio 12.5 Hz\n"
+        "┣ HeartMuLa LLM : *3B params* (Llama 3.2 backbone)\n"
+        "┣ HeartCodec : *1.5B params* — audio tokenizer 12.5 Hz\n"
         "┃   → generates long songs without exploding VRAM\n"
-        "┣ HeartCLAP : alignement texte↔audio\n"
+        "┣ HeartCLAP : text↔audio alignment\n"
         "┗ HeartTranscriptor : lyrics → tokens\n\n"
         "⚡ Total pipeline ~4-5B params — runs on RTX 3090/4090\n"
-        "_(version 7B interne en dev — coming soon)_\n\n"
-        "🇫🇷 *Image — FLUX.1-schnell*\n"
+        "_(7B internal version in dev — coming soon)_\n\n"
+        "🖼 *Image — FLUX.1-schnell*\n"
         "┗ 12B params, 4 steps, distilled by Black Forest Labs\n\n"
         "💬 *Lyrics & Chat — Groq + Llama 3.3 70B*\n"
         "┗ Ultra-fast inference via Groq Cloud (~1s)\n\n"
@@ -1701,7 +1701,7 @@ async def error_handler(update: object, context) -> None:
     if update and hasattr(update, 'effective_message') and update.effective_message:
         try:
             await update.effective_message.reply_text(
-                "⚠️ *Erreur interne détectée*\n"
+                "⚠️ *Internal error detected*\n"
                 "Ton état de conversation a été réinitialisé.\n"
                 "Relance ta commande (/music, /pira3d, etc.)",
                 parse_mode=ParseMode.MARKDOWN,
