@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
+import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle, Zap } from 'lucide-react'
 import { CLPublicKey, DeployUtil } from 'casper-js-sdk'
 
 const PACKAGES = [
@@ -15,6 +15,7 @@ const CASPER_CONFIG = {
 
 export default function BuyCredits({ wallet, balance, provider, onPurchaseComplete }) {
   const [selected, setSelected] = useState(null)
+  const [paymentMode, setPaymentMode] = useState('manual') // 'manual' or 'x402'
   const [paying, setPaying] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
@@ -235,6 +236,103 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
     } catch (err) {
       console.error('❌ Payment error:', err)
       setError(err.message || 'Payment failed. Please try again.')
+      setPaying(false)
+      setVerifying(false)
+    }
+  }
+
+  const handlePayWithX402 = async () => {
+    if (!wallet) {
+      setError('Please connect your wallet first')
+      return
+    }
+
+    setPaying(true)
+    setError('')
+    setSuccess(false)
+
+    try {
+      console.log('⚡ x402 Auto-Payment:', selected.cspr, 'CSPR')
+      
+      // Step 1: Request x402 payment (backend returns 402)
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/buy-credits-x402`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wallet,
+          package: 'starter'
+        })
+      })
+
+      if (response.status === 402) {
+        const paymentData = await response.json()
+        console.log('✅ x402 Payment Required:', paymentData)
+        
+        setTxHash(paymentData.payment_id)
+        setPaying(false)
+        setVerifying(true)
+
+        // TODO: Open x402 payment modal (when x402 SDK is available)
+        // For now, simulate payment confirmation after 3s
+        setTimeout(async () => {
+          try {
+            // In production, this would be called by x402 Facilitator webhook
+            // For testing, we simulate it
+            console.log('🔔 Simulating x402 webhook confirmation...')
+            
+            // Poll for payment confirmation
+            let attempts = 0
+            const maxAttempts = 20
+            
+            const pollInterval = setInterval(async () => {
+              attempts++
+              console.log(`🔄 Checking x402 payment ${attempts}/${maxAttempts}...`)
+              
+              // Check if tokens were credited
+              try {
+                const balanceResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/user/${wallet}/balance`)
+                const balanceData = await balanceResponse.json()
+                
+                if (balanceData.tokens > balance) {
+                  console.log('✅ x402 payment confirmed! Tokens credited!')
+                  clearInterval(pollInterval)
+                  setSuccess(true)
+                  setVerifying(false)
+                  setError('')
+                  
+                  setTimeout(() => {
+                    onPurchaseComplete()
+                    setSelected(null)
+                    setTxHash('')
+                    setSuccess(false)
+                  }, 3000)
+                }
+              } catch (pollError) {
+                console.error('Poll error:', pollError)
+              }
+              
+              if (attempts >= maxAttempts) {
+                clearInterval(pollInterval)
+                setVerifying(false)
+                setError('Payment timeout. Please check your balance.')
+              }
+            }, 5000)
+            
+          } catch (confirmError) {
+            console.error('❌ Confirmation error:', confirmError)
+            setError('Payment confirmation failed. Please check your balance.')
+            setVerifying(false)
+          }
+        }, 3000)
+        
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'x402 payment request failed')
+      }
+
+    } catch (err) {
+      console.error('❌ x402 error:', err)
+      setError(err.message || 'x402 payment failed. Please try again.')
       setPaying(false)
       setVerifying(false)
     }

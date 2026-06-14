@@ -153,6 +153,22 @@ class VerifyPaymentRequestLegacy(BaseModel):
     walletAddress: str
     txHash: str
 
+class X402BuyCreditsRequest(BaseModel):
+    """x402 payment request (auto payment flow)"""
+    wallet: str
+    package: str  # starter, pro, etc.
+
+class X402WebhookPayload(BaseModel):
+    """x402 webhook payload from Facilitator"""
+    payment_id: str
+    payer_wallet: str
+    recipient_wallet: str
+    amount: float  # CSPR
+    currency: str  # CSPR
+    status: str  # completed, failed
+    tx_hash: str
+    signature: str  # x402 signature for verification
+
 # ============================================
 # GROQ CHAT HELPERS
 # ============================================
@@ -1188,6 +1204,130 @@ async def recover_batch_payments(
         
     except Exception as e:
         print(f"❌ Batch recovery error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================
+# X402 PAYMENT (AUTO-PAY)
+# ============================================
+
+# Configuration
+RECIPIENT_WALLET = os.getenv("RECIPIENT_WALLET", "0202e5a88e2baf0306484eced583f8642902752668b4b91070dc2abd01d6304d2cd8")
+X402_SECRET = os.getenv("X402_SECRET", "")  # Secret for verifying x402 signatures
+
+# Packages configuration
+X402_PACKAGES = {
+    "starter": {"cspr": 10, "credits": 100, "name": "Starter"}
+}
+
+# In-memory payment tracking (TODO: move to DB)
+x402_pending_payments = {}  # {payment_id: {wallet, package, created_at}}
+
+@app.post("/api/buy-credits-x402")
+@limiter.limit("20/minute")
+async def buy_credits_x402(request: Request, data: X402BuyCreditsRequest):
+    """x402 Auto-Payment - Returns 402 Payment Required for wallet to handle automatically"""
+    try:
+        # Validate package
+        if data.package not in X402_PACKAGES:
+            raise HTTPException(status_code=400, detail=f"Invalid package: {data.package}")
+        
+        pkg = X402_PACKAGES[data.package]
+        
+        # Generate unique payment ID
+        payment_id = f"x402-{data.wallet[-10:]}-{int(datetime.now().timestamp())}"
+        
+        # Store pending payment
+        x402_pending_payments[payment_id] = {
+            "wallet": data.wallet.lower().strip(),
+            "package": data.package,
+            "amount": pkg["cspr"],
+            "credits": pkg["credits"],
+            "created_at": datetime.now().isoformat()
+        }
+        
+        print(f"🔵 x402 payment request: {payment_id} - {pkg['cspr']} CSPR → {pkg['credits']} credits")
+        
+        # Return 402 Payment Required
+        return JSONResponse(
+            status_code=402,
+            content={
+                "payment_id": payment_id,
+                "amount": pkg["cspr"],
+                "currency": "CSPR",
+                "recipient": RECIPIENT_WALLET,
+                "facilitator_url": "https://facilitator.x402.network/pay",  # TODO: Real x402 Facilitator URL
+                "description": f"{pkg['name']} Bundle - {pkg['credits']} credits",
+                "webhook_url": f"{os.getenv('BACKEND_URL', 'https://trappistai-backend.onrender.com')}/webhook/x402",
+                "metadata": {
+                    "package": data.package,
+                    "credits": pkg["credits"]
+                }
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ x402 request error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/webhook/x402")
+async def x402_webhook(data: X402WebhookPayload):
+    """Webhook called by x402 Facilitator when payment is confirmed"""
+    try:
+        print(f"📥 x402 webhook received: {data.payment_id}")
+        
+        # TODO: Verify x402 signature (when x402 SDK is available)
+        # if not verify_x402_signature(data, X402_SECRET):
+        #     raise HTTPException(status_code=403, detail="Invalid signature")
+        
+        # Get pending payment
+        if data.payment_id not in x402_pending_payments:
+            print(f"⚠️ Unknown payment ID: {data.payment_id}")
+            raise HTTPException(status_code=404, detail="Payment ID not found")
+        
+        pending = x402_pending_payments[data.payment_id]
+        
+        # Check status
+        if data.status != "completed":
+            print(f"❌ Payment failed: {data.payment_id} - {data.status}")
+            return {"success": False, "message": f"Payment {data.status}"}
+        
+        # Verify amount
+        if data.amount != pending["amount"]:
+            print(f"⚠️ Amount mismatch: expected {pending['amount']}, got {data.amount}")
+            raise HTTPException(status_code=400, detail="Amount mismatch")
+        
+        # Credit tokens
+        from db import process_payment_manual
+        
+        wallet = pending["wallet"]
+        credits = pending["credits"]
+        package_name = X402_PACKAGES[pending["package"]]["name"]
+        
+        await process_payment_manual(
+            wallet, 
+            data.tx_hash, 
+            data.amount, 
+            credits, 
+            package_name
+        )
+        
+        print(f"✅ x402 payment confirmed: {credits} credits → {wallet[:20]}...")
+        
+        # Clean up pending payment
+        del x402_pending_payments[data.payment_id]
+        
+        return {
+            "success": True,
+            "credits": credits,
+            "message": f"Payment confirmed! {credits} credits credited."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ x402 webhook error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
