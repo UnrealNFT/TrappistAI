@@ -296,6 +296,9 @@ const MyRWA = ({ wallet }) => {
               <p className="text-gray-400 text-sm">
                 Token #{selectedToken.tokenId}: {selectedToken.prompt}
               </p>
+              <p className="text-purple-400 text-xs mt-1">
+                Total: {selectedToken.totalShares?.toLocaleString() || 100} parts (1 part = {((100 / (selectedToken.totalShares || 100)).toFixed(4))}%)
+              </p>
             </div>
 
             {/* Form */}
@@ -303,18 +306,18 @@ const MyRWA = ({ wallet }) => {
               {/* Parts for Sale */}
               <div>
                 <label className="block text-white font-medium mb-2">
-                  Parts to Sell (1-100)
+                  Parts to Sell (1-{selectedToken.totalShares?.toLocaleString() || 100})
                 </label>
                 <input
                   type="number"
                   min="1"
-                  max="100"
+                  max={selectedToken.totalShares || 100}
                   value={listForm.partsForSale}
                   onChange={(e) => setListForm({ ...listForm, partsForSale: parseInt(e.target.value) || 1 })}
                   className="w-full bg-gray-800 border border-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:border-purple-500"
                 />
                 <p className="text-gray-500 text-xs mt-1">
-                  You'll keep {100 - listForm.partsForSale}% ownership
+                  You'll keep {((selectedToken.totalShares || 100) - listForm.partsForSale).toLocaleString()} parts ({(((selectedToken.totalShares || 100) - listForm.partsForSale) / (selectedToken.totalShares || 100) * 100).toFixed(2)}% ownership)
                 </p>
               </div>
 

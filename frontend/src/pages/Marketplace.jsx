@@ -7,6 +7,8 @@ const Marketplace = ({ wallet }) => {
   const [loading, setLoading] = useState(true);
   const [selectedListing, setSelectedListing] = useState(null);
   const [percentage, setPercentage] = useState(50);
+  const [exactParts, setExactParts] = useState(0);
+  const [inputMode, setInputMode] = useState('percentage'); // 'percentage' or 'exact'
   const [buying, setBuying] = useState(false);
 
   useEffect(() => {
@@ -49,8 +51,18 @@ const Marketplace = ({ wallet }) => {
       return;
     }
 
-    const partsToBuy = Math.floor((percentage / 100) * selectedListing.availableParts);
+    // Calculate parts to buy based on input mode
+    const partsToBuy = inputMode === 'exact' 
+      ? exactParts 
+      : Math.floor((percentage / 100) * selectedListing.availableParts);
+    
+    if (partsToBuy <= 0 || partsToBuy > selectedListing.availableParts) {
+      alert(`Invalid amount. Choose between 1 and ${selectedListing.availableParts} parts`);
+      return;
+    }
+
     const totalCost = (partsToBuy * selectedListing.pricePerPart).toFixed(4);
+    const percentOwned = ((partsToBuy / selectedListing.availableParts) * 100).toFixed(2);
 
     try {
       setBuying(true);
@@ -74,7 +86,7 @@ const Marketplace = ({ wallet }) => {
       const data = await response.json();
 
       if (data.success) {
-        alert(`✅ Success! You now own ${percentage}% of RWDA #${selectedListing.tokenId}`);
+        alert(`✅ Success! You bought ${partsToBuy} parts (${percentOwned}%) of Token #${selectedListing.tokenId}`);
         setSelectedListing(null);
         fetchListings();
       } else {
@@ -292,110 +304,177 @@ const Marketplace = ({ wallet }) => {
                   <div className="bg-gray-800 rounded-lg p-6 mb-6">
                     <h3 className="text-lg font-semibold mb-4">Buy Amount</h3>
                     
-                    {/* Slider */}
-                    <div className="mb-6">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={percentage}
-                        onChange={(e) => setPercentage(parseInt(e.target.value))}
-                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                      />
-                      
-                      {/* Markers */}
-                      <div className="flex justify-between text-sm text-gray-400 mt-2">
-                        <span>0%</span>
-                        <span>25%</span>
-                        <span>50%</span>
-                        <span>75%</span>
-                        <span>100%</span>
-                      </div>
+                    {/* Input Mode Toggle */}
+                    <div className="flex gap-2 mb-4">
+                      <button
+                        onClick={() => setInputMode('percentage')}
+                        className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                          inputMode === 'percentage'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                      >
+                        % Slider
+                      </button>
+                      <button
+                        onClick={() => setInputMode('exact')}
+                        className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                          inputMode === 'exact'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                      >
+                        Exact Parts
+                      </button>
                     </div>
 
-                    {/* Quick Buy Buttons */}
-                    <div className="grid grid-cols-4 gap-2 mb-6">
-                      {[25, 50, 75, 100].map((percent) => (
-                        <button
-                          key={percent}
-                          onClick={() => setPercentage(percent)}
-                          className={`py-2 rounded-lg font-semibold transition-colors ${
-                            percentage === percent
-                              ? 'bg-purple-600 text-white'
-                              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                          }`}
-                        >
-                          {percent}%
-                        </button>
-                      ))}
-                    </div>
+                    {/* Exact Parts Input */}
+                    {inputMode === 'exact' && (
+                      <div className="mb-6">
+                        <label className="block text-sm text-gray-400 mb-2">
+                          Number of parts to buy (max: {selectedListing.availableParts})
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max={selectedListing.availableParts}
+                          value={exactParts}
+                          onChange={(e) => setExactParts(parseInt(e.target.value) || 0)}
+                          className="w-full bg-gray-900 border border-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:border-purple-500"
+                          placeholder={`Enter 1-${selectedListing.availableParts}`}
+                        />
+                        <p className="text-xs text-gray-500 mt-2">
+                          = {((exactParts / selectedListing.availableParts) * 100).toFixed(2)}% ownership
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Slider (only show in percentage mode) */}
+                    {inputMode === 'percentage' && (
+                      <>
+                        <div className="mb-6">
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={percentage}
+                            onChange={(e) => setPercentage(parseInt(e.target.value))}
+                            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                          />
+                          
+                          {/* Markers */}
+                          <div className="flex justify-between text-sm text-gray-400 mt-2">
+                            <span>0%</span>
+                            <span>25%</span>
+                            <span>50%</span>
+                            <span>75%</span>
+                            <span>100%</span>
+                          </div>
+                        </div>
+
+                        {/* Quick Buy Buttons */}
+                        <div className="grid grid-cols-4 gap-2 mb-6">
+                          {[25, 50, 75, 100].map((percent) => (
+                            <button
+                              key={percent}
+                              onClick={() => setPercentage(percent)}
+                              className={`py-2 rounded-lg font-semibold transition-colors ${
+                                percentage === percent
+                                  ? 'bg-purple-600 text-white'
+                                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                              }`}
+                            >
+                              {percent}%
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
 
                     {/* Ownership Gauge */}
                     <div className="mb-6">
-                      <div className="h-12 bg-gray-700 rounded-lg relative overflow-hidden">
-                        <motion.div
-                          className="absolute h-full bg-gradient-to-r from-green-500 to-green-400 flex items-center justify-end pr-3"
-                          animate={{ width: `${percentage}%` }}
-                          transition={{ duration: 0.3 }}
-                        >
-                          {percentage > 15 && (
-                            <span className="text-xs font-bold text-white">
-                              YOU: {percentage}%
-                            </span>
-                          )}
-                        </motion.div>
-                        <div
-                          className="absolute h-full bg-gray-600 right-0 flex items-center justify-start pl-3"
-                          style={{ width: `${100 - percentage}%` }}
-                        >
-                          {(100 - percentage) > 15 && (
-                            <span className="text-xs text-gray-300">
-                              SELLER: {100 - percentage}%
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                      {(() => {
+                        const partsToBuy = inputMode === 'exact' ? exactParts : Math.floor((percentage / 100) * selectedListing.availableParts);
+                        const buyPercent = ((partsToBuy / selectedListing.availableParts) * 100);
+                        const displayPercent = Math.min(Math.max(buyPercent, 0), 100);
+                        
+                        return (
+                          <div className="h-12 bg-gray-700 rounded-lg relative overflow-hidden">
+                            <motion.div
+                              className="absolute h-full bg-gradient-to-r from-green-500 to-green-400 flex items-center justify-end pr-3"
+                              animate={{ width: `${displayPercent}%` }}
+                              transition={{ duration: 0.3 }}
+                            >
+                              {displayPercent > 15 && (
+                                <span className="text-xs font-bold text-white">
+                                  YOU: {displayPercent.toFixed(1)}%
+                                </span>
+                              )}
+                            </motion.div>
+                            <div
+                              className="absolute h-full bg-gray-600 right-0 flex items-center justify-start pl-3"
+                              style={{ width: `${100 - displayPercent}%` }}
+                            >
+                              {(100 - displayPercent) > 15 && (
+                                <span className="text-xs text-gray-300">
+                                  SELLER: {(100 - displayPercent).toFixed(1)}%
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Purchase Summary */}
                     <div className="bg-gray-900 rounded-lg p-4 mb-4">
-                      <div className="flex justify-between mb-2">
-                        <span className="text-gray-400">Parts to buy</span>
-                        <span className="font-bold">
-                          {Math.floor((percentage / 100) * selectedListing.availableParts)} parts ({percentage}%)
-                        </span>
-                      </div>
-                      <div className="flex justify-between mb-2">
-                        <span className="text-gray-400">Total cost</span>
-                        <motion.span 
-                          key={percentage}
-                          initial={{ scale: 1.1, color: '#a855f7' }}
-                          animate={{ scale: 1, color: '#ffffff' }}
-                          className="font-bold text-purple-400 text-xl"
-                        >
-                          {(Math.floor((percentage / 100) * selectedListing.availableParts) * selectedListing.pricePerPart).toFixed(4)} CSPR
-                        </motion.span>
-                      </div>
-                      <div className="border-t border-gray-700 pt-2 mt-2">
-                        <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-                          <Check className="w-4 h-4 text-green-400" />
-                          <span>Full commercial usage rights</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-                          <Check className="w-4 h-4 text-green-400" />
-                          <span>Proportional revenue share ({percentage}%)</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-400">
-                          <Check className="w-4 h-4 text-green-400" />
-                          <span>Voting power: {Math.floor((percentage / 100) * selectedListing.availableParts)} votes</span>
-                        </div>
-                      </div>
+                      {(() => {
+                        const partsToBuy = inputMode === 'exact' ? exactParts : Math.floor((percentage / 100) * selectedListing.availableParts);
+                        const buyPercent = ((partsToBuy / selectedListing.availableParts) * 100).toFixed(2);
+                        const totalCost = (partsToBuy * selectedListing.pricePerPart).toFixed(4);
+                        
+                        return (
+                          <>
+                            <div className="flex justify-between mb-2">
+                              <span className="text-gray-400">Parts to buy</span>
+                              <span className="font-bold">
+                                {partsToBuy} parts ({buyPercent}%)
+                              </span>
+                            </div>
+                            <div className="flex justify-between mb-2">
+                              <span className="text-gray-400">Total cost</span>
+                              <motion.span 
+                                key={partsToBuy}
+                                initial={{ scale: 1.1, color: '#a855f7' }}
+                                animate={{ scale: 1, color: '#ffffff' }}
+                                className="font-bold text-purple-400 text-xl"
+                              >
+                                {totalCost} CSPR
+                              </motion.span>
+                            </div>
+                            <div className="border-t border-gray-700 pt-2 mt-2">
+                              <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
+                                <Check className="w-4 h-4 text-green-400" />
+                                <span>Full commercial usage rights</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
+                                <Check className="w-4 h-4 text-green-400" />
+                                <span>Proportional revenue share ({buyPercent}%)</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-gray-400">
+                                <Check className="w-4 h-4 text-green-400" />
+                                <span>Voting power: {partsToBuy} votes</span>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {/* Buy Button */}
                     <button 
                       onClick={handleBuy}
-                      disabled={buying || percentage === 0}
+                      disabled={buying || (inputMode === 'exact' ? exactParts === 0 : percentage === 0)}
                       className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-bold text-lg transition-colors flex items-center justify-center gap-2"
                     >
                       {buying ? (

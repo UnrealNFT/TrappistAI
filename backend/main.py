@@ -1521,6 +1521,7 @@ class MintRWARequest(BaseModel):
     model: str = ""
     telegramUserId: int = None
     metadata: dict = {}
+    totalShares: int = 100  # Customizable number of parts (100, 1000, 10000, etc.)
 
 class RWAToken(BaseModel):
     token_id: int
@@ -1582,25 +1583,27 @@ async def mint_rwa_token(request: Request, data: MintRWARequest):
             token_id = row[0]
             created_at = row[1]
             
-            # Give 100% ownership to creator
+            # Give 100% ownership to creator (total_shares specified by user)
             session.execute(text("""
                 INSERT INTO rwa_ownership (token_id, wallet_address, shares_owned)
-                VALUES (:token_id, :wallet, 100)
+                VALUES (:token_id, :wallet, :shares)
                 ON CONFLICT (token_id, wallet_address) 
-                DO UPDATE SET shares_owned = rwa_ownership.shares_owned + 100
+                DO UPDATE SET shares_owned = rwa_ownership.shares_owned + :shares
             """), {
                 "token_id": token_id,
-                "wallet": data.walletAddress
+                "wallet": data.walletAddress,
+                "shares": data.totalShares
             })
             
             session.commit()
         
-        print(f"✅ RWA token #{token_id} minted!")
+        print(f"✅ RWA token #{token_id} minted with {data.totalShares} shares!")
         
         return {
             "success": True,
             "tokenId": token_id,
-            "message": f"RWA token #{token_id} successfully minted!",
+            "totalShares": data.totalShares,
+            "message": f"RWA token #{token_id} successfully minted with {data.totalShares} shares!",
             "explorerUrl": f"https://cspr.live/token/{token_id}",  # TODO: Real explorer
             "createdAt": created_at.isoformat()
         }

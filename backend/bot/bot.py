@@ -1348,7 +1348,7 @@ async def cmd_topup(update: Update, context) -> None:
 # ─── Tokenize Assets as RWA ──────────────────────────────────────────────────
 
 async def on_tokenize_asset(update: Update, context) -> None:
-    """Handle tokenize button clicks - mint RWA token via backend API."""
+    """Handle tokenize button clicks - ask for number of shares."""
     q = update.callback_query
     await q.answer()
     
@@ -1375,11 +1375,6 @@ async def on_tokenize_asset(update: Update, context) -> None:
         await q.edit_message_text("❌ Session expirée, régénère ton contenu")
         return
     
-    asset_info = _tokenize_data[short_id]
-    asset_type = asset_info["type"]
-    asset_url = asset_info["url"]
-    prompt = asset_info["prompt"]
-    
     uid = update.effective_user.id
     
     # Get user's wallet address
@@ -1395,6 +1390,70 @@ async def on_tokenize_asset(update: Update, context) -> None:
             "👉 Va sur https://trappistai.netlify.app/profile\n"
             "🔗 Connecte ton wallet et lie ton compte Telegram\n\n"
             "Ensuite tu pourras tokenizer tes créations !",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    
+    # Remove buttons and ask for number of shares
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    
+    # Create keyboard for share selection
+    keyboard = [
+        [
+            InlineKeyboardButton("100 parts (1%)", callback_data=f"shares:{short_id}:100"),
+            InlineKeyboardButton("1,000 parts (0.1%)", callback_data=f"shares:{short_id}:1000"),
+        ],
+        [
+            InlineKeyboardButton("10,000 parts (0.01%)", callback_data=f"shares:{short_id}:10000"),
+        ],
+        [InlineKeyboardButton("❌ Annuler", callback_data="tokenize:skip")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await q.message.reply_text(
+        "💎 *Combien de parts pour ce token ?*\n\n"
+        "🟢 *100 parts* = Simple (1 part = 1%)\n"
+        "🟡 *1,000 parts* = Standard (1 part = 0.1%)\n"
+        "🔵 *10,000 parts* = Pro (1 part = 0.01%)\n\n"
+        "➡️ Plus de parts = Plus de flexibilité pour vendre",
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+async def on_tokenize_shares_choice(update: Update, context) -> None:
+    """Handle share count selection and mint RWA token."""
+    q = update.callback_query
+    await q.answer()
+    
+    data = q.data  # Format: "shares:{short_id}:{count}"
+    parts = data.split(":")
+    if len(parts) != 3:
+        await q.edit_message_text("❌ Données invalides")
+        return
+    
+    short_id = parts[1]
+    total_shares = int(parts[2])
+    
+    # Get data from memory
+    if short_id not in _tokenize_data:
+        await q.edit_message_text("❌ Session expirée, régénère ton contenu")
+        return
+    
+    asset_info = _tokenize_data[short_id]
+    asset_type = asset_info["type"]
+    asset_url = asset_info["url"]
+    prompt = asset_info["prompt"]
+    
+    uid = update.effective_user.id
+    wallet = get_wallet_by_telegram_id_pg(uid)
+    
+    if not wallet:
+        await q.edit_message_text(
+            "❌ Wallet non connecté. Va sur https://trappistai.netlify.app/profile",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -1423,6 +1482,7 @@ async def on_tokenize_asset(update: Update, context) -> None:
                 "prompt": prompt,
                 "model": "wavespeed",
                 "telegramUserId": uid,
+                "totalShares": total_shares,
             },
             timeout=10,
         )
@@ -1433,12 +1493,13 @@ async def on_tokenize_asset(update: Update, context) -> None:
             await progress_msg.edit_text(
                 f"✅ *RWA Token créé !*\n\n"
                 f"🎫 Token ID: `#{token_id}`\n"
-                f"💎 Type: {asset_type}\n\n"
+                f"💎 Type: {asset_type}\n"
+                f"📊 Parts: {total_shares:,} (1 part = {100/total_shares:.2f}%)\n\n"
                 f"👉 Voir tes NFTs: https://trappistai.netlify.app/my-rwa\n"
                 f"💰 Vendre sur le marketplace: https://trappistai.netlify.app/marketplace",
                 parse_mode=ParseMode.MARKDOWN,
             )
-            logger.info("Tokenized %s for user %s: token #%s", asset_type, uid, token_id)
+            logger.info("Tokenized %s for user %s: token #%s with %d shares", asset_type, uid, token_id, total_shares)
             
             # Clean up memory
             del _tokenize_data[short_id]
@@ -1663,6 +1724,7 @@ def main():
 
     # Tokenize callback (must be before other handlers to avoid conflicts)
     app.add_handler(CallbackQueryHandler(on_tokenize_asset, pattern=r"^tokenize:"))
+    app.add_handler(CallbackQueryHandler(on_tokenize_shares_choice, pattern=r"^shares:"))
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("link",    cmd_link))
