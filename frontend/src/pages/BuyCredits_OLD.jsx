@@ -3,7 +3,7 @@ import { Check, Loader2, ExternalLink, Copy } from 'lucide-react'
 import { verifyPayment } from '../services/api'
 
 const PACKAGES = [
-  { name: 'Starter', tokens: 100, cspr: 10, popular: true }
+  { name: 'Starter', tokens: 100, cspr: 1000, popular: true }
 ]
 
 const RECEIVER_WALLET = import.meta.env.VITE_RECEIVER_WALLET || '0123456789abcdef0123456789abcdef01234567'

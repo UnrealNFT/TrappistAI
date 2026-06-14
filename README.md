@@ -137,7 +137,7 @@ Services:
 ## 💰 Payment System
 
 ### CSPR Packages
-- **Starter**: 100 tokens → 10 CSPR
+- **Starter**: 100 tokens → 1000 CSPR
 - **Pro**: 500 tokens → 45 CSPR
 - **Creator**: 1000 tokens → 80 CSPR
 - **Enterprise**: 5000 tokens → 350 CSPR

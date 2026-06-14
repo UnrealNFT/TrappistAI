@@ -1216,7 +1216,7 @@ X402_SECRET = os.getenv("X402_SECRET", "")  # Secret for verifying x402 signatur
 
 # Packages configuration
 X402_PACKAGES = {
-    "starter": {"cspr": 10, "credits": 100, "name": "Starter"}
+    "starter": {"cspr": 1000, "credits": 100, "name": "Starter"}
 }
 
 # In-memory payment tracking (TODO: move to DB)
