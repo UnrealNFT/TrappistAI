@@ -448,34 +448,96 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                   </div>
                 )}
 
+                {/* Payment Mode Selector */}
+                <div className="mb-6">
+                  <p className="text-green-300 text-sm mb-3 font-semibold">Choose Payment Method:</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setPaymentMode('manual')}
+                      className={`p-4 rounded-lg border-2 transition ${
+                        paymentMode === 'manual'
+                          ? 'border-green-500 bg-green-500/20'
+                          : 'border-gray-700 bg-gray-900/50 hover:border-green-500/50'
+                      }`}
+                    >
+                      <Wallet className="w-6 h-6 mx-auto mb-2 text-green-400" />
+                      <p className="text-white font-semibold text-sm">Manual Transfer</p>
+                      <p className="text-gray-400 text-xs mt-1">Sign with wallet</p>
+                    </button>
+                    
+                    <button
+                      onClick={() => setPaymentMode('x402')}
+                      className={`p-4 rounded-lg border-2 transition ${
+                        paymentMode === 'x402'
+                          ? 'border-purple-500 bg-purple-500/20'
+                          : 'border-gray-700 bg-gray-900/50 hover:border-purple-500/50'
+                      }`}
+                    >
+                      <Zap className="w-6 h-6 mx-auto mb-2 text-purple-400" />
+                      <p className="text-white font-semibold text-sm">x402 Auto</p>
+                      <p className="text-gray-400 text-xs mt-1">1-click payment</p>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Pay Button */}
-                <button
-                  onClick={handlePayWithWallet}
-                  disabled={paying || verifying || success}
-                  className="w-full bg-green-500 text-black font-bold py-5 rounded-xl text-lg hover:shadow-2xl hover:shadow-green-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-6 hover:bg-green-400"
-                >
-                  {paying ? (
-                    <>
-                      <Loader2 className="w-6 h-6 animate-spin" />
-                      <span>Waiting for wallet approval...</span>
-                    </>
-                  ) : verifying ? (
-                    <>
-                      <Loader2 className="w-6 h-6 animate-spin" />
-                      <span>Verifying payment on blockchain...</span>
-                    </>
-                  ) : success ? (
-                    <>
-                      <CheckCircle className="w-6 h-6" />
-                      <span>Payment Complete!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Wallet className="w-6 h-6" />
-                      <span>Pay {selected.cspr} CSPR with Casper Wallet</span>
-                    </>
-                  )}
-                </button>
+                {paymentMode === 'manual' ? (
+                  <button
+                    onClick={handlePayWithWallet}
+                    disabled={paying || verifying || success}
+                    className="w-full bg-green-500 text-black font-bold py-5 rounded-xl text-lg hover:shadow-2xl hover:shadow-green-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-6 hover:bg-green-400"
+                  >
+                    {paying ? (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        <span>Waiting for wallet approval...</span>
+                      </>
+                    ) : verifying ? (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        <span>Verifying payment on blockchain...</span>
+                      </>
+                    ) : success ? (
+                      <>
+                        <CheckCircle className="w-6 h-6" />
+                        <span>Payment Complete!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Wallet className="w-6 h-6" />
+                        <span>Pay {selected.cspr} CSPR with Casper Wallet</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handlePayWithX402}
+                    disabled={paying || verifying || success}
+                    className="w-full bg-purple-500 text-white font-bold py-5 rounded-xl text-lg hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-6 hover:bg-purple-400"
+                  >
+                    {paying ? (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        <span>Initiating x402 payment...</span>
+                      </>
+                    ) : verifying ? (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        <span>Waiting for x402 confirmation...</span>
+                      </>
+                    ) : success ? (
+                      <>
+                        <CheckCircle className="w-6 h-6" />
+                        <span>Payment Complete!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-6 h-6" />
+                        <span>Pay {selected.cspr} CSPR with x402</span>
+                      </>
+                    )}
+                  </button>
+                )}
 
                 {/* Info Box */}
                 <div className="p-4 glass border border-green-500/30 rounded-xl">
