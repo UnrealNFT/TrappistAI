@@ -191,8 +191,8 @@ S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW
 
 def _kb_quality():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎵 Standard (HM) - 10 tokens", callback_data="ms_quality:hm")],
-        [InlineKeyboardButton("🎶 HD Premium (MiniMax 2.5) - 15 tokens", callback_data="ms_quality:hd")],
+        [InlineKeyboardButton("🎵 Standard (HM) - 14 tokens", callback_data="ms_quality:hm")],
+        [InlineKeyboardButton("🎶 HD Premium (MiniMax 2.5) - 10 tokens", callback_data="ms_quality:hd")],
         [InlineKeyboardButton("❌ Annuler", callback_data="ms_cancel")],
     ])
 
@@ -346,6 +346,7 @@ def _groq_complete(messages: list, max_tokens: int = 1000) -> str:
 
 
 def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None) -> str:
+    """Generate lyrics with Groq - CRITICAL separation between STYLE and SUBJECT"""
     voice_word = "male" if voice == "male" else "female"
     artist_line = ""
     if artists:
@@ -354,24 +355,41 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
             f"\n- ARTIST STYLE: channel the flow, delivery, wordplay and energy of: {names}. "
             "Absorb their style deeply — don't just name-drop them, WRITE like them."
         )
-    sys_msg = (
-        "You are a world-class songwriter. "
-        "CRITICAL: detect the language of the theme text written by the user and write ALL lyrics in that EXACT same language. "
-        "If the theme is in French, write in French. If Spanish, write in Spanish. If Arabic, write in Arabic. Etc. "
-        "Write ONLY lyrics with structure markers. NO explanations, NO titles, NO language labels."
+    
+    system_msg = (
+        "You are a world-class songwriter and lyricist. "
+        "CRITICAL: Understand the FUNDAMENTAL difference between MUSICAL STYLE and SONG SUBJECT. "
+        "STYLE defines HOW you write (flow, rhythm, energy, delivery). "
+        "SUBJECT defines WHAT you write about (the content, the topic). "
+        "These are COMPLETELY SEPARATE concepts. A trap song can be about ANYTHING (love, dogs, cars, life). "
+        "Detect the language of the subject description and write ALL lyrics in that EXACT same language. "
+        "Write ONLY lyrics with structure markers. NO explanations, NO titles."
     )
+    
     user_msg = (
-        f"Style: {style_label}. Voice: {voice_word}. Theme: {theme}\n\n"
-        "STRICT RULES:\n"
-        "- Use markers: [intro-short] [Verse] [Chorus] [Bridge] [outro-short]\n"
-        "- Every [Verse]: 6-8 lines, AABB or ABAB end rhymes mandatory, punchlines, vivid imagery\n"
-        "- Every [Chorus]: 4-6 catchy sticky hook lines\n"
-        "- [Bridge]: 3-4 emotional twist lines\n"
-        "- TWO verses + chorus + bridge + chorus repeated\n"
-        f"- Write ENTIRELY in the SAME language as this theme: '{theme}'. Do NOT switch languages."
-        f"{artist_line}"
+        f"MUSICAL STYLE: {style_label}\n"
+        f"(This defines your flow, rhythm, delivery, and energy - NOT the content)\n\n"
+        f"VOICE TYPE: {voice_word} vocals\n\n"
+        f"SONG SUBJECT: {theme}\n"
+        f"(This is WHAT the lyrics talk about - completely independent of style)\n\n"
+        "CRITICAL EXAMPLES to avoid confusion:\n"
+        "- Style: 'Trap' + Subject: 'black dog, great companion' → Trap FLOW about a loyal dog (NOT a dog rapping)\n"
+        "- Style: 'Pop' + Subject: 'broken laptop, frustration' → Catchy pop song about tech problems\n"
+        "- Style: 'Drill' + Subject: 'grandmother, warm cookies' → Dark menacing delivery about grandma\n\n"
+        "STRICT TECHNICAL REQUIREMENTS:\n"
+        "- Structure markers: [intro-short] [Verse] [Chorus] [Bridge] [outro-short]\n"
+        "- Every [Verse]: 6-8 lines with MANDATORY end-of-line rhymes (AABB or ABAB scheme)\n"
+        "- Every [Chorus]: 4-6 catchy sticky hook lines (repeatable, memorable)\n"
+        "- [Bridge]: 3-4 lines (emotional twist or shift in perspective)\n"
+        "- TWO verses + chorus repeated + bridge\n"
+        f"- Write ENTIRELY in the SAME language as this subject: '{theme}'\n"
+        f"- Apply {style_label} style characteristics: flow, wordplay, delivery energy\n"
+        f"- Make lyrics about: {theme}\n"
+        f"{artist_line}\n"
+        "\nNOW WRITE:\n"
     )
-    return _groq_complete([{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}])
+    
+    return _groq_complete([{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}], max_tokens=1200)
 
 
 def _groq_chat(user_id: int, prompt: str) -> str:
@@ -381,15 +399,16 @@ def _groq_chat(user_id: int, prompt: str) -> str:
         _conv_history[user_id] = hist[-14:]
     messages = [
         {"role": "system", "content": (
-            f"Tu es TrappistAI. Aujourd'hui on est le {datetime.now().strftime('%d/%m/%Y')}. "
-            "Tu es un bot Telegram qui peut faire 3 trucs : générer des images IA (/image), "
-            "composer de vraies chansons complètes avec musique (/music), "
-            "et discuter librement (c'est ce que tu fais là). "
-            "Tu parles naturellement, comme un pote — cash, drôle, direct. "
-            "Tu kiffes l'IA, la musique et le crypto. "
+            f"Tu t'appelles TrappistAI et UNIQUEMENT TrappistAI - ne dis JAMAIS un autre nom. Aujourd'hui on est le {datetime.now().strftime('%d/%m/%Y')}. "
+            "Tu es un bot Telegram officiel @TrappistAI_bot qui offre 3 services : générer des images IA (/image), "
+            "composer de vraies chansons complètes avec musique instrumentale (/music avec HeartMuLa ou MiniMax 2.5), "
+            "et discuter librement avec les utilisateurs (c'est ce que tu fais en ce moment). "
+            "Tu parles naturellement, comme un pote — cash, drôle, direct, mais toujours professionnel. "
+            "Tu kiffes l'IA générative, la production musicale, et la blockchain Casper (CSPR). "
             "Tu te souviens de tout ce qu'on s'est dit dans cette conversation. "
             "Ton training s'arrête en 2023 mais on est en 2026, ne dis JAMAIS qu'on est en 2023. "
-            "Détecte la langue de l'utilisateur et réponds toujours dans cette langue."
+            "Détecte la langue de l'utilisateur et réponds toujours dans cette même langue. "
+            "Si on te demande qui tu es, réponds 'Je suis TrappistAI' avec fierté."
         )}
     ] + _conv_history[user_id]
     answer = _groq_complete(messages, max_tokens=900)
@@ -470,7 +489,7 @@ async def _generate_and_send(update: Update, context) -> int:
     
     # Determine model and tokens based on quality choice
     quality = ud.get("quality", "hm")  # Default to HeartMuLa if not set
-    tokens_needed = 10 if quality == "hm" else 15
+    tokens_needed = 14 if quality == "hm" else 10
     model_name = "HeartMuLa" if quality == "hm" else "MiniMax 2.5 HD"
     
     if not consume_tokens(uid, tokens_needed, update.effective_user.username or ""):
@@ -623,7 +642,7 @@ async def on_quality_choice(update: Update, context) -> int:
     context.user_data["quality"] = quality  # "hm" or "hd"
     
     model_name = "HeartMuLa" if quality == "hm" else "MiniMax 2.5 HD"
-    tokens_needed = 10 if quality == "hm" else 15
+    tokens_needed = 14 if quality == "hm" else 10
     await q.edit_message_text(
         f"✅ *{model_name}* sélectionné ({tokens_needed} tokens)\n\n🎼 *Étape 2/4 — Choisis ton style:*",
         reply_markup=_kb_styles(),

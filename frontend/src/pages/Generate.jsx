@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Image, Music, Box, MessageSquare, Loader2, Upload, Send, X, Download } from 'lucide-react'
-import { generateImage, generateMusic, generate3D, chat, generateLyrics, getJobStatus } from '../services/api'
+import { generateImage, generateMusic, generate3D, chat, generateLyrics, getJobStatus, mintRWAToken, shareAsset } from '../services/api'
 
 // Music styles (from PiranAI bot)
 const MUSIC_STYLES = {
@@ -108,16 +108,28 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
             
             // Then, add regenerate buttons for music (in same state update!)
             if (jobType === 'music') {
-              return [...updated, {
-                id: Date.now(),
-                role: 'assistant',
-                content: '🎵 **Want to try different lyrics?**',
-                buttons: [
-                  { label: '🔄 Regenerate Lyrics', action: 'music_preview_redo' },
-                  { label: '✏️ Write Own Lyrics', action: 'music_lyrics_own' }
-                ],
-                result: null
-              }]
+              return [...updated, 
+                {
+                  id: Date.now(),
+                  role: 'assistant',
+                  content: '🎵 **Want to try different lyrics?**',
+                  buttons: [
+                    { label: '🔄 Regenerate Lyrics', action: 'music_preview_redo' },
+                    { label: '✏️ Write Own Lyrics', action: 'music_lyrics_own' }
+                  ],
+                  result: null
+                },
+                {
+                  id: Date.now() + 1,
+                  role: 'assistant',
+                  content: '💾 **Save your creation:**',
+                  buttons: [
+                    { label: '💾 Save to Gallery (Private)', action: `save_music:${job.result.url}` },
+                    { label: '📤 Save & Share (Public)', action: `share_music:${job.result.url}` }
+                  ],
+                  result: null
+                }
+              ]
             }
             
             return updated
@@ -340,6 +352,64 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
         setCurrentFlow('music_own_lyrics')
         addMessage('assistant', `✏️ **Edit the lyrics:**\n\n\`\`\`\n${flowData.musicLyrics}\n\`\`\`\n\n_Send your edited version:_`)
         setLoading(false)
+        return
+      }
+
+      // Save/Share music handlers
+      if (action.startsWith('save_music:')) {
+        const musicUrl = action.replace('save_music:', '')
+        const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+        
+        try {
+          await mintRWAToken(
+            walletToUse,
+            'music',
+            musicUrl,
+            flowData.musicSubject || 'Music generation',
+            flowData.musicQuality === 'hm' ? 'HeartMuLa' : 'MiniMax 2.5 HD',
+            {
+              style: flowData.musicStyle,
+              voice: flowData.musicVoice,
+              lyrics: flowData.musicLyrics || ''
+            },
+            false // Private
+          )
+          
+          addMessage('assistant', '💾 **Saved to your private gallery!**\n\n_Check your profile to see all your creations._')
+        } catch (err) {
+          const errorMsg = err.response?.data?.detail || err.message
+          addMessage('assistant', `❌ Save error: ${errorMsg}`)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+
+      if (action.startsWith('share_music:')) {
+        const musicUrl = action.replace('share_music:', '')
+        const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+        
+        try {
+          await shareAsset(
+            walletToUse,
+            'music',
+            musicUrl,
+            flowData.musicSubject || 'Music generation',
+            flowData.musicQuality === 'hm' ? 'HeartMuLa' : 'MiniMax 2.5 HD',
+            {
+              style: flowData.musicStyle,
+              voice: flowData.musicVoice,
+              lyrics: flowData.musicLyrics || ''
+            }
+          )
+          
+          addMessage('assistant', '📤 **Shared publicly!**\n\n_Your music is now visible in the community feed._')
+        } catch (err) {
+          const errorMsg = err.response?.data?.detail || err.message
+          addMessage('assistant', `❌ Share error: ${errorMsg}`)
+        } finally {
+          setLoading(false)
+        }
         return
       }
 

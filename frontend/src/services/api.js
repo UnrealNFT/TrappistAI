@@ -116,4 +116,32 @@ export const unlinkTelegram = async (walletAddress) => {
   return data
 }
 
+// ===== RWA / TOKENIZATION =====
+
+export const mintRWAToken = async (walletAddress, assetType, assetUrl, prompt, model, metadata = {}, isPublic = false) => {
+  const { data } = await api.post('/api/rwa/mint', {
+    walletAddress,
+    assetType,
+    assetUrl,
+    prompt,
+    model,
+    metadata,
+    isPublic
+  })
+  return data
+}
+
+export const shareAsset = async (walletAddress, assetType, assetUrl, prompt, model, metadata = {}) => {
+  const { data } = await api.post('/api/share', {
+    walletAddress,
+    assetType,
+    assetUrl,
+    prompt,
+    model,
+    metadata,
+    isPublic: true
+  })
+  return data
+}
+
 export default api
