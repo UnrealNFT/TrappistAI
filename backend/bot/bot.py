@@ -142,7 +142,7 @@ def get_user_id_by_username(username: str) -> int | None:
 # ─── Tokenization helpers ────────────────────────────────────────────────────
 
 def create_tokenize_keyboard(asset_type: str, url: str, prompt: str) -> InlineKeyboardMarkup:
-    """Create tokenize keyboard with short callback_data to avoid 64-byte limit."""
+    """Create save to gallery keyboard with short callback_data to avoid 64-byte limit."""
     global _tokenize_counter
     _tokenize_counter += 1
     short_id = f"t{_tokenize_counter}"
@@ -155,8 +155,8 @@ def create_tokenize_keyboard(asset_type: str, url: str, prompt: str) -> InlineKe
     }
     
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💎 Tokenize as RWA (5 CSPR)", callback_data=f"tokenize:{short_id}")],
-        [InlineKeyboardButton("❌ Non merci", callback_data="tokenize:skip")]
+        [InlineKeyboardButton("💾 Save to Gallery (FREE)", callback_data=f"tokenize:{short_id}")],
+        [InlineKeyboardButton("❌ Skip", callback_data="tokenize:skip")]
     ])
 
 # (style_key) -> (tags, emoji+label)
@@ -1348,7 +1348,7 @@ async def cmd_topup(update: Update, context) -> None:
 # ─── Tokenize Assets as RWA ──────────────────────────────────────────────────
 
 async def on_tokenize_asset(update: Update, context) -> None:
-    """Handle tokenize button clicks - ask for number of shares."""
+    """Handle save to gallery button clicks - save directly without asking for shares."""
     q = update.callback_query
     await q.answer()
     
@@ -1365,160 +1365,86 @@ async def on_tokenize_asset(update: Update, context) -> None:
     # Extract short_id from callback_data
     parts = data.split(":", 1)
     if len(parts) < 2:
-        await q.edit_message_text("❌ Données invalides")
+        await q.edit_message_text("❌ Invalid data")
         return
     
     short_id = parts[1]
     
     # Get data from memory
     if short_id not in _tokenize_data:
-        await q.edit_message_text("❌ Session expirée, régénère ton contenu")
+        await q.edit_message_text("❌ Session expired, regenerate your content")
         return
     
+    asset_data = _tokenize_data[short_id]
     uid = update.effective_user.id
     
     # Get user's wallet address
     wallet = get_wallet_by_telegram_id_pg(uid)
     if not wallet:
-        # Remove buttons and send new message (can't edit_message_text on photo/audio)
+        # Remove buttons and send new message
         try:
             await q.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
         await q.message.reply_text(
-            "❌ *Tu dois d'abord connecter ton wallet Casper*\n\n"
-            "👉 Va sur https://trappistai.netlify.app/profile\n"
-            "🔗 Connecte ton wallet et lie ton compte Telegram\n\n"
-            "Ensuite tu pourras tokenizer tes créations !",
+            "❌ *Connect your Casper Wallet first*\n\n"
+            "👉 Go to https://trappistai.netlify.app/profile\n"
+            "🔗 Connect wallet and link your Telegram\n\n"
+            "Then you can save your creations!",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
     
-    # Remove buttons and ask for number of shares
+    # Remove buttons
     try:
         await q.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
     
-    # Create keyboard for share selection
-    keyboard = [
-        [
-            InlineKeyboardButton("100 parts (1%)", callback_data=f"shares:{short_id}:100"),
-            InlineKeyboardButton("1,000 parts (0.1%)", callback_data=f"shares:{short_id}:1000"),
-        ],
-        [
-            InlineKeyboardButton("10,000 parts (0.01%)", callback_data=f"shares:{short_id}:10000"),
-        ],
-        [InlineKeyboardButton("❌ Annuler", callback_data="tokenize:skip")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Show progress message
+    progress_msg = await q.message.reply_text("💾 Saving to your gallery...")
     
-    await q.message.reply_text(
-        "💎 *Combien de parts pour ce token ?*\n\n"
-        "🟢 *100 parts* = Simple (1 part = 1%)\n"
-        "🟡 *1,000 parts* = Standard (1 part = 0.1%)\n"
-        "🔵 *10,000 parts* = Pro (1 part = 0.01%)\n\n"
-        "➡️ Plus de parts = Plus de flexibilité pour vendre",
-        reply_markup=reply_markup,
-        parse_mode=ParseMode.MARKDOWN,
-    )
-
-
-async def on_tokenize_shares_choice(update: Update, context) -> None:
-    """Handle share count selection and mint RWA token."""
-    q = update.callback_query
-    await q.answer()
-    
-    data = q.data  # Format: "shares:{short_id}:{count}"
-    parts = data.split(":")
-    if len(parts) != 3:
-        await q.edit_message_text("❌ Données invalides")
-        return
-    
-    short_id = parts[1]
-    total_shares = int(parts[2])
-    
-    # Get data from memory
-    if short_id not in _tokenize_data:
-        await q.edit_message_text("❌ Session expirée, régénère ton contenu")
-        return
-    
-    asset_info = _tokenize_data[short_id]
-    asset_type = asset_info["type"]
-    asset_url = asset_info["url"]
-    prompt = asset_info["prompt"]
-    
-    uid = update.effective_user.id
-    wallet = get_wallet_by_telegram_id_pg(uid)
-    
-    if not wallet:
-        await q.edit_message_text(
-            "❌ Wallet non connecté. Va sur https://trappistai.netlify.app/profile",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
-    
-    # Remove buttons and send progress message
+    # Call backend mint API with default 100 shares (user can tokenize properly on website later)
     try:
-        await q.edit_message_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-    
-    progress_msg = await q.message.reply_text(
-        f"💎 *Tokenization en cours...*\n\n"
-        f"Type: {asset_type}\n"
-        f"Wallet: `{wallet[:20]}...`",
-        parse_mode=ParseMode.MARKDOWN,
-    )
-    
-    try:
-        # Call backend API to mint RWA token
-        response = req.post(
-            f"{BACKEND_API_URL}/api/rwa/mint",
-            json={
-                "walletAddress": wallet,
-                "assetType": asset_type,
-                "assetUrl": asset_url,
-                "prompt": prompt,
-                "model": "wavespeed",
-                "telegramUserId": uid,
-                "totalShares": total_shares,
-            },
-            timeout=10,
-        )
+        mint_url = f"{BACKEND_API_URL}/api/rwa/mint"
+        mint_payload = {
+            "walletAddress": wallet,
+            "assetType": asset_data["type"],
+            "assetUrl": asset_data["url"],
+            "ipfsHash": "",
+            "prompt": asset_data["prompt"],
+            "model": "ai_generator",
+            "telegramUserId": uid,
+            "metadata": {},
+            "totalShares": 100  # Default for gallery, user can tokenize on website
+        }
         
-        if response.status_code == 200:
-            data = response.json()
-            token_id = data.get("tokenId", "?")
+        resp = requests.post(mint_url, json=mint_payload, timeout=15)
+        resp.raise_for_status()
+        result = resp.json()
+        
+        if result.get("success"):
+            token_id = result.get("tokenId", "?")
             await progress_msg.edit_text(
-                f"✅ *RWA Token créé !*\n\n"
-                f"🎫 Token ID: `#{token_id}`\n"
-                f"💎 Type: {asset_type}\n"
-                f"📊 Parts: {total_shares:,} (1 part = {100/total_shares:.2f}%)\n\n"
-                f"👉 Voir tes NFTs: https://trappistai.netlify.app/my-rwa\n"
-                f"💰 Vendre sur le marketplace: https://trappistai.netlify.app/marketplace",
+                f"✅ *Saved to your gallery!*\n\n"
+                f"📦 Item ID: #{token_id}\n"
+                f"🌐 View: https://trappistai.netlify.app/my-rwa\n\n"
+                f"💡 *Want to tokenize it on Casper blockchain?*\n"
+                f"Go to the website and click 'Tokenize' button!",
                 parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=True
             )
-            logger.info("Tokenized %s for user %s: token #%s with %d shares", asset_type, uid, token_id, total_shares)
-            
-            # Clean up memory
-            del _tokenize_data[short_id]
         else:
-            error_msg = response.json().get("detail", "Unknown error")
-            await progress_msg.edit_text(
-                f"❌ *Échec de la tokenization*\n\n"
-                f"Erreur: `{error_msg[:200]}`\n\n"
-                "Contacte @Djaf77 si le problème persiste.",
-                parse_mode=ParseMode.MARKDOWN,
-            )
+            await progress_msg.edit_text(f"❌ Save failed: {result.get('message', 'Unknown error')}")
+    
+    except requests.Timeout:
+        await progress_msg.edit_text("❌ Timeout - backend too slow")
+    except requests.RequestException as e:
+        await progress_msg.edit_text(f"❌ Network error: {str(e)}")
     except Exception as e:
-        logger.error("Tokenize API error: %s", e)
-        await progress_msg.edit_text(
-            f"❌ *Erreur de connexion à l'API*\n\n"
-            f"`{str(e)[:200]}`\n\n"
-            "Vérifie que le backend est en ligne.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await progress_msg.edit_text(f"❌ Error: {str(e)}")
+
+
 
 
 async def cmd_text(update: Update, context) -> None:
@@ -1722,9 +1648,8 @@ def main():
     )
     app.add_handler(conv_3d)
 
-    # Tokenize callback (must be before other handlers to avoid conflicts)
+    # Save to gallery callback (must be before other handlers to avoid conflicts)
     app.add_handler(CallbackQueryHandler(on_tokenize_asset, pattern=r"^tokenize:"))
-    app.add_handler(CallbackQueryHandler(on_tokenize_shares_choice, pattern=r"^shares:"))
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("link",    cmd_link))

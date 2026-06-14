@@ -8,7 +8,7 @@ const MyRWA = ({ wallet }) => {
   const [showListModal, setShowListModal] = useState(false);
   const [selectedToken, setSelectedToken] = useState(null);
   const [listForm, setListForm] = useState({
-    partsForSale: 50,
+    partsForSale: 100,
     pricePerPart: 10
   });
   const [listLoading, setListLoading] = useState(false);
@@ -77,33 +77,21 @@ const MyRWA = ({ wallet }) => {
 
     try {
       setListLoading(true);
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
       
-      const response = await fetch(`${API_URL}/api/marketplace/list`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tokenId: selectedToken.tokenId,
-          sellerWallet: wallet,
-          partsForSale: listForm.partsForSale,
-          pricePerPart: listForm.pricePerPart
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || 'Failed to create listing');
-      }
-
-      alert(`✅ Listed successfully! Listing ID: #${data.listingId}`);
+      // TODO: Phase C - Real Casper Wallet integration
+      alert(
+        `🔜 Casper Wallet Integration Coming Soon!\n\n` +
+        `You will tokenize:\n` +
+        `• Token #${selectedToken.tokenId}\n` +
+        `• ${listForm.partsForSale.toLocaleString()} total parts\n` +
+        `• Type: ${selectedToken.assetType}\n\n` +
+        `For now, your items are saved in the gallery. Real blockchain minting coming in Phase C!`
+      );
+      
       setShowListModal(false);
-      
-      // Redirect to marketplace
-      window.location.href = '/marketplace';
 
     } catch (err) {
-      console.error('List error:', err);
+      console.error('Tokenize error:', err);
       alert('❌ ' + err.message);
     } finally {
       setListLoading(false);
@@ -131,10 +119,10 @@ const MyRWA = ({ wallet }) => {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <Gem className="w-8 h-8 text-purple-400" />
-            <h1 className="text-4xl font-bold text-white">My RWA Tokens</h1>
+            <h1 className="text-4xl font-bold text-white">My Gallery</h1>
           </div>
           <p className="text-gray-400">
-            Your AI-generated assets tokenized as NFTs on Casper blockchain
+            Your AI-generated content saved from Telegram. Click 'Tokenize' to mint on Casper blockchain
           </p>
         </div>
 
@@ -157,9 +145,9 @@ const MyRWA = ({ wallet }) => {
         {!loading && !error && tokens.length === 0 && (
           <div className="text-center py-20">
             <Gem className="w-16 h-16 mx-auto mb-4 text-gray-600" />
-            <h2 className="text-2xl font-bold text-white mb-2">No RWA Tokens Yet</h2>
+            <h2 className="text-2xl font-bold text-white mb-2">No Items Yet</h2>
             <p className="text-gray-400 mb-6">
-              Generate AI content on Telegram and tokenize it as RWA NFT!
+              Generate AI content on Telegram and save it to your gallery!
             </p>
             <a
               href="https://t.me/PiraAi_bot"
@@ -253,10 +241,10 @@ const MyRWA = ({ wallet }) => {
                     
                     <button
                       onClick={() => handleListClick(token)}
-                      className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors flex items-center justify-center gap-2"
                     >
-                      <Store className="w-4 h-4" />
-                      List
+                      <Gem className="w-4 h-4" />
+                      Tokenize
                     </button>
                     
                     {token.csprTxHash && (
@@ -264,7 +252,7 @@ const MyRWA = ({ wallet }) => {
                         href={`https://cspr.live/deploy/${token.csprTxHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors flex items-center justify-center gap-2"
+                        className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors flex items-center justify-center gap-2"
                       >
                         <Gem className="w-4 h-4" />
                         Explorer
@@ -292,51 +280,71 @@ const MyRWA = ({ wallet }) => {
 
             {/* Header */}
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-white mb-2">List on Marketplace</h2>
+              <h2 className="text-2xl font-bold text-white mb-2">Tokenize on Casper</h2>
               <p className="text-gray-400 text-sm">
                 Token #{selectedToken.tokenId}: {selectedToken.prompt}
               </p>
               <p className="text-purple-400 text-xs mt-1">
-                Total: {selectedToken.totalShares?.toLocaleString() || 100} parts (1 part = {((100 / (selectedToken.totalShares || 100)).toFixed(4))}%)
+                Create fractional ownership NFT on Casper blockchain
               </p>
             </div>
 
             {/* Form */}
             <div className="space-y-4">
-              {/* Parts for Sale */}
+              {/* Number of Parts Selection */}
               <div>
-                <label className="block text-white font-medium mb-2">
-                  Parts to Sell (1-{selectedToken.totalShares?.toLocaleString() || 100})
+                <label className="block text-white font-medium mb-3">
+                  Choose Total Parts
                 </label>
-                <input
-                  type="number"
-                  min="1"
-                  max={selectedToken.totalShares || 100}
-                  value={listForm.partsForSale}
-                  onChange={(e) => setListForm({ ...listForm, partsForSale: parseInt(e.target.value) || 1 })}
-                  className="w-full bg-gray-800 border border-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:border-purple-500"
-                />
-                <p className="text-gray-500 text-xs mt-1">
-                  You'll keep {((selectedToken.totalShares || 100) - listForm.partsForSale).toLocaleString()} parts ({(((selectedToken.totalShares || 100) - listForm.partsForSale) / (selectedToken.totalShares || 100) * 100).toFixed(2)}% ownership)
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setListForm({ ...listForm, partsForSale: 100 })}
+                    className={`px-4 py-3 rounded-lg border-2 transition ${
+                      listForm.partsForSale === 100
+                        ? 'border-purple-500 bg-purple-500/20'
+                        : 'border-gray-700 hover:border-gray-600'
+                    }`}
+                  >
+                    <div className="text-white font-bold">100</div>
+                    <div className="text-xs text-gray-400">1% per part</div>
+                  </button>
+                  <button
+                    onClick={() => setListForm({ ...listForm, partsForSale: 1000 })}
+                    className={`px-4 py-3 rounded-lg border-2 transition ${
+                      listForm.partsForSale === 1000
+                        ? 'border-purple-500 bg-purple-500/20'
+                        : 'border-gray-700 hover:border-gray-600'
+                    }`}
+                  >
+                    <div className="text-white font-bold">1,000</div>
+                    <div className="text-xs text-gray-400">0.1% per part</div>
+                  </button>
+                  <button
+                    onClick={() => setListForm({ ...listForm, partsForSale: 10000 })}
+                    className={`px-4 py-3 rounded-lg border-2 transition ${
+                      listForm.partsForSale === 10000
+                        ? 'border-purple-500 bg-purple-500/20'
+                        : 'border-gray-700 hover:border-gray-600'
+                    }`}
+                  >
+                    <div className="text-white font-bold">10,000</div>
+                    <div className="text-xs text-gray-400">0.01% per part</div>
+                  </button>
+                </div>
+                <p className="text-gray-500 text-xs mt-2">
+                  More parts = better liquidity for marketplace trading
                 </p>
               </div>
 
-              {/* Price per Part */}
-              <div>
-                <label className="block text-white font-medium mb-2">
-                  Price per Part (CSPR)
-                </label>
-                <input
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value={listForm.pricePerPart}
-                  onChange={(e) => setListForm({ ...listForm, pricePerPart: parseFloat(e.target.value) || 0.1 })}
-                  className="w-full bg-gray-800 border border-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:border-purple-500"
-                />
-                <p className="text-gray-500 text-xs mt-1">
-                  Total: {(listForm.partsForSale * listForm.pricePerPart).toFixed(2)} CSPR for all parts
-                </p>
+              {/* Info Box */}
+              <div className="bg-purple-900/30 border border-purple-500/30 rounded-lg p-4">
+                <h3 className="text-white font-semibold mb-2">📝 What happens next?</h3>
+                <ul className="text-sm text-gray-300 space-y-1">
+                  <li>• Casper Wallet will open for signature</li>
+                  <li>• Real on-chain transaction on Casper Network</li>
+                  <li>• NFT will be viewable on cspr.live explorer</li>
+                  <li>• You can list it on marketplace after minting</li>
+                </ul>
               </div>
             </div>
 
@@ -351,17 +359,17 @@ const MyRWA = ({ wallet }) => {
               <button
                 onClick={handleListSubmit}
                 disabled={listLoading}
-                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {listLoading ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    Listing...
+                    Minting...
                   </>
                 ) : (
                   <>
-                    <Store className="w-4 h-4" />
-                    List for Sale
+                    <Gem className="w-4 h-4" />
+                    Tokenize & Sign
                   </>
                 )}
               </button>

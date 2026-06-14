@@ -26,7 +26,7 @@ export default function Navbar({ wallet, balance, onConnect, onDisconnect, onRef
             Generate
           </Link>
           <Link to="/my-rwa" className="text-green-300/90 hover:text-green-400 transition">
-            💎 My RWA
+            � My Gallery
           </Link>
           <Link to="/marketplace" className="text-green-300/90 hover:text-green-400 transition">
             🏪 Marketplace
