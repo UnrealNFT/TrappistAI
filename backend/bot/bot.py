@@ -100,7 +100,7 @@ def consume_tokens(user_id: int, amount: int, username: str = "") -> bool:
     Admin (by username) always passes.
     """
     if USE_POSTGRES:
-        return consume_tokens_pg(user_id, amount, ADMIN_USERNAME if username else "")
+        return consume_tokens_pg(user_id, amount, username)
     # SQLite fallback
     if username and username.lstrip("@").lower() == ADMIN_USERNAME:
         return True
@@ -1031,7 +1031,7 @@ async def on_3d_quality(update: Update, context) -> int:
         )
         
         # Create viewer link
-        viewer_url = f"https://deluxe-souffle-bc6b1c.netlify.app/?url={urllib.parse.quote(glb_url)}"
+        viewer_url = f"https://trappist.land/?url={urllib.parse.quote(glb_url)}"
         
         # Send GLB file
         texture_info = "avec texture" if use_texture else "sans texture"
@@ -1114,7 +1114,7 @@ async def cmd_link(update: Update, context) -> None:
         f"📱 Telegram: @{username}\n"
         f"🆔 User ID: `{uid}`\n\n"
         f"🔗 You can now link your account at:\n"
-        f"[trappistai.netlify.app/profile](https://trappistai.netlify.app/profile)\n\n"
+        f"[trappist.land/profile](https://trappist.land/profile)\n\n"
         f"💡 Entre **@{username}** sur le site pour recevoir ton code de vérification ici!",
         parse_mode=ParseMode.MARKDOWN,
         disable_web_page_preview=True,
@@ -1139,7 +1139,7 @@ async def cmd_verify(update: Update, context) -> None:
         await update.message.reply_text(
             "❌ *Format incorrect*\n\n"
             "Usage: `/verify 123456`\n\n"
-            "💡 Obtiens ton code sur trappistai.netlify.app/profile",
+            "💡 Obtiens ton code sur trappist.land/profile",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -1360,7 +1360,7 @@ async def cmd_topup(update: Update, context) -> None:
     await update.message.reply_text(
         f"💵 <b>Current balance:</b> {bal} token(s)\n\n"
         "🔋 <b>Buy tokens on the website:</b>\n"
-        "👉 https://trappistai.netlify.app/buy\n\n"
+        "👉 https://trappist.land/buy-credits\n\n"
         "Secure crypto payment (CSPR)",
         parse_mode=ParseMode.HTML,
     )
@@ -1409,7 +1409,7 @@ async def on_save_asset(update: Update, context) -> None:
             pass
         await q.message.reply_text(
             "❌ *Connect your Casper Wallet first*\n\n"
-            "👉 Go to https://trappistai.netlify.app/profile\n"
+            "👉 Go to https://trappist.land/profile\n"
             "🔗 Connect wallet and link your Telegram\n\n"
             "Then you can save your creations!",
             parse_mode=ParseMode.MARKDOWN,
