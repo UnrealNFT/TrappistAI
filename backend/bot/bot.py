@@ -1419,7 +1419,7 @@ async def on_tokenize_asset(update: Update, context) -> None:
             "totalShares": 100  # Default for gallery, user can tokenize on website
         }
         
-        resp = requests.post(mint_url, json=mint_payload, timeout=15)
+        resp = req.post(mint_url, json=mint_payload, timeout=15)
         resp.raise_for_status()
         result = resp.json()
         
@@ -1437,9 +1437,9 @@ async def on_tokenize_asset(update: Update, context) -> None:
         else:
             await progress_msg.edit_text(f"❌ Save failed: {result.get('message', 'Unknown error')}")
     
-    except requests.Timeout:
+    except req.exceptions.Timeout:
         await progress_msg.edit_text("❌ Timeout - backend too slow")
-    except requests.RequestException as e:
+    except req.exceptions.RequestException as e:
         await progress_msg.edit_text(f"❌ Network error: {str(e)}")
     except Exception as e:
         await progress_msg.edit_text(f"❌ Error: {str(e)}")
