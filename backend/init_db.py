@@ -134,6 +134,29 @@ with engine.connect() as conn:
     )
     '''))
     
+    # Add is_public column for community sharing (if not exists)
+    if not DATABASE_URL.startswith("sqlite"):
+        try:
+            conn.execute(text('''
+                ALTER TABLE rwa_tokens 
+                ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE
+            '''))
+            conn.commit()
+            print("  ✓ is_public column added/verified")
+        except Exception as e:
+            print(f"  ⚠ is_public migration: {e}")
+    
+    # Create index for public items performance
+    try:
+        conn.execute(text('''
+            CREATE INDEX IF NOT EXISTS idx_rwa_tokens_is_public 
+            ON rwa_tokens(is_public, created_at DESC)
+        '''))
+        conn.commit()
+        print("  ✓ is_public index created")
+    except Exception as e:
+        print(f"  ⚠ is_public index: {e}")
+    
     # Create RWA marketplace listings table
     conn.execute(text(f'''
     CREATE TABLE IF NOT EXISTS rwa_listings (
