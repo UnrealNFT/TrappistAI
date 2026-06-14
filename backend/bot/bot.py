@@ -193,7 +193,7 @@ def _kb_quality():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🎵 Standard (HM) - 14 tokens", callback_data="ms_quality:hm")],
         [InlineKeyboardButton("🎶 HD Premium (MiniMax 2.5) - 10 tokens", callback_data="ms_quality:hd")],
-        [InlineKeyboardButton("❌ Annuler", callback_data="ms_cancel")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")],
     ])
 
 def _kb_styles():
@@ -203,27 +203,27 @@ def _kb_styles():
             InlineKeyboardButton(v[1], callback_data=f"ms_style:{k}")
             for k, v in items[i:i+3]
         ])
-    rows.append([InlineKeyboardButton("❌ Annuler", callback_data="ms_cancel")])
+    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")])
     return InlineKeyboardMarkup(rows)
 
 def _kb_voice():
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("👨 Masculine", callback_data="ms_voice:male"),
-        InlineKeyboardButton("👩 Féminine",  callback_data="ms_voice:female"),
-    ], [InlineKeyboardButton("❌ Annuler", callback_data="ms_cancel")]])
+        InlineKeyboardButton("👨 Male", callback_data="ms_voice:male"),
+        InlineKeyboardButton("👩 Female",  callback_data="ms_voice:female"),
+    ], [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")]])
 
 def _kb_choice():
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🎤 Avec paroles", callback_data="ms_choice:lyrics"),
+        InlineKeyboardButton("🎤 With Lyrics", callback_data="ms_choice:lyrics"),
         InlineKeyboardButton("🎸 Instrumental", callback_data="ms_choice:instrumental"),
     ], [
-        InlineKeyboardButton("✏️ Mes paroles",    callback_data="ms_choice:own"),
-        InlineKeyboardButton("🤖 Générer via IA", callback_data="ms_choice:ai"),
-    ], [InlineKeyboardButton("❌ Annuler", callback_data="ms_cancel")]])
+        InlineKeyboardButton("✏️ My Lyrics",    callback_data="ms_choice:own"),
+        InlineKeyboardButton("🤖 Generate via AI", callback_data="ms_choice:ai"),
+    ], [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")]])
 
 def _kb_preview():
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🎵 Générer",  callback_data="ms_preview:go"),
+        InlineKeyboardButton("🎵 Generate",  callback_data="ms_preview:go"),
         InlineKeyboardButton("🔄 Réécrire", callback_data="ms_preview:redo"),
         InlineKeyboardButton("✏️ Modifier", callback_data="ms_preview:edit"),
     ], [InlineKeyboardButton("❌ Annuler", callback_data="ms_cancel")]])
@@ -273,17 +273,18 @@ def _ollama_lyrics(style_label: str, voice: str, theme: str) -> str:
             "[intro-short]\n[Verse]\n...\n[Chorus]\n...\n[Verse]\n...\n[Bridge]\n...\n[Chorus]\n...\n[outro-short]"
         )
     else:
+        detected_lang = _detect_lang(theme)
         prompt = (
-            f"Tu es un parolier de génie style {style_label}, voix {'masculine' if voice == 'male' else 'féminine'}.\n"
-            f"Thème: {theme}\n\n"
-            "RÈGLES STRICTES:\n"
-            "- Marqueurs: [intro-short], [Verse], [Chorus], [Bridge], [outro-short]\n"
-            "- Chaque [Verse]: 6-8 lignes. RIMES en fin de ligne obligatoires (schéma AABB ou ABAB). Punchlines, jeux de mots, images fortes.\n"
-            "- Chaque [Chorus]: 4-6 lignes accrocheuses, hook fort qui reste en tête.\n"
-            "- [Bridge]: 3-4 lignes de rupture émotionnelle.\n"
-            "- Deux couplets + un bridge + refrain répété.\n"
-            "- Écris UNIQUEMENT en français.\n"
-            "- UNIQUEMENT les marqueurs et les paroles. Aucun commentaire, aucun titre, aucune explication.\n\n"
+            f"You are a genius lyricist in {style_label} style, {'male' if voice == 'male' else 'female'} voice.\n"
+            f"Theme: {theme}\n\n"
+            "STRICT RULES:\n"
+            "- Markers: [intro-short], [Verse], [Chorus], [Bridge], [outro-short]\n"
+            "- Each [Verse]: 6-8 lines. END rhymes mandatory (AABB or ABAB scheme). Punchlines, wordplay, strong imagery.\n"
+            "- Each [Chorus]: 4-6 catchy lines, strong hook that sticks.\n"
+            "- [Bridge]: 3-4 lines of emotional break.\n"
+            "- Two verses + one bridge + repeated chorus.\n"
+            f"- Write ONLY in {detected_lang}.\n"
+            "- ONLY markers and lyrics. No comments, no title, no explanations.\n\n"
             "[intro-short]\n[Verse]\n...\n[Chorus]\n...\n[Verse]\n...\n[Bridge]\n...\n[Chorus]\n...\n[outro-short]"
         )
     r = req.post(
@@ -304,13 +305,13 @@ def _ollama_chat(user_id: int, prompt: str) -> str:
 
     today = datetime.now().strftime("%d/%m/%Y")
     system = (
-        f"Tu es TrappistAI, un pote cash, drôle, intelligent et naturel. "
-        f"AUJOURD'HUI C'EST LE {today}. Quand on te demande la date ou l'année, tu réponds {today}. "
-        "Ton training s'arrête en 2023 mais tu sais qu'on est en 2026. "
-        "Ne dis JAMAIS qu'on est en 2023. "
-        "Tu parles comme un vrai humain, tu kiffes l'IA, la musique et le crypto. "
-        "Tu te souviens de tout ce qu'on s'est dit. "
-        "Détecte la langue de l'utilisateur et réponds toujours dans cette langue."
+        f"You are TrappistAI, a cool friend, funny, intelligent and natural. "
+        f"TODAY IS {today}. When asked about the date or year, you say {today}. "
+        "Your training stopped in 2023 but you know we're in 2026. "
+        "NEVER say we're in 2023. "
+        "You talk like a real human, you love AI, music and crypto. "
+        "You remember everything we talked about. "
+        "Detect the user's language and always respond in that language."
     )
     # Ollama /api/chat supporte le format messages
     r = req.post(
@@ -399,16 +400,16 @@ def _groq_chat(user_id: int, prompt: str) -> str:
         _conv_history[user_id] = hist[-14:]
     messages = [
         {"role": "system", "content": (
-            f"Tu t'appelles TrappistAI et UNIQUEMENT TrappistAI - ne dis JAMAIS un autre nom. Aujourd'hui on est le {datetime.now().strftime('%d/%m/%Y')}. "
-            "Tu es un bot Telegram officiel @TrappistAI_bot qui offre 3 services : générer des images IA (/image), "
-            "composer de vraies chansons complètes avec musique instrumentale (/music avec HeartMuLa ou MiniMax 2.5), "
-            "et discuter librement avec les utilisateurs (c'est ce que tu fais en ce moment). "
-            "Tu parles naturellement, comme un pote — cash, drôle, direct, mais toujours professionnel. "
-            "Tu kiffes l'IA générative, la production musicale, et la blockchain Casper (CSPR). "
-            "Tu te souviens de tout ce qu'on s'est dit dans cette conversation. "
-            "Ton training s'arrête en 2023 mais on est en 2026, ne dis JAMAIS qu'on est en 2023. "
-            "Détecte la langue de l'utilisateur et réponds toujours dans cette même langue. "
-            "Si on te demande qui tu es, réponds 'Je suis TrappistAI' avec fierté."
+            f"Your name is TrappistAI and ONLY TrappistAI - NEVER say another name. Today is {datetime.now().strftime('%d/%m/%Y')}. "
+            "You are an official Telegram bot @TrappistAI_bot offering 3 services: generate AI images (/image), "
+            "compose real complete songs with instrumental music (/music with HeartMuLa or MiniMax 2.5), "
+            "and chat freely with users (what you're doing right now). "
+            "You talk naturally, like a friend — cool, funny, direct, but always professional. "
+            "You love generative AI, music production, and Casper blockchain (CSPR). "
+            "You remember everything we talked about in this conversation. "
+            "Your training stopped in 2023 but we're in 2026, NEVER say we're in 2023. "
+            "Detect the user's language and always respond in that same language. "
+            "If asked who you are, answer 'I am TrappistAI' with pride."
         )}
     ] + _conv_history[user_id]
     answer = _groq_complete(messages, max_tokens=900)
@@ -495,8 +496,8 @@ async def _generate_and_send(update: Update, context) -> int:
     if not consume_tokens(uid, tokens_needed, update.effective_user.username or ""):
         bal = get_tokens(uid)
         await update.effective_message.reply_text(
-            f"❌ *{tokens_needed} tokens requis pour générer une chanson {model_name}* — Solde: `{bal}` token(s)\n"
-            "💰 Utilise `/topup` pour recharger.",
+            f"❌ *{tokens_needed} tokens required to generate {model_name} song* — Balance: `{bal}` token(s)\n"
+            "💰 Use `/topup` to buy more.",
             parse_mode=ParseMode.MARKDOWN,
         )
         context.user_data.clear()
@@ -515,9 +516,9 @@ async def _generate_and_send(update: Update, context) -> int:
     
     _, label  = STYLES[style_key]
     vi        = "👨" if voice == "male" else "👩"
-    mode_text = "🎸 Instrumental" if instrumental else f"{vi} Avec paroles"
+    mode_text = "🎸 Instrumental" if instrumental else f"{vi} With Lyrics"
 
-    # Ollama enrichit les tags selon le contenu réel des paroles (skip pour instrumental)
+    # Ollama enriches tags according to the actual lyric content (skip for instrumental)
     if instrumental:
         tags = base_tags
     else:
@@ -526,7 +527,7 @@ async def _generate_and_send(update: Update, context) -> int:
         )
 
     msg = await update.effective_message.reply_text(
-        f"🎵 Composition *{label}* {mode_text} en cours…\n🎸 `{tags}`\n⏳ Génération en cours, peut prendre 10-30 min 🙏",
+        f"🎵 Composing *{label}* {mode_text} in progress…\n🎸 `{tags}`\n⏳ Generation in progress, may take 10-30 min 🙏",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -571,7 +572,7 @@ async def _generate_and_send(update: Update, context) -> int:
         progress_task.cancel()
         try:
             await msg.edit_text(
-                f"⏳ *{label}* {vi} — Génération longue, je t'envoie dès que c'est prêt…\n"
+                f"⏳ *{label}* {vi} — Long generation, I'll send as soon as ready…\n"
                 f"_Task `{e.task_id[:16]}…` toujours en cours_",
                 parse_mode=ParseMode.MARKDOWN,
             )
@@ -584,9 +585,9 @@ async def _generate_and_send(update: Update, context) -> int:
         except Exception as e2:
             logger.error("Music timeout + retry failed: %s", e2)
             await msg.edit_text(
-                f"❌ Génération échouée après 50 min\n"
+                f"❌ Generation failed after 50 min\n"
                 f"🔑 Task ID: `{e.task_id}`\n"
-                f"_Contacte l'admin avec ce code pour récupérer ta musique_",
+                f"_Contact admin with this code to recover your music_",
                 parse_mode=ParseMode.MARKDOWN,
             )
             context.user_data.clear()
@@ -627,9 +628,9 @@ async def _generate_and_send(update: Update, context) -> int:
 async def cmd_music(update: Update, context) -> int:
     context.user_data.clear()
     await update.message.reply_text(
-        "🎼 *Choisis la qualité de génération:*\n\n"
-        "🎵 **Standard (HeartMuLa)** — Rapide, bon rapport qualité/prix\n"
-        "🎶 **HD Premium (MiniMax 2.5)** — Haute fidélité, voix humanisées",
+        "🎼 *Choose generation quality:*\n\n"
+        "🎵 **Standard (HeartMuLa)** — Fast, good quality/price ratio\n"
+        "🎶 **HD Premium (MiniMax 2.5)** — High fidelity, humanized voices",
         reply_markup=_kb_quality(),
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -644,7 +645,7 @@ async def on_quality_choice(update: Update, context) -> int:
     model_name = "HeartMuLa" if quality == "hm" else "MiniMax 2.5 HD"
     tokens_needed = 14 if quality == "hm" else 10
     await q.edit_message_text(
-        f"✅ *{model_name}* sélectionné ({tokens_needed} tokens)\n\n🎼 *Étape 2/4 — Choisis ton style:*",
+        f"✅ *{model_name}* selected ({tokens_needed} tokens)\n\n🎼 *Step 2/4 — Choose your style:*",
         reply_markup=_kb_styles(),
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -655,12 +656,12 @@ async def on_style(update: Update, context) -> int:
     await q.answer()
     key = q.data.split(":", 1)[1]
     if key not in STYLES:
-        await q.edit_message_text("❌ Style inconnu.")
+        await q.edit_message_text("❌ Unknown style.")
         return ConversationHandler.END
     context.user_data["style_key"] = key
     _, label = STYLES[key]
     await q.edit_message_text(
-        f"✅ Style: *{label}*\n\n🎤 *Étape 2/3 — Voix:*",
+        f"✅ Style: *{label}*\n\n🎤 *Step 3/4 — Voice:*",
         reply_markup=_kb_voice(),
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -675,11 +676,11 @@ async def on_voice(update: Update, context) -> int:
     voice = q.data.split(":", 1)[1]
     context.user_data["voice"] = voice
     _, label = STYLES[context.user_data["style_key"]]
-    vi = "👨 Masculine" if voice == "male" else "👩 Féminine"
+    vi = "👨 Male" if voice == "male" else "👩 Female"
     await q.edit_message_text(
         f"✅ *{label}* · {vi}\n\n"
-        "✍️ *Étape 3/3 — Décris le thème de ta chanson:*\n"
-        "_(ex: bitcoin qui monte, amour perdu, nuit en ville…)_",
+        "✍️ *Step 3/3 — Describe your song theme:*\n"
+        "_(ex: bitcoin going up, lost love, night in the city…)_",
         parse_mode=ParseMode.MARKDOWN,
     )
     return S_DESC
@@ -697,7 +698,7 @@ async def on_desc(update: Update, context) -> int:
     style_key = context.user_data.get("style_key")
     if not style_key or style_key not in STYLES:
         await update.message.reply_text(
-            "⚠️ État corrompu détecté. Relance /music pour recommencer.",
+            "⚠️ Corrupted state detected. Restart /music to begin again.",
             parse_mode=ParseMode.MARKDOWN,
         )
         return ConversationHandler.END
@@ -707,7 +708,7 @@ async def on_desc(update: Update, context) -> int:
     artist_hint = f"\n🎤 Style artiste: *{'  '.join('#'+a for a in artists)}*" if artists else ""
     await update.message.reply_text(
         f"✅ *{label}* {vi} · _{clean_theme or raw}_{artist_hint}\n\n"
-        "🎵 *Tu veux des paroles ou juste l'instrumental?*",
+        "🎵 *Do you want lyrics or just instrumental?*",
         reply_markup=_kb_choice(),
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -723,12 +724,12 @@ async def on_choice_lyrics(update: Update, context) -> int:
     context.user_data["instrumental"] = False
     
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✍️ J'écris mes paroles", callback_data="ms_lyrics:own")],
-        [InlineKeyboardButton("🤖 IA génère les paroles", callback_data="ms_lyrics:ai")],
+        [InlineKeyboardButton("✍️ I write my lyrics", callback_data="ms_lyrics:own")],
+        [InlineKeyboardButton("🤖 AI generates lyrics", callback_data="ms_lyrics:ai")],
         [InlineKeyboardButton("❌ Annuler", callback_data="ms_cancel")],
     ])
     await q.edit_message_text(
-        "🎤 *Comment veux-tu créer les paroles?*",
+        "🎤 *How do you want to create the lyrics?*",
         reply_markup=keyboard,
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -749,8 +750,8 @@ async def on_lyrics_own(update: Update, context) -> int:
     q = update.callback_query
     await q.answer()
     await q.edit_message_text(
-        "✍️ *Envoie tes paroles maintenant:*\n"
-        "_(Tu peux utiliser `[Verse]`, `[Chorus]`, `[Bridge]` ou texte libre)_\n"
+        "✍️ *Send your lyrics now:*\n"
+        "_(You can use `[Verse]`, `[Chorus]`, `[Bridge]` or free text)_\n"
         "_(ou /cancel)_",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -771,7 +772,7 @@ async def on_lyrics_ai(update: Update, context) -> int:
     vi = "👨" if ud["voice"] == "male" else "👩"
     await q.edit_message_text(
         f"🤖 *IA parolière en train d\'écrire…*\n"
-        f"Style: *{label}* {vi} · Thème: _{ud.get('theme', '')}_\n"
+        f"Style: *{label}* {vi} · Theme: _{ud.get('theme', '')}_\n"
         "_(~15 secondes)_",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -791,7 +792,7 @@ async def on_lyrics_ai(update: Update, context) -> int:
         logger.error("AI lyrics error: %s", e)
         await q.edit_message_text(
             f"❌ IA indisponible: `{str(e)[:120]}`\n\n"
-            "✍️ *Envoie tes paroles manuellement:*\n_(ou /cancel)_",
+            "✍️ *Send your lyrics manually:*\n_(or /cancel)_",
             parse_mode=ParseMode.MARKDOWN,
         )
         return S_OWN
@@ -812,7 +813,7 @@ async def on_preview(update: Update, context) -> int:
         _, label = STYLES[ud["style_key"]]
         vi = "👨" if ud["voice"] == "male" else "👩"
         await q.edit_message_text(
-            f"🔄 *Réécriture en cours…*\nStyle: *{label}* {vi} · Thème: _{ud.get('theme', '')}_",
+            f"🔄 *Rewriting in progress…*\nStyle: *{label}* {vi} · Theme: _{ud.get('theme', '')}_",
             parse_mode=ParseMode.MARKDOWN,
         )
         try:
@@ -822,7 +823,7 @@ async def on_preview(update: Update, context) -> int:
             context.user_data["lyrics"] = lyrics
             preview = lyrics[:3500] + ("…" if len(lyrics) > 3500 else "")
             await q.edit_message_text(
-                f"📝 *Nouvelles paroles:*\n\n```\n{preview}\n```\n\n_Que veux-tu faire?_",
+                f"📝 *New lyrics:*\n\n```\n{preview}\n```\n\n_What do you want to do?_",
                 reply_markup=_kb_preview(),
                 parse_mode=ParseMode.MARKDOWN,
             )
@@ -833,7 +834,7 @@ async def on_preview(update: Update, context) -> int:
 
     if action == "edit":
         await q.edit_message_text(
-            "✍️ *Envoie tes paroles modifiées:*\n_(ou /cancel)_",
+            "✍️ *Send your modified lyrics:*\n_(or /cancel)_",
             parse_mode=ParseMode.MARKDOWN,
         )
         return S_EDIT
@@ -865,7 +866,7 @@ async def cmd_cancel(update: Update, context) -> int:
 async def cmd_image(update: Update, context) -> None:
     prompt = " ".join(context.args).strip()
     if not prompt:
-        await update.message.reply_text("❌ Utilise: `/image ton prompt`", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("❌ Use: `/image your prompt`", parse_mode=ParseMode.MARKDOWN)
         return
     uid = update.effective_user.id
     if not consume_tokens(uid, 1, update.effective_user.username or ""):
@@ -875,7 +876,7 @@ async def cmd_image(update: Update, context) -> None:
             parse_mode=ParseMode.MARKDOWN,
         )
         return
-    msg = await update.message.reply_text("⏳ Génération en cours…")
+    msg = await update.message.reply_text("⏳ Generation in progress…")
     try:
         url = await asyncio.get_event_loop().run_in_executor(None, wavespeed.generate_image, prompt)
         try:
@@ -912,7 +913,7 @@ async def cmd_trappist3d(update: Update, context) -> int:
     ])
     await update.message.reply_text(
         "🎨 *TrappistAI 3D Generator*\n\n"
-        "Choisis ton mode de génération:",
+        "Choose your generation mode:",
         reply_markup=keyboard,
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -930,13 +931,13 @@ async def on_3d_menu(update: Update, context) -> int:
         return ConversationHandler.END
     
     if choice == "text_soon":
-        await q.edit_message_text("✍️ Mode texte disponible bientôt ! Utilise *From Image* pour l'instant.", parse_mode=ParseMode.MARKDOWN)
+        await q.edit_message_text("✍️ Text mode available soon! Use *From Image* for now.", parse_mode=ParseMode.MARKDOWN)
         context.user_data.clear()
         return ConversationHandler.END
     
     if choice == "image":
         await q.edit_message_text(
-            "📷 *Envoie-moi ton image*\n_(ou /cancel)_",
+            "📷 *Send me your image*\n_(or /cancel)_",
             parse_mode=ParseMode.MARKDOWN,
         )
         return S_3D_IMAGE
@@ -964,11 +965,11 @@ async def on_3d_image(update: Update, context) -> int:
         [InlineKeyboardButton("❌ Annuler", callback_data="3dq:cancel")],
     ])
     await update.message.reply_text(
-        "🎨 *Choisis la qualité du modèle 3D:*\n\n"
-        "⚡ *Sans texture* — 2 tokens (~2 min)\n"
-        "   └ Géométrie pure, monochrome\n\n"
-        "🎨 *Avec texture* — 30 tokens (~5 min)\n"
-        "   └ Couleurs et textures complètes",
+        "🎨 *Choose 3D model quality:*\n\n"
+        "⚡ *Without texture* — 2 tokens (~2 min)\n"
+        "   └ Pure geometry, monochrome\n\n"
+        "🎨 *With texture* — 30 tokens (~5 min)\n"
+        "   └ Full colors and textures",
         reply_markup=keyboard,
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -984,7 +985,7 @@ async def on_3d_quality(update: Update, context) -> int:
     image_url = context.user_data.get('3d_image_url')
     
     if not image_url:
-        await q.edit_message_text("❌ Session expirée. Utilise /trappist3d pour recommencer.")
+        await q.edit_message_text("❌ Session expired. Use /trappist3d to restart.")
         context.user_data.clear()
         return ConversationHandler.END
     
@@ -1008,11 +1009,11 @@ async def on_3d_quality(update: Update, context) -> int:
     # Check tokens
     if not consume_tokens(uid, cost, update.effective_user.username or ""):
         bal = get_tokens(uid)
-        await q.answer(f"❌ {cost} tokens requis (solde: {bal})", show_alert=True)
+        await q.answer(f"❌ {cost} tokens required (balance: {bal})", show_alert=True)
         return S_3D_QUALITY
     
     try:
-        await q.edit_message_text(f"🎨 *Génération 3D en cours…*\n_Modèle: {model_name}_\n⏳ Peut prendre jusqu'à 5 min", parse_mode=ParseMode.MARKDOWN)
+        await q.edit_message_text(f"🎨 *3D Generation in progress…*\n_Model: {model_name}_\n⏳ May take up to 5 min", parse_mode=ParseMode.MARKDOWN)
         
         # Generate 3D
         if use_texture:
@@ -1036,7 +1037,7 @@ async def on_3d_quality(update: Update, context) -> int:
         texture_info = "avec texture" if use_texture else "sans texture"
         await q.message.reply_document(
             document=glb_data,
-            caption=f"✅ *Modèle 3D généré !* ({texture_info})\n\n"
+            caption=f"✅ *3D Model generated!* ({texture_info})\n\n"
                     f"📦 Format: GLB\n"
                     f"🎨 Modèle: {model_name}\n"
                     f"🔗 [Visualiser en 3D]({viewer_url})",
@@ -1056,7 +1057,7 @@ async def on_3d_quality(update: Update, context) -> int:
 
 
 async def on_3d_cancel(update: Update, context) -> int:
-    await update.message.reply_text("❌ Génération 3D annulée.")
+    await update.message.reply_text("❌ 3D Generation cancelled.")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1076,15 +1077,15 @@ async def cmd_start(update: Update, context) -> None:
     elif is_new_user(uid):
         _db.execute("INSERT OR IGNORE INTO users(user_id, tokens) VALUES(?,0)", (uid,))
         _db.commit()
-        bonus = "\n\n💬 Chat gratuit disponible — */topup* pour générer images/musique"
+        bonus = "\n\n💬 Free chat available — */topup* to generate images/music"
     else:
         bal = get_tokens(uid)
-        bonus = f"\n\n💰 Ton solde: *{bal} token(s)*"
+        bonus = f"\n\n💰 Your balance: *{bal} token(s)*"
     await update.message.reply_text(
         "🎨 *TrappistAI* — Images & Musique IA\n\n"
         "🖼 */image* `prompt` → FLUX.1 image *(~5s)* — *1 token*\n"
         "🎵 */music* → Chanson complète *(2-3 min)* — *10 tokens*\n"
-        "💬 */text* `question` → Chat Llama 3.3 *(gratuit)*\n"
+        "💬 */text* `question` → Chat Llama 3.3 *(free)*\n"
         "💰 */balance* → Voir tes tokens\n"
         "🔋 */topup* → Recharger des tokens"
         f"{bonus}",
@@ -1112,7 +1113,7 @@ async def cmd_link(update: Update, context) -> None:
         f"✅ *Compte lié avec succès!*\n\n"
         f"📱 Telegram: @{username}\n"
         f"🆔 User ID: `{uid}`\n\n"
-        f"🔗 Tu peux maintenant linker ton compte sur:\n"
+        f"🔗 You can now link your account at:\n"
         f"[trappistai.netlify.app/profile](https://trappistai.netlify.app/profile)\n\n"
         f"💡 Entre **@{username}** sur le site pour recevoir ton code de vérification ici!",
         parse_mode=ParseMode.MARKDOWN,
@@ -1166,8 +1167,8 @@ async def cmd_verify(update: Update, context) -> None:
         if not DATABASE_URL:
             print("❌ DATABASE_URL not set in environment")
             await update.message.reply_text(
-                "❌ *Configuration manquante*\n\n"
-                "Contacte @djaf77 - DATABASE_URL non configuré.",
+                "❌ *Missing configuration*\n\n"
+                "Contact @djaf77 - DATABASE_URL not configured.",
                 parse_mode=ParseMode.MARKDOWN,
             )
             return
@@ -1192,7 +1193,7 @@ async def cmd_verify(update: Update, context) -> None:
                     print(f"❌ Code {code} not found in database")
                     await update.message.reply_text(
                         "❌ *Code introuvable*\n\n"
-                        "Vérifie que tu as bien copié le code depuis le site.",
+                        "Make sure you copied the code from the website.",
                         parse_mode=ParseMode.MARKDOWN,
                     )
                     return
@@ -1234,7 +1235,7 @@ async def cmd_verify(update: Update, context) -> None:
                     print(f"❌ Username mismatch: expected {stored_username}, got {username}")
                     await update.message.reply_text(
                         f"❌ *Username incorrect*\n\n"
-                        f"Ce code est pour @{stored_username}, mais tu es @{username}.\n\n"
+                        f"This code is for @{stored_username}, but you are @{username}.\n\n"
                         f"Enregistre @{username} sur le site d'abord.",
                         parse_mode=ParseMode.MARKDOWN,
                     )
@@ -1266,11 +1267,11 @@ async def cmd_verify(update: Update, context) -> None:
                 print(f"✅ Verified @{username} (uid={uid}) for wallet {wallet[:10]}... with code {code} - Balance: {tokens} tokens")
                 
                 await update.message.reply_text(
-                    "✅ *Compte vérifié avec succès!*\n\n"
+                    "✅ *Account verified successfully!*\n\n"
                     f"📱 Telegram: @{username}\n"
                     f"💼 Wallet: `{wallet[:20]}...`\n"
-                    f"💰 Solde: *{tokens} token(s)*\n\n"
-                    "🎨 Tes générations sont maintenant synchronisées entre le site et Telegram!",
+                    f"💰 Balance: *{tokens} token(s)*\n\n"
+                    "🎨 Your generations are now synced between website and Telegram!",
                     parse_mode=ParseMode.MARKDOWN,
                 )
         finally:
@@ -1281,17 +1282,17 @@ async def cmd_verify(update: Update, context) -> None:
         import traceback
         traceback.print_exc()
         await update.message.reply_text(
-            "❌ *Erreur de base de données*\n\n"
+            "❌ *Database error*\n\n"
             f"Erreur: `{str(e)[:100]}`\n\n"
-            "Contacte @djaf77 si le problème persiste.",
+            "Contact @djaf77 if the problem persists.",
             parse_mode=ParseMode.MARKDOWN,
         )
     except ImportError as e:
         print(f"❌ Import error: {e}")
         await update.message.reply_text(
-            "❌ *Module manquant*\n\n"
+            "❌ *Missing module*\n\n"
             f"Erreur: `{str(e)}`\n\n"
-            "Contacte @djaf77 - psycopg non installé.",
+            "Contact @djaf77 - psycopg not installed.",
             parse_mode=ParseMode.MARKDOWN,
         )
     except Exception as e:
@@ -1301,13 +1302,13 @@ async def cmd_verify(update: Update, context) -> None:
         await update.message.reply_text(
             "❌ *Erreur lors de la vérification*\n\n"
             f"Erreur: `{str(e)[:100]}`\n\n"
-            "Réessaye dans quelques secondes.",
+            "Try again in a few seconds.",
             parse_mode=ParseMode.MARKDOWN,
         )
 
 async def cmd_help(update: Update, context) -> None:
     await update.message.reply_text(
-        "📖 *Aide TrappistAI*\n\n"
+        "📖 *TrappistAI Help*\n\n"
         "🖼 */image* `prompt` \u2014 image FLUX.1 **(1 token)**\n"
         "🎵 */music* \u2014 wizard style\u2192voix\u2192th\u00e8me\u2192paroles **(10 tokens)**\n"
         "💬 */text* `question` \u2014 chat IA Llama 3.3 **(gratuit)**\n"
@@ -1322,19 +1323,19 @@ async def cmd_help(update: Update, context) -> None:
 async def cmd_about(update: Update, context) -> None:
     await update.message.reply_text(
         "🧠 *Stack IA — TrappistAI*\n\n"
-        "🎵 *Musique — HeartMuLa*\n"
+        "🎵 *Music — HeartMuLa*\n"
         "┣ HeartMuLa LLM : *3B paramètres* (Llama 3.2 backbone)\n"
         "┣ HeartCodec : *1.5B params* — tokenizer audio 12.5 Hz\n"
-        "┃   → génère des chansons longues sans exploser la VRAM\n"
+        "┃   → generates long songs without exploding VRAM\n"
         "┣ HeartCLAP : alignement texte↔audio\n"
-        "┗ HeartTranscriptor : paroles → tokens\n\n"
-        "⚡ Pipeline total ~4-5B params — tourne sur une RTX 3090/4090\n"
+        "┗ HeartTranscriptor : lyrics → tokens\n\n"
+        "⚡ Total pipeline ~4-5B params — runs on RTX 3090/4090\n"
         "_(version 7B interne en dev — coming soon)_\n\n"
-        "🖼 *Image — FLUX.1-schnell*\n"
-        "┗ 12B params, 4 steps, distillé par Black Forest Labs\n\n"
-        "💬 *Paroles & Chat — Groq + Llama 3.3 70B*\n"
-        "┗ Inférence ultra-rapide via Groq Cloud (~1s)\n\n"
-        "🚀 Hébergement API : *WaveSpeed AI*",
+        "🇫🇷 *Image — FLUX.1-schnell*\n"
+        "┗ 12B params, 4 steps, distilled by Black Forest Labs\n\n"
+        "💬 *Lyrics & Chat — Groq + Llama 3.3 70B*\n"
+        "┗ Ultra-fast inference via Groq Cloud (~1s)\n\n"
+        "🚀 API Hosting: *WaveSpeed AI*",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -1344,11 +1345,11 @@ async def cmd_balance(update: Update, context) -> None:
     uid = update.effective_user.id
     bal = get_tokens(uid)
     await update.message.reply_text(
-        f"💰 *Ton solde TrappistAI:* `{bal}` token(s)\n\n"
+        f"💰 *Your TrappistAI balance:* `{bal}` token(s)\n\n"
         "🖼 Image = 1 token\n"
-        "🎵 Musique = 10 tokens\n"
-        "💬 Chat = *gratuit* (Ollama local)\n\n"
-        "_/topup pour recharger_",
+        "🎵 Music = 10 tokens\n"
+        "💬 Chat = *free* (Ollama local)\n\n"
+        "_/topup to buy more_",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -1358,9 +1359,9 @@ async def cmd_topup(update: Update, context) -> None:
     bal = get_tokens(uid)
     await update.message.reply_text(
         f"� <b>Solde actuel:</b> {bal} token(s)\n\n"
-        "🔋 <b>Recharge tes tokens sur le site:</b>\n"
+        "🔋 <b>Buy tokens on the website:</b>\n"
         "👉 https://trappistai.netlify.app/buy\n\n"
-        "Paiement sécurisé en crypto (CSPR)",
+        "Secure crypto payment (CSPR)",
         parse_mode=ParseMode.HTML,
     )
 
@@ -1582,7 +1583,7 @@ async def on_share_asset(update: Update, context) -> None:
 async def cmd_text(update: Update, context) -> None:
     prompt = " ".join(context.args).strip()
     if not prompt:
-        await update.message.reply_text("💬 Envoie-moi directement ton message, pas besoin de /text !", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("💬 Send me your message directly, no need for /text !", parse_mode=ParseMode.MARKDOWN)
         return
     msg = await update.message.reply_text("💬 En réflexion…")
     try:
@@ -1614,14 +1615,14 @@ async def cmd_myid(update: Update, context) -> None:
     uid = update.effective_user.id
     uname = update.effective_user.username or "?"
     await update.message.reply_text(
-        f"🔑 Ton Telegram ID : `{uid}`\n👤 Username : @{uname}",
+        f"🔑 Your Telegram ID: `{uid}`\n👤 Username: @{uname}",
         parse_mode=ParseMode.MARKDOWN,
     )
 
 
 async def cmd_admin(update: Update, context) -> None:
     if not is_admin(update.effective_user):
-        await update.message.reply_text("❌ Accès refusé.")
+        await update.message.reply_text("❌ Access denied.")
         return
     args = context.args
     # /admin topup <user_id> <amount>
@@ -1630,11 +1631,11 @@ async def cmd_admin(update: Update, context) -> None:
             target_id = int(args[1])
             amount    = int(args[2])
         except ValueError:
-            await update.message.reply_text("Utilise: `/admin topup USER_ID AMOUNT`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text("Use: `/admin topup USER_ID AMOUNT`", parse_mode=ParseMode.MARKDOWN)
             return
         new_bal = add_tokens(target_id, amount)
         await update.message.reply_text(
-            f"✅ +{amount} tokens pour `{target_id}` — nouveau solde: *{new_bal}*",
+            f"✅ +{amount} tokens for `{target_id}` — new balance: *{new_bal}*",
             parse_mode=ParseMode.MARKDOWN,
         )
     # /admin balance <user_id>
@@ -1642,7 +1643,7 @@ async def cmd_admin(update: Update, context) -> None:
         try:
             target_id = int(args[1])
         except ValueError:
-            await update.message.reply_text("Utilise: `/admin balance USER_ID`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text("Use: `/admin balance USER_ID`", parse_mode=ParseMode.MARKDOWN)
             return
         bal = get_tokens(target_id)
         await update.message.reply_text(f"`{target_id}` : *{bal} token(s)*", parse_mode=ParseMode.MARKDOWN)
@@ -1652,7 +1653,7 @@ async def cmd_admin(update: Update, context) -> None:
         try:
             target_id = int(args[2])
         except ValueError:
-            await update.message.reply_text("Utilise: `/admin fetch TASK_ID USER_ID`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text("Use: `/admin fetch TASK_ID USER_ID`", parse_mode=ParseMode.MARKDOWN)
             return
         await update.message.reply_text(f"⏳ Poll task `{task_id[:16]}…` en cours (max 5 min)...", parse_mode=ParseMode.MARKDOWN)
         try:
@@ -1660,30 +1661,30 @@ async def cmd_admin(update: Update, context) -> None:
                 None, wavespeed.fetch_result, task_id, 300
             )
         except Exception as e:
-            await update.message.reply_text(f"❌ Task pas prête ou échouée: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(f"❌ Task not ready or failed: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
             return
         try:
             await context.bot.send_audio(
                 chat_id=target_id,
                 audio=url,
-                caption=f"🎵 Ta chanson est prête!\n[Lien direct]({url})",
+                caption=f"🎵 Your song is ready!\n[Direct link]({url})",
                 parse_mode=ParseMode.MARKDOWN,
                 performer="HeartMuLa x WaveSpeed",
             )
             await update.message.reply_text(f"✅ Envoyé à `{target_id}`", parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
-            await update.message.reply_text(f"❌ Envoi échoué: `{str(e)[:200]}`\nURL: {url}", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(f"❌ Send failed: `{str(e)[:200]}`\nURL: {url}", parse_mode=ParseMode.MARKDOWN)
     # /admin list
     elif len(args) == 1 and args[0] == "list":
         rows = _db.execute("SELECT user_id, tokens FROM users ORDER BY tokens DESC LIMIT 20").fetchall()
         if not rows:
-            await update.message.reply_text("DB vide.")
+            await update.message.reply_text("Empty DB.")
             return
         lines = "\n".join(f"`{r[0]}` : {r[1]} tokens" for r in rows)
         await update.message.reply_text(f"📊 *Users (top 20):*\n{lines}", parse_mode=ParseMode.MARKDOWN)
     else:
         await update.message.reply_text(
-            "*Commandes admin:*\n"
+            "*Admin commands:*\n"
             "`/admin topup USER_ID AMOUNT`\n"
             "`/admin balance USER_ID`\n"
             "`/admin list`\n"
@@ -1728,7 +1729,7 @@ def main():
     app = (
         Application.builder()
         .token(BOT_TOKEN)
-        .concurrent_updates(True)   # chaque user traité en parallèle, pas de file d'attente
+        .concurrent_updates(True)   # each user processed in parallel, no queue
         .build()
     )
     
