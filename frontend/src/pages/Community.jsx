@@ -63,7 +63,7 @@ const Community = ({ wallet }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-900 via-black to-gray-900 pt-20 px-4 pb-20">
+    <div className="min-h-screen pt-20 px-4 pb-20">
       <div className="max-w-7xl mx-auto">
         
         {/* Header */}

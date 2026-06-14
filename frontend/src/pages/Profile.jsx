@@ -152,7 +152,7 @@ export default function Profile({ wallet }) {
 
   if (!wallet) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-900 via-black to-gray-900 pt-20 px-4 flex items-center justify-center">
+      <div className="min-h-screen pt-20 px-4 flex items-center justify-center">
         <div className="text-center">
           <User className="w-16 h-16 mx-auto mb-4 text-green-400 opacity-50" />
           <h2 className="text-2xl font-bold text-white mb-2">Connect Wallet First</h2>
@@ -163,7 +163,7 @@ export default function Profile({ wallet }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-900 via-black to-gray-900 pt-20 px-4 pb-20">
+    <div className="min-h-screen pt-20 px-4 pb-20">
       <div className="max-w-6xl mx-auto">
         
         {/* Header */}
