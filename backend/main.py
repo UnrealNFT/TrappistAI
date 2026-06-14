@@ -2407,6 +2407,68 @@ async def fix_existing_token_ownership():
 # ERROR HANDLERS
 # ============================================
 
+# ============================================
+# ADMIN ENDPOINTS (TEMPORARY)
+# ============================================
+
+@app.delete("/api/admin/delete-broken-tokens")
+async def delete_broken_tokens_endpoint():
+    """
+    ADMIN ONLY: Delete RWA tokens #20 and #21 with malformed URLs
+    These tokens were created with the old URL parsing bug (using : separator)
+    Call this endpoint once to clean up, then remove this endpoint
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check tokens before deletion
+        cursor.execute("""
+            SELECT token_id, asset_type, asset_url, prompt, created_at 
+            FROM rwa_tokens 
+            WHERE token_id IN (20, 21)
+        """)
+        tokens = cursor.fetchall()
+        
+        if not tokens:
+            return {
+                "success": True,
+                "message": "No broken tokens found (already deleted or don't exist)",
+                "deleted": 0
+            }
+        
+        tokens_info = []
+        for token in tokens:
+            token_id, asset_type, asset_url, prompt, created_at = token
+            tokens_info.append({
+                "token_id": token_id,
+                "asset_type": asset_type,
+                "asset_url": asset_url,
+                "prompt": prompt,
+                "created_at": str(created_at)
+            })
+        
+        # Delete the broken tokens
+        cursor.execute("DELETE FROM rwa_tokens WHERE token_id IN (20, 21)")
+        deleted_count = cursor.rowcount
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        print(f"🗑️ Admin: Deleted {deleted_count} broken RWA tokens")
+        
+        return {
+            "success": True,
+            "message": f"Deleted {deleted_count} broken token(s)",
+            "deleted": deleted_count,
+            "tokens": tokens_info
+        }
+        
+    except Exception as e:
+        print(f"❌ Admin delete error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
