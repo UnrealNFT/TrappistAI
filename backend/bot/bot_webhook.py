@@ -17,7 +17,7 @@ load_dotenv()
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8641629385:AAGibWxAiHRqirqrk9Rawt6FAE_DDVtlTmk")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8929333162:AAGTVcnNpsrNaZUemIVfSeI2xPyRJUmQyk4")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "YOUR_SECRET_HERE_CHANGE_ME")
 
 @app.route('/webhook/verification', methods=['POST'])
