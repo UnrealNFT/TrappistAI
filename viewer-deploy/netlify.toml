@@ -1,0 +1,11 @@
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+
+[[redirects]]
+  from = "/viewer3d.html"
+  to = "/index.html"
+  status = 200
