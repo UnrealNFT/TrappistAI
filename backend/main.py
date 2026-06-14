@@ -2411,12 +2411,12 @@ async def fix_existing_token_ownership():
 # ADMIN ENDPOINTS (TEMPORARY)
 # ============================================
 
-@app.delete("/api/admin/delete-broken-tokens")
+@app.get("/api/admin/delete-broken-tokens")
 async def delete_broken_tokens_endpoint():
     """
     ADMIN ONLY: Delete RWA tokens #20 and #21 with malformed URLs
     These tokens were created with the old URL parsing bug (using : separator)
-    Call this endpoint once to clean up, then remove this endpoint
+    Just open this URL in browser to execute, then remove this endpoint
     """
     try:
         conn = get_db_connection()
