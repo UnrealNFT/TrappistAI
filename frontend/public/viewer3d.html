@@ -73,6 +73,39 @@
             text-align: center;
             max-width: 500px;
         }
+        #actions {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            gap: 15px;
+            z-index: 10;
+        }
+        .action-btn {
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: 2px solid rgba(255,255,255,0.2);
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .action-btn:hover {
+            background: rgba(0,0,0,0.9);
+            border-color: rgba(255,255,255,0.4);
+            transform: translateY(-2px);
+        }
+        .action-btn.save { border-color: rgba(59, 130, 246, 0.5); }
+        .action-btn.share { border-color: rgba(34, 197, 94, 0.5); }
+        .action-btn.save:hover { border-color: rgba(59, 130, 246, 1); }
+        .action-btn.share:hover { border-color: rgba(34, 197, 94, 1); }
     </style>
 </head>
 <body>
@@ -93,6 +126,21 @@
     <div id="error">
         <h2>❌ Loading Error</h2>
         <p id="error-message"></p>
+    </div>
+
+    <div id="actions">
+        <button class="action-btn download">
+            <span>⬇️</span>
+            <span>Download</span>
+        </button>
+        <button class="action-btn save">
+            <span>💾</span>
+            <span>Save to Gallery</span>
+        </button>
+        <button class="action-btn share">
+            <span>📤</span>
+            <span>Save & Share</span>
+        </button>
     </div>
 
     <script type="importmap">
@@ -211,8 +259,67 @@
                 scene.add(model);
                 loading.style.display = 'none';
                 
+                // Show action buttons
+                const actionsDiv = document.getElementById('actions');
+                actionsDiv.style.display = 'flex';
+                
                 // Auto-rotate
                 model.rotation.y = Math.PI / 4;
+                
+                // Button handlers
+                const downloadBtn = actionsDiv.querySelector('.download');
+                const saveBtn = actionsDiv.querySelector('.save');
+                const shareBtn = actionsDiv.querySelector('.share');
+                
+                downloadBtn.onclick = () => {
+                    window.open(modelUrl, '_blank');
+                };
+                
+                saveBtn.onclick = async () => {
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '<span>⏳</span><span>Saving...</span>';
+                    try {
+                        // Redirect to generate page with action
+                        window.parent.postMessage({
+                            action: 'save_3d',
+                            url: modelUrl
+                        }, '*');
+                        
+                        setTimeout(() => {
+                            saveBtn.innerHTML = '<span>✅</span><span>Saved!</span>';
+                            setTimeout(() => {
+                                saveBtn.innerHTML = '<span>💾</span><span>Save to Gallery</span>';
+                                saveBtn.disabled = false;
+                            }, 2000);
+                        }, 1000);
+                    } catch (err) {
+                        saveBtn.innerHTML = '<span>❌</span><span>Error</span>';
+                        saveBtn.disabled = false;
+                    }
+                };
+                
+                shareBtn.onclick = async () => {
+                    shareBtn.disabled = true;
+                    shareBtn.innerHTML = '<span>⏳</span><span>Sharing...</span>';
+                    try {
+                        // Redirect to generate page with action
+                        window.parent.postMessage({
+                            action: 'share_3d',
+                            url: modelUrl
+                        }, '*');
+                        
+                        setTimeout(() => {
+                            shareBtn.innerHTML = '<span>✅</span><span>Shared!</span>';
+                            setTimeout(() => {
+                                shareBtn.innerHTML = '<span>📤</span><span>Save & Share</span>';
+                                shareBtn.disabled = false;
+                            }, 2000);
+                        }, 1000);
+                    } catch (err) {
+                        shareBtn.innerHTML = '<span>❌</span><span>Error</span>';
+                        shareBtn.disabled = false;
+                    }
+                };
             },
             (progress) => {
                 const percent = (progress.loaded / progress.total * 100).toFixed(0);

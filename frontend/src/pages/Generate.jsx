@@ -132,6 +132,22 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
               ]
             }
             
+            // Add save/share buttons for 3D
+            if (jobType === '3d') {
+              return [...updated, 
+                {
+                  id: Date.now(),
+                  role: 'assistant',
+                  content: '💾 **Save your 3D model:**',
+                  buttons: [
+                    { label: '💾 Save to Gallery (Private)', action: `save_3d:${job.result.url}` },
+                    { label: '📤 Save & Share (Public)', action: `share_3d:${job.result.url}` }
+                  ],
+                  result: null
+                }
+              ]
+            }
+            
             return updated
           })
           
@@ -421,6 +437,110 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
         return
       }
 
+      // Save/Share image handlers
+      if (action.startsWith('save_image:')) {
+        const parts = action.replace('save_image:', '').split(':')
+        const imageUrl = parts[0]
+        const description = parts[1] || 'Image generation'
+        const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+        
+        try {
+          await mintRWAToken(
+            walletToUse,
+            'image',
+            imageUrl,
+            description,
+            'FLUX.1 schnell',
+            {},
+            false // Private
+          )
+          
+          addMessage('assistant', '💾 **Saved to your private gallery!**\n\n_Check your profile to see all your creations._')
+        } catch (err) {
+          const errorMsg = err.response?.data?.detail || err.message
+          addMessage('assistant', `❌ Save error: ${errorMsg}`)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+
+      if (action.startsWith('share_image:')) {
+        const parts = action.replace('share_image:', '').split(':')
+        const imageUrl = parts[0]
+        const description = parts[1] || 'Image generation'
+        const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+        
+        try {
+          await shareAsset(
+            walletToUse,
+            'image',
+            imageUrl,
+            description,
+            'FLUX.1 schnell',
+            {}
+          )
+          
+          addMessage('assistant', '📤 **Shared publicly!**\n\n_Your image is now visible in the community feed._')
+        } catch (err) {
+          const errorMsg = err.response?.data?.detail || err.message
+          addMessage('assistant', `❌ Share error: ${errorMsg}`)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+
+      // Save/Share 3D handlers
+      if (action.startsWith('save_3d:')) {
+        const modelUrl = action.replace('save_3d:', '')
+        const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+        
+        try {
+          await mintRWAToken(
+            walletToUse,
+            '3d',
+            modelUrl,
+            '3D Model generation',
+            'Hunyuan-3D V3.1',
+            {},
+            false // Private
+          )
+          
+          addMessage('assistant', '💾 **Saved to your private gallery!**\n\n_Check your profile to see all your creations._')
+        } catch (err) {
+          const errorMsg = err.response?.data?.detail || err.message
+          addMessage('assistant', `❌ Save error: ${errorMsg}`)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+
+      if (action.startsWith('share_3d:')) {
+        const modelUrl = action.replace('share_3d:', '')
+        const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+        
+        try {
+          await shareAsset(
+            walletToUse,
+            '3d',
+            modelUrl,
+            '3D Model generation',
+            'Hunyuan-3D V3.1',
+            {}
+          )
+          
+          addMessage('assistant', '📤 **Shared publicly!**\n\n_Your 3D model is now visible in the community feed._')
+        } catch (err) {
+          const errorMsg = err.response?.data?.detail || err.message
+          addMessage('assistant', `❌ Share error: ${errorMsg}`)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+
       // ===== 3D FLOW =====
       if (action === '3d_from_image') {
         setShowUploadPrompt(true)
@@ -574,6 +694,13 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
             tokensUsed: res.tokensUsed,
             warning: res.warning
           })
+          
+          // Add save/share buttons for image
+          addMessage('assistant', '💾 **Save your creation:**', [
+            { label: '💾 Save to Gallery (Private)', action: `save_image:${res.url}:${args}` },
+            { label: '📤 Save & Share (Public)', action: `share_image:${res.url}:${args}` }
+          ])
+          
           await onBalanceUpdate()
         } catch (err) {
           addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
