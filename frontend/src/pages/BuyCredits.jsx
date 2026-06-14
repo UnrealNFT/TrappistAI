@@ -272,58 +272,57 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
         setPaying(false)
         setVerifying(true)
 
-        // TODO: Open x402 payment modal (when x402 SDK is available)
-        // For now, simulate payment confirmation after 3s
-        setTimeout(async () => {
-          try {
-            // In production, this would be called by x402 Facilitator webhook
-            // For testing, we simulate it
-            console.log('🔔 Simulating x402 webhook confirmation...')
+        // Step 2: Call webhook immediately (real x402 Facilitator would call this after user pays)
+        try {
+          console.log('📞 Calling x402 webhook to confirm payment...')
+          
+          const webhookResponse = await fetch(`${import.meta.env.VITE_API_URL}/webhook/x402`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              payment_id: paymentData.payment_id,
+              payer_wallet: wallet,
+              recipient_wallet: paymentData.recipient,
+              amount: paymentData.amount,
+              status: 'confirmed',
+              tx_hash: `x402_tx_${Date.now()}`,
+              signature: 'test_signature_remove_in_production'
+            })
+          })
+
+          if (webhookResponse.ok) {
+            const webhookData = await webhookResponse.json()
+            console.log('✅ Webhook confirmed:', webhookData)
             
-            // Poll for payment confirmation
-            let attempts = 0
-            const maxAttempts = 20
+            // Step 3: Verify tokens were credited
+            const balanceResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/user/${wallet}/balance`)
+            const balanceData = await balanceResponse.json()
             
-            const pollInterval = setInterval(async () => {
-              attempts++
-              console.log(`🔄 Checking x402 payment ${attempts}/${maxAttempts}...`)
+            if (balanceData.tokens > balance) {
+              console.log('✅ Tokens credited! New balance:', balanceData.tokens)
+              setSuccess(true)
+              setVerifying(false)
+              setError('')
               
-              // Check if tokens were credited
-              try {
-                const balanceResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/user/${wallet}/balance`)
-                const balanceData = await balanceResponse.json()
-                
-                if (balanceData.tokens > balance) {
-                  console.log('✅ x402 payment confirmed! Tokens credited!')
-                  clearInterval(pollInterval)
-                  setSuccess(true)
-                  setVerifying(false)
-                  setError('')
-                  
-                  setTimeout(() => {
-                    onPurchaseComplete()
-                    setSelected(null)
-                    setTxHash('')
-                    setSuccess(false)
-                  }, 3000)
-                }
-              } catch (pollError) {
-                console.error('Poll error:', pollError)
-              }
-              
-              if (attempts >= maxAttempts) {
-                clearInterval(pollInterval)
-                setVerifying(false)
-                setError('Payment timeout. Please check your balance.')
-              }
-            }, 5000)
-            
-          } catch (confirmError) {
-            console.error('❌ Confirmation error:', confirmError)
-            setError('Payment confirmation failed. Please check your balance.')
-            setVerifying(false)
+              setTimeout(() => {
+                onPurchaseComplete()
+                setSelected(null)
+                setTxHash('')
+                setSuccess(false)
+              }, 3000)
+            } else {
+              throw new Error('Tokens not credited. Please contact support.')
+            }
+          } else {
+            const errorData = await webhookResponse.json()
+            throw new Error(errorData.detail || 'Webhook call failed')
           }
-        }, 3000)
+          
+        } catch (webhookError) {
+          console.error('❌ Webhook error:', webhookError)
+          setError(webhookError.message || 'Payment confirmation failed')
+          setVerifying(false)
+        }
         
       } else {
         const errorData = await response.json()
