@@ -8,7 +8,7 @@ export default function BottomNav({ wallet, balance }) {
   const navItems = [
     { path: '/', label: 'Home', icon: FaHouse },
     { path: '/generate', label: 'Generate', icon: FaWandMagicSparkles },
-    { path: '/marketplace', label: 'Market', icon: FaStore },
+    { path: '/explore', label: 'Explore', icon: FaStore },
     { path: '/profile', label: 'Profile', icon: FaUser },
     { path: '/buy-credits', label: 'Buy', icon: FaWallet },
   ]

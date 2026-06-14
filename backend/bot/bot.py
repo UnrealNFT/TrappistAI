@@ -142,7 +142,7 @@ def get_user_id_by_username(username: str) -> int | None:
 # ─── Tokenization helpers ────────────────────────────────────────────────────
 
 def create_tokenize_keyboard(asset_type: str, url: str, prompt: str) -> InlineKeyboardMarkup:
-    """Create save to gallery keyboard with short callback_data to avoid 64-byte limit."""
+    """Create save keyboard: private save or public share."""
     global _tokenize_counter
     _tokenize_counter += 1
     short_id = f"t{_tokenize_counter}"
@@ -155,8 +155,9 @@ def create_tokenize_keyboard(asset_type: str, url: str, prompt: str) -> InlineKe
     }
     
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💾 Save to Gallery (FREE)", callback_data=f"tokenize:{short_id}")],
-        [InlineKeyboardButton("❌ Skip", callback_data="tokenize:skip")]
+        [InlineKeyboardButton("💾 Save to Gallery (Private)", callback_data=f"save:{short_id}")],
+        [InlineKeyboardButton("📤 Save & Share (Public)", callback_data=f"share:{short_id}")],
+        [InlineKeyboardButton("❌ Skip", callback_data="skip_save")]
     ])
 
 # (style_key) -> (tags, emoji+label)
@@ -1347,15 +1348,15 @@ async def cmd_topup(update: Update, context) -> None:
 
 # ─── Tokenize Assets as RWA ──────────────────────────────────────────────────
 
-async def on_tokenize_asset(update: Update, context) -> None:
-    """Handle save to gallery button clicks - save directly without asking for shares."""
+async def on_save_asset(update: Update, context) -> None:
+    """Handle private save to gallery button clicks."""
     q = update.callback_query
     await q.answer()
     
-    data = q.data  # Format: "tokenize:{short_id}" or "tokenize:skip"
+    data = q.data  # Format: "save:{short_id}" or "skip_save"
     
     # Handle skip
-    if data == "tokenize:skip":
+    if data == "skip_save":
         try:
             await q.edit_message_reply_markup(reply_markup=None)  # Remove buttons
         except Exception:
@@ -1426,11 +1427,10 @@ async def on_tokenize_asset(update: Update, context) -> None:
         if result.get("success"):
             token_id = result.get("tokenId", "?")
             await progress_msg.edit_text(
-                f"✅ *Saved to your gallery!*\n\n"
+                f"✅ *Saved to your private gallery!*\n\n"
                 f"📦 Item ID: #{token_id}\n"
-                f"🌐 View: https://trappistai.netlify.app/my-rwa\n\n"
-                f"💡 *Want to tokenize it on Casper blockchain?*\n"
-                f"Go to the website and click 'Tokenize' button!",
+                f"🌐 View: https://trappist.land/profile\n\n"
+                f"💡 Only you can see this item",
                 parse_mode=ParseMode.MARKDOWN,
                 disable_web_page_preview=True
             )
@@ -1445,6 +1445,90 @@ async def on_tokenize_asset(update: Update, context) -> None:
         await progress_msg.edit_text(f"❌ Error: {str(e)}")
 
 
+async def on_share_asset(update: Update, context) -> None:
+    """Handle save & share button clicks - save as public item."""
+    q = update.callback_query
+    await q.answer()
+    
+    data = q.data  # Format: "share:{short_id}"
+    
+    # Extract short_id from callback_data
+    parts = data.split(":", 1)
+    if len(parts) < 2:
+        await q.edit_message_text("❌ Invalid data")
+        return
+    
+    short_id = parts[1]
+    
+    # Get data from memory
+    if short_id not in _tokenize_data:
+        await q.edit_message_text("❌ Session expired, regenerate your content")
+        return
+    
+    asset_data = _tokenize_data[short_id]
+    uid = update.effective_user.id
+    
+    # Get user's wallet address
+    wallet = get_wallet_by_telegram_id_pg(uid)
+    if not wallet:
+        # Remove buttons and send new message
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await q.message.reply_text(
+            "❌ *Connect your Casper Wallet first*\n\n"
+            "👉 Go to https://trappist.land/profile\n"
+            "🔗 Connect wallet and link your Telegram\n\n"
+            "Then you can share your creations!",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    
+    # Remove buttons
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    
+    # Show progress message
+    progress_msg = await q.message.reply_text("📤 Saving & sharing to community...")
+    
+    # Call backend share API
+    try:
+        share_url = f"{BACKEND_API_URL}/api/share"
+        share_payload = {
+            "walletAddress": wallet,
+            "assetType": asset_data["type"],
+            "assetUrl": asset_data["url"],
+            "prompt": asset_data["prompt"],
+            "telegramUserId": uid,
+            "isPublic": True  # Share publicly
+        }
+        
+        resp = req.post(share_url, json=share_payload, timeout=15)
+        resp.raise_for_status()
+        result = resp.json()
+        
+        if result.get("success"):
+            item_id = result.get("itemId", "?")
+            await progress_msg.edit_text(
+                f"✅ *Saved and shared with community!*\n\n"
+                f"📦 Item ID: #{item_id}\n"
+                f"🌐 View in feed: https://trappist.land/explore\n\n"
+                f"💡 Everyone can see this creation now!",
+                parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=True
+            )
+        else:
+            await progress_msg.edit_text(f"❌ Share failed: {result.get('message', 'Unknown error')}")
+    
+    except req.exceptions.Timeout:
+        await progress_msg.edit_text("❌ Timeout - backend too slow")
+    except req.exceptions.RequestException as e:
+        await progress_msg.edit_text(f"❌ Network error: {str(e)}")
+    except Exception as e:
+        await progress_msg.edit_text(f"❌ Error: {str(e)}")
 
 
 async def cmd_text(update: Update, context) -> None:
@@ -1648,8 +1732,10 @@ def main():
     )
     app.add_handler(conv_3d)
 
-    # Save to gallery callback (must be before other handlers to avoid conflicts)
-    app.add_handler(CallbackQueryHandler(on_tokenize_asset, pattern=r"^tokenize:"))
+    # Save/Share gallery callbacks (must be before other handlers to avoid conflicts)
+    app.add_handler(CallbackQueryHandler(on_save_asset, pattern=r"^save:"))
+    app.add_handler(CallbackQueryHandler(on_share_asset, pattern=r"^share:"))
+    app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.edit_message_reply_markup(reply_markup=None), pattern=r"^skip_save$"))
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("link",    cmd_link))

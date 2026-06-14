@@ -25,8 +25,8 @@ export default function Navbar({ wallet, balance, onConnect, onDisconnect, onRef
           <Link to="/generate" className="text-green-300/90 hover:text-green-400 transition">
             Generate
           </Link>
-          <Link to="/marketplace" className="text-green-300/90 hover:text-green-400 transition">
-            🏪 Marketplace
+          <Link to="/explore" className="text-purple-300/90 hover:text-purple-400 transition">
+            ✨ Explore
           </Link>
           <Link to="/profile" className="text-green-300/90 hover:text-green-400 transition">
             👤 Profile

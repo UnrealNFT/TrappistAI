@@ -6,7 +6,7 @@ import Home from './pages/Home'
 import Generate from './pages/Generate'
 import Profile from './pages/Profile'
 import BuyCredits from './pages/BuyCredits'
-import Marketplace from './pages/Marketplace'
+import Community from './pages/Community'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
 import { getBalance } from './services/api'
@@ -168,11 +168,13 @@ function App() {
                 />
               } />
               <Route path="/my-rwa" element={<Navigate to="/profile" replace />} />
-              <Route path="/marketplace" element={
-                <Marketplace 
+              <Route path="/explore" element={
+                <Community 
                   wallet={wallet}
                 />
               } />
+              {/* Legacy route redirect */}
+              <Route path="/marketplace" element={<Navigate to="/explore" replace />} />
             </Routes>
           </main>
           

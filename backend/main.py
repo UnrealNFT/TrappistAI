@@ -1522,6 +1522,7 @@ class MintRWARequest(BaseModel):
     telegramUserId: int = None
     metadata: dict = {}
     totalShares: int = 100  # Customizable number of parts (100, 1000, 10000, etc.)
+    isPublic: bool = False  # New: for public sharing
 
 class RWAToken(BaseModel):
     token_id: int
@@ -1537,6 +1538,13 @@ class RWAToken(BaseModel):
     fractional: bool
     total_shares: int
     created_at: str
+
+@app.post("/api/share")
+@limiter.limit("10/minute")
+async def share_asset(request: Request, data: MintRWARequest):
+    """Save and share asset publicly (community feed, no tokenization)"""
+    data.isPublic = True  # Force public
+    return await mint_rwa_token(request, data)
 
 @app.post("/api/rwa/mint")
 @limiter.limit("10/minute")
