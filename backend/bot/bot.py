@@ -224,9 +224,9 @@ def _kb_choice():
 def _kb_preview():
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("🎵 Generate",  callback_data="ms_preview:go"),
-        InlineKeyboardButton("🔄 Réécrire", callback_data="ms_preview:redo"),
-        InlineKeyboardButton("✏️ Modifier", callback_data="ms_preview:edit"),
-    ], [InlineKeyboardButton("❌ Annuler", callback_data="ms_cancel")]])
+        InlineKeyboardButton("🔄 Rewrite", callback_data="ms_preview:redo"),
+        InlineKeyboardButton("✏️ Edit", callback_data="ms_preview:edit"),
+    ], [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")]])
 
 
 # ─── Ollama parolier ─────────────────────────────────────────────────────────
@@ -595,7 +595,7 @@ async def _generate_and_send(update: Update, context) -> int:
     except Exception as e:
         progress_task.cancel()
         logger.error("Music error: %s", e)
-        await msg.edit_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -726,7 +726,7 @@ async def on_choice_lyrics(update: Update, context) -> int:
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✍️ I write my lyrics", callback_data="ms_lyrics:own")],
         [InlineKeyboardButton("🤖 AI generates lyrics", callback_data="ms_lyrics:ai")],
-        [InlineKeyboardButton("❌ Annuler", callback_data="ms_cancel")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")],
     ])
     await q.edit_message_text(
         "🎤 *How do you want to create the lyrics?*",
@@ -897,9 +897,9 @@ async def cmd_image(update: Update, context) -> None:
     except Exception as e:
         logger.error("Image generation error: %s", e)
         try:
-            await msg.edit_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+            await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
         except Exception:
-            await update.message.reply_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
 
 
 # ─── /trappist3d ─────────────────────────────────────────────────────────────────
@@ -960,9 +960,9 @@ async def on_3d_image(update: Update, context) -> int:
     
     # Show quality menu
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚡ Sans texture (2 tokens)", callback_data="3dq:notex")],
-        [InlineKeyboardButton("🎨 Avec texture (30 tokens)", callback_data="3dq:tex")],
-        [InlineKeyboardButton("❌ Annuler", callback_data="3dq:cancel")],
+        [InlineKeyboardButton("⚡ Without texture (2 tokens)", callback_data="3dq:notex")],
+        [InlineKeyboardButton("🎨 With texture (30 tokens)", callback_data="3dq:tex")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="3dq:cancel")],
     ])
     await update.message.reply_text(
         "🎨 *Choose 3D model quality:*\n\n"
@@ -1034,13 +1034,13 @@ async def on_3d_quality(update: Update, context) -> int:
         viewer_url = f"https://trappist.land/?url={urllib.parse.quote(glb_url)}"
         
         # Send GLB file
-        texture_info = "avec texture" if use_texture else "sans texture"
+        texture_info = "with texture" if use_texture else "without texture"
         await q.message.reply_document(
             document=glb_data,
             caption=f"✅ *3D Model generated!* ({texture_info})\n\n"
                     f"📦 Format: GLB\n"
-                    f"🎨 Modèle: {model_name}\n"
-                    f"🔗 [Visualiser en 3D]({viewer_url})",
+                    f"🎨 Model: {model_name}\n"
+                    f"🔗 [View in 3D]({viewer_url})",
             parse_mode=ParseMode.MARKDOWN,
             filename="model3d.glb",
         )
@@ -1048,9 +1048,9 @@ async def on_3d_quality(update: Update, context) -> int:
     except Exception as e:
         logger.error("3D generation error: %s", e)
         try:
-            await msg.edit_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+            await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
         except Exception:
-            await update.message.reply_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
     
     context.user_data.clear()
     return ConversationHandler.END
@@ -1590,7 +1590,7 @@ async def cmd_text(update: Update, context) -> None:
         answer = await asyncio.get_event_loop().run_in_executor(None, _groq_chat, update.effective_user.id, prompt)
         await msg.edit_text(f"🤖 {answer[:4000]}")
     except Exception as e:
-        await msg.edit_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
 
 
 async def on_free_message(update: Update, context) -> None:
@@ -1608,7 +1608,7 @@ async def on_free_message(update: Update, context) -> None:
         answer = await asyncio.get_event_loop().run_in_executor(None, _groq_chat, uid, prompt)
         await msg.edit_text(f"🤖 {answer[:4000]}")
     except Exception as e:
-        await msg.edit_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
 
 
 async def cmd_myid(update: Update, context) -> None:
