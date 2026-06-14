@@ -1059,6 +1059,9 @@ async def on_3d_quality(update: Update, context) -> int:
     viewer_url = f"https://trappist.land/viewer3d.html?url={urllib.parse.quote(glb_url)}"
     texture_info = "with texture" if use_texture else "without texture"
     
+    # Create save/share keyboard
+    keyboard = create_tokenize_keyboard("3d", glb_url, context.user_data.get("3d_prompt", "3D Model"))
+    
     try:
         # Download with longer timeout (GLB files can be large)
         glb_data = await asyncio.get_event_loop().run_in_executor(
@@ -1074,6 +1077,7 @@ async def on_3d_quality(update: Update, context) -> int:
                     f"🔗 [View in 3D]({viewer_url})",
             parse_mode=ParseMode.MARKDOWN,
             filename="model3d.glb",
+            reply_markup=keyboard,
         )
         logger.info("3D model [%s]: %s (%s)", uid, glb_url, texture_info)
     except Exception as e:
@@ -1085,6 +1089,7 @@ async def on_3d_quality(update: Update, context) -> int:
             f"🔗 [View in 3D]({viewer_url})\n"
             f"💾 [Direct download]({glb_url})",
             parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboard,
         )
         logger.info("3D model [%s]: %s (link only, download failed)", uid, glb_url)
     
