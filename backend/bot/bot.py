@@ -100,7 +100,7 @@ def consume_tokens(user_id: int, amount: int, username: str = "") -> bool:
     Admin (by username) always passes.
     """
     if USE_POSTGRES:
-        return consume_tokens_pg(user_id, amount, username)
+        return consume_tokens_pg(user_id, amount, ADMIN_USERNAME if username else "")
     # SQLite fallback
     if username and username.lstrip("@").lower() == ADMIN_USERNAME:
         return True
