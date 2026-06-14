@@ -12,6 +12,8 @@ const MyRWA = ({ wallet }) => {
     pricePerPart: 10
   });
   const [listLoading, setListLoading] = useState(false);
+  const [customMode, setCustomMode] = useState(false);
+  const [customParts, setCustomParts] = useState('');
 
   useEffect(() => {
     if (wallet) {
@@ -69,6 +71,9 @@ const MyRWA = ({ wallet }) => {
 
   const handleListClick = (token) => {
     setSelectedToken(token);
+    setCustomMode(false);
+    setCustomParts('');
+    setListForm({ partsForSale: 100, pricePerPart: 10 });
     setShowListModal(true);
   };
 
@@ -296,11 +301,14 @@ const MyRWA = ({ wallet }) => {
                 <label className="block text-white font-medium mb-3">
                   Choose Total Parts
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => setListForm({ ...listForm, partsForSale: 100 })}
+                    onClick={() => {
+                      setCustomMode(false);
+                      setListForm({ ...listForm, partsForSale: 100 });
+                    }}
                     className={`px-4 py-3 rounded-lg border-2 transition ${
-                      listForm.partsForSale === 100
+                      !customMode && listForm.partsForSale === 100
                         ? 'border-purple-500 bg-purple-500/20'
                         : 'border-gray-700 hover:border-gray-600'
                     }`}
@@ -309,9 +317,12 @@ const MyRWA = ({ wallet }) => {
                     <div className="text-xs text-gray-400">1% per part</div>
                   </button>
                   <button
-                    onClick={() => setListForm({ ...listForm, partsForSale: 1000 })}
+                    onClick={() => {
+                      setCustomMode(false);
+                      setListForm({ ...listForm, partsForSale: 1000 });
+                    }}
                     className={`px-4 py-3 rounded-lg border-2 transition ${
-                      listForm.partsForSale === 1000
+                      !customMode && listForm.partsForSale === 1000
                         ? 'border-purple-500 bg-purple-500/20'
                         : 'border-gray-700 hover:border-gray-600'
                     }`}
@@ -320,9 +331,12 @@ const MyRWA = ({ wallet }) => {
                     <div className="text-xs text-gray-400">0.1% per part</div>
                   </button>
                   <button
-                    onClick={() => setListForm({ ...listForm, partsForSale: 10000 })}
+                    onClick={() => {
+                      setCustomMode(false);
+                      setListForm({ ...listForm, partsForSale: 10000 });
+                    }}
                     className={`px-4 py-3 rounded-lg border-2 transition ${
-                      listForm.partsForSale === 10000
+                      !customMode && listForm.partsForSale === 10000
                         ? 'border-purple-500 bg-purple-500/20'
                         : 'border-gray-700 hover:border-gray-600'
                     }`}
@@ -330,7 +344,46 @@ const MyRWA = ({ wallet }) => {
                     <div className="text-white font-bold">10,000</div>
                     <div className="text-xs text-gray-400">0.01% per part</div>
                   </button>
+                  <button
+                    onClick={() => {
+                      setCustomMode(true);
+                      setCustomParts('');
+                    }}
+                    className={`px-4 py-3 rounded-lg border-2 transition ${
+                      customMode
+                        ? 'border-purple-500 bg-purple-500/20'
+                        : 'border-gray-700 hover:border-gray-600'
+                    }`}
+                  >
+                    <div className="text-white font-bold">Custom</div>
+                    <div className="text-xs text-gray-400">Your choice</div>
+                  </button>
                 </div>
+                
+                {/* Custom Input */}
+                {customMode && (
+                  <div className="mt-3 space-y-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="1000000000"
+                      value={customParts}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setCustomParts(value);
+                        if (value && parseInt(value) > 0) {
+                          setListForm({ ...listForm, partsForSale: parseInt(value) });
+                        }
+                      }}
+                      placeholder="e.g., 21000000 for Bitcoin themed NFT"
+                      className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                    />
+                    <p className="text-xs text-gray-400">
+                      💡 <span className="text-purple-400">Example:</span> 21,000,000 parts for Bitcoin 3D model
+                    </p>
+                  </div>
+                )}
+                
                 <p className="text-gray-500 text-xs mt-2">
                   More parts = better liquidity for marketplace trading
                 </p>
