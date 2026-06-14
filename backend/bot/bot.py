@@ -1702,8 +1702,8 @@ async def error_handler(update: object, context) -> None:
         try:
             await update.effective_message.reply_text(
                 "⚠️ *Internal error detected*\n"
-                "Ton état de conversation a été réinitialisé.\n"
-                "Relance ta commande (/music, /pira3d, etc.)",
+                "Your conversation state has been reset.\n"
+                "Please restart your command (/music, /pira3d, etc.)",
                 parse_mode=ParseMode.MARKDOWN,
             )
         except Exception:
