@@ -1,5 +1,5 @@
 """
-PiranAI Bot - Full Suno-like flow: Style -> Voice -> Theme -> Lyrics (AI or custom) -> Generate
+TrappistAI Bot - Full Suno-like flow: Style -> Voice -> Theme -> Lyrics (AI or custom) -> Generate
 """
 import asyncio, logging, os, sqlite3, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
@@ -42,7 +42,7 @@ OLLAMA_URL        = os.getenv("OLLAMA_URL",   "http://localhost:11434")
 OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL", "llama3.2")
 GROQ_KEY          = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL        = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
-DB_PATH           = os.getenv("DB_PATH",      "piranai.db")
+DB_PATH           = os.getenv("DB_PATH",      "trappistai.db")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")  # PostgreSQL connection
 BACKEND_API_URL   = os.getenv("BACKEND_API_URL", "https://trappistai-backend.onrender.com")
 ADMIN_USERNAME    = os.getenv("ADMIN_USERNAME", "djaf77").lstrip("@").lower()
@@ -304,7 +304,7 @@ def _ollama_chat(user_id: int, prompt: str) -> str:
 
     today = datetime.now().strftime("%d/%m/%Y")
     system = (
-        f"Tu es PiranAI, un pote cash, drôle, intelligent et naturel. "
+        f"Tu es TrappistAI, un pote cash, drôle, intelligent et naturel. "
         f"AUJOURD'HUI C'EST LE {today}. Quand on te demande la date ou l'année, tu réponds {today}. "
         "Ton training s'arrête en 2023 mais tu sais qu'on est en 2026. "
         "Ne dis JAMAIS qu'on est en 2023. "
@@ -381,7 +381,7 @@ def _groq_chat(user_id: int, prompt: str) -> str:
         _conv_history[user_id] = hist[-14:]
     messages = [
         {"role": "system", "content": (
-            f"Tu es PiranAI. Aujourd'hui on est le {datetime.now().strftime('%d/%m/%Y')}. "
+            f"Tu es TrappistAI. Aujourd'hui on est le {datetime.now().strftime('%d/%m/%Y')}. "
             "Tu es un bot Telegram qui peut faire 3 trucs : générer des images IA (/image), "
             "composer de vraies chansons complètes avec musique (/music), "
             "et discuter librement (c'est ce que tu fais là). "
@@ -593,7 +593,7 @@ async def _generate_and_send(update: Update, context) -> int:
             audio=url,
             caption=f"🎵 *{label}* {vi}\n🎸 `{tags}`\n\n[Lien direct]({url})",
             parse_mode=ParseMode.MARKDOWN,
-            title=f"PiranAI — {label}",
+            title=f"TrappistAI — {label}",
             performer="HeartMuLa x WaveSpeed",
             reply_markup=keyboard,
         )
@@ -882,9 +882,9 @@ async def cmd_image(update: Update, context) -> None:
             await update.message.reply_text(f"❌ Erreur: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
 
 
-# ─── /pira3d ─────────────────────────────────────────────────────────────────
+# ─── /trappist3d ─────────────────────────────────────────────────────────────────
 
-async def cmd_pira3d(update: Update, context) -> int:
+async def cmd_trappist3d(update: Update, context) -> int:
     context.user_data.clear()
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🖼️ From Image", callback_data="3d:image")],
@@ -892,7 +892,7 @@ async def cmd_pira3d(update: Update, context) -> int:
         [InlineKeyboardButton("❌ Cancel", callback_data="3d:cancel")],
     ])
     await update.message.reply_text(
-        "🎨 *PiranAI 3D Generator*\n\n"
+        "🎨 *TrappistAI 3D Generator*\n\n"
         "Choisis ton mode de génération:",
         reply_markup=keyboard,
         parse_mode=ParseMode.MARKDOWN,
@@ -965,7 +965,7 @@ async def on_3d_quality(update: Update, context) -> int:
     image_url = context.user_data.get('3d_image_url')
     
     if not image_url:
-        await q.edit_message_text("❌ Session expirée. Utilise /pira3d pour recommencer.")
+        await q.edit_message_text("❌ Session expirée. Utilise /trappist3d pour recommencer.")
         context.user_data.clear()
         return ConversationHandler.END
     
@@ -1062,7 +1062,7 @@ async def cmd_start(update: Update, context) -> None:
         bal = get_tokens(uid)
         bonus = f"\n\n💰 Ton solde: *{bal} token(s)*"
     await update.message.reply_text(
-        "🎨 *PiranAI* — Images & Musique IA\n\n"
+        "🎨 *TrappistAI* — Images & Musique IA\n\n"
         "🖼 */image* `prompt` → FLUX.1 image *(~5s)* — *1 token*\n"
         "🎵 */music* → Chanson complète *(2-3 min)* — *10 tokens*\n"
         "💬 */text* `question` → Chat Llama 3.3 *(gratuit)*\n"
@@ -1288,7 +1288,7 @@ async def cmd_verify(update: Update, context) -> None:
 
 async def cmd_help(update: Update, context) -> None:
     await update.message.reply_text(
-        "📖 *Aide PiranAI*\n\n"
+        "📖 *Aide TrappistAI*\n\n"
         "🖼 */image* `prompt` \u2014 image FLUX.1 **(1 token)**\n"
         "🎵 */music* \u2014 wizard style\u2192voix\u2192th\u00e8me\u2192paroles **(10 tokens)**\n"
         "💬 */text* `question` \u2014 chat IA Llama 3.3 **(gratuit)**\n"
@@ -1302,7 +1302,7 @@ async def cmd_help(update: Update, context) -> None:
 
 async def cmd_about(update: Update, context) -> None:
     await update.message.reply_text(
-        "🧠 *Stack IA — PiranAI*\n\n"
+        "🧠 *Stack IA — TrappistAI*\n\n"
         "🎵 *Musique — HeartMuLa*\n"
         "┣ HeartMuLa LLM : *3B paramètres* (Llama 3.2 backbone)\n"
         "┣ HeartCodec : *1.5B params* — tokenizer audio 12.5 Hz\n"
@@ -1325,7 +1325,7 @@ async def cmd_balance(update: Update, context) -> None:
     uid = update.effective_user.id
     bal = get_tokens(uid)
     await update.message.reply_text(
-        f"💰 *Ton solde PiranAI:* `{bal}` token(s)\n\n"
+        f"💰 *Ton solde TrappistAI:* `{bal}` token(s)\n\n"
         "🖼 Image = 1 token\n"
         "🎵 Musique = 10 tokens\n"
         "💬 Chat = *gratuit* (Ollama local)\n\n"
@@ -1695,7 +1695,7 @@ def main():
         return
 
     # Thread pool : 1 thread par génération audio simultanée possible (50 = 50 users en parallèle)
-    executor = ThreadPoolExecutor(max_workers=50, thread_name_prefix="piranai")
+    executor = ThreadPoolExecutor(max_workers=50, thread_name_prefix="trappistai")
     
     # Fix for Python 3.10+ - create event loop explicitly
     try:
@@ -1748,7 +1748,7 @@ def main():
     app.add_handler(conv)
 
     conv_3d = ConversationHandler(
-        entry_points=[CommandHandler("pira3d", cmd_pira3d)],
+        entry_points=[CommandHandler("trappist3d", cmd_trappist3d)],
         states={
             S_3D_MENU: [CallbackQueryHandler(on_3d_menu, pattern=r"^3d:")],
             S_3D_IMAGE: [MessageHandler(filters.PHOTO, on_3d_image),
@@ -1782,7 +1782,7 @@ def main():
     # Handler texte libre — doit être en DERNIER (priorité basse, le wizard /music passe avant)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_free_message))
 
-    logger.info("PiranAI Bot started")
+    logger.info("TrappistAI Bot started")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

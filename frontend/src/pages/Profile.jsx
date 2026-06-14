@@ -236,7 +236,7 @@ export default function Profile({ wallet }) {
                   </div>
                   
                   <p className="text-sm text-gray-400 mb-4">
-                    🎉 Your creations sync with <a href="https://t.me/PiraAi_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-400">@PiraAi_bot</a>
+                    🎉 Your creations sync with <a href="https://t.me/TrappistAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-400">@TrappistAI_bot</a>
                   </p>
 
                   <button
@@ -256,7 +256,7 @@ export default function Profile({ wallet }) {
                     <p className="text-sm text-gray-400 mb-2">Your verification code:</p>
                     <p className="text-4xl font-bold tracking-widest text-purple-400 mb-4">{generatedCode}</p>
                     <p className="text-sm text-gray-300">
-                      Go to <a href="https://t.me/PiraAi_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-400 font-bold">@PiraAi_bot</a> and type:
+                      Go to <a href="https://t.me/TrappistAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-400 font-bold">@TrappistAI_bot</a> and type:
                     </p>
                     <code className="inline-block mt-2 px-4 py-2 bg-black border border-purple-500/30 rounded text-purple-400">
                       /verify {generatedCode}
@@ -274,7 +274,7 @@ export default function Profile({ wallet }) {
                           setTelegramUsername('')
                           setGeneratedCode('')
                         } else {
-                          setError('Not verified yet. Please type /verify ' + generatedCode + ' on @PiraAi_bot')
+                          setError('Not verified yet. Please type /verify ' + generatedCode + ' on @TrappistAI_bot')
                         }
                         setLoading(false)
                       }}
@@ -307,7 +307,7 @@ export default function Profile({ wallet }) {
               ) : (
                 <div>
                   <p className="text-sm text-gray-400 mb-4">
-                    Link your Telegram account to sync with <a href="https://t.me/PiraAi_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-400">@PiraAi_bot</a>
+                    Link your Telegram account to sync with <a href="https://t.me/TrappistAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-400">@TrappistAI_bot</a>
                   </p>
 
                   <div className="space-y-4">
@@ -389,13 +389,13 @@ export default function Profile({ wallet }) {
                   Generate AI content on Telegram and save it to your gallery!
                 </p>
                 <a
-                  href="https://t.me/PiraAi_bot"
+                  href="https://t.me/TrappistAI_bot"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  Open @PiraAi_bot
+                  Open @TrappistAI_bot
                 </a>
               </div>
             ) : (
