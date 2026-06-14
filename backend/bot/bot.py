@@ -960,13 +960,13 @@ async def on_3d_image(update: Update, context) -> int:
     
     # Show quality menu
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚡ Without texture (2 tokens)", callback_data="3dq:notex")],
+        [InlineKeyboardButton("⚡ Without texture (20 tokens)", callback_data="3dq:notex")],
         [InlineKeyboardButton("🎨 With texture (30 tokens)", callback_data="3dq:tex")],
         [InlineKeyboardButton("❌ Cancel", callback_data="3dq:cancel")],
     ])
     await update.message.reply_text(
         "🎨 *Choose 3D model quality:*\n\n"
-        "⚡ *Without texture* — 2 tokens (~2 min)\n"
+        "⚡ *Without texture* — 20 tokens (~2 min)\n"
         "   └ Pure geometry, monochrome\n\n"
         "🎨 *With texture* — 30 tokens (~5 min)\n"
         "   └ Full colors and textures",
@@ -998,7 +998,7 @@ async def on_3d_quality(update: Update, context) -> int:
     
     # Determine model and cost
     if choice == "notex":
-        cost = 2
+        cost = 20
         model_name = "Hunyuan-3D V3.1"
         use_texture = False
     else:  # tex
@@ -1013,7 +1013,7 @@ async def on_3d_quality(update: Update, context) -> int:
         return S_3D_QUALITY
     
     try:
-        await q.edit_message_text(f"🎨 *3D Generation in progress…*\n_Model: {model_name}_\n⏳ May take up to 5 min", parse_mode=ParseMode.MARKDOWN)
+        await q.edit_message_text(f"🎨 *3D Generation in progress…*\n_Model: {model_name}_\n⏳ May take up to 10 min", parse_mode=ParseMode.MARKDOWN)
         
         # Generate 3D
         if use_texture:
@@ -1022,10 +1022,41 @@ async def on_3d_quality(update: Update, context) -> int:
             )
         else:
             glb_url = await asyncio.get_event_loop().run_in_executor(
-                None, wavespeed.generate_3d_from_image, image_url, None
+                None, wavespeed.generate_3d_from_image, image_url
             )
-        
-        # Download GLB file
+    except wavespeed.TaskTimeout as e:
+        # Task still running on WaveSpeed — keep polling up to 20 more minutes
+        logger.warning("3D task %s timed out initial poll, continuing...", e.task_id)
+        try:
+            await q.message.edit_text(
+                f"⏳ *Still generating 3D…*\n_Taking longer than expected_\n🕐 Checking again in a moment…",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            glb_url = await asyncio.get_event_loop().run_in_executor(
+                None, wavespeed.fetch_result, e.task_id, 1200
+            )
+        except Exception as retry_err:
+            logger.error("3D retry failed: %s", retry_err)
+            await q.message.edit_text(
+                f"❌ *3D generation timed out*\n\n"
+                f"⚠️ The model may still be generating on WaveSpeed.\n"
+                f"🆔 Task ID: `{e.task_id}`\n\n"
+                f"💰 Your {cost} tokens have been refunded.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            # Refund tokens on timeout
+            _db.execute("UPDATE users SET tokens = tokens + ? WHERE user_id = ?", (cost, uid))
+            _db.commit()
+            context.user_data.clear()
+            return ConversationHandler.END
+    except Exception as e:
+        logger.error("3D generation error: %s", e)
+        await q.message.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    # Download GLB file and send
+    try:
         glb_data = await asyncio.get_event_loop().run_in_executor(
             None, lambda: req.get(glb_url, timeout=60).content
         )
@@ -1046,11 +1077,8 @@ async def on_3d_quality(update: Update, context) -> int:
         )
         logger.info("3D model [%s]: %s (%s)", uid, glb_url, texture_info)
     except Exception as e:
-        logger.error("3D generation error: %s", e)
-        try:
-            await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
-        except Exception:
-            await update.message.reply_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        logger.error("3D file download/send error: %s", e)
+        await q.message.reply_text(f"❌ Error downloading model: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
     
     context.user_data.clear()
     return ConversationHandler.END
