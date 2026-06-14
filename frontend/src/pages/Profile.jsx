@@ -152,9 +152,9 @@ export default function Profile({ wallet }) {
 
   if (!wallet) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-blue-900 pt-20 px-4 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-green-900 via-black to-gray-900 pt-20 px-4 flex items-center justify-center">
         <div className="text-center">
-          <User className="w-16 h-16 mx-auto mb-4 text-purple-400 opacity-50" />
+          <User className="w-16 h-16 mx-auto mb-4 text-green-400 opacity-50" />
           <h2 className="text-2xl font-bold text-white mb-2">Connect Wallet First</h2>
           <p className="text-gray-400">Please connect your Casper wallet to view your profile</p>
         </div>
@@ -163,7 +163,7 @@ export default function Profile({ wallet }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-blue-900 pt-20 px-4 pb-20">
+    <div className="min-h-screen bg-gradient-to-br from-green-900 via-black to-gray-900 pt-20 px-4 pb-20">
       <div className="max-w-6xl mx-auto">
         
         {/* Header */}
@@ -181,7 +181,7 @@ export default function Profile({ wallet }) {
             onClick={() => setActiveTab('telegram')}
             className={`flex-1 px-6 py-3 rounded-lg font-medium transition ${
               activeTab === 'telegram'
-                ? 'bg-purple-600 text-white'
+                ? 'bg-green-600 text-white'
                 : 'text-gray-400 hover:text-white hover:bg-gray-800'
             }`}
           >
@@ -192,7 +192,7 @@ export default function Profile({ wallet }) {
             onClick={() => setActiveTab('gallery')}
             className={`flex-1 px-6 py-3 rounded-lg font-medium transition ${
               activeTab === 'gallery'
-                ? 'bg-purple-600 text-white'
+                ? 'bg-green-600 text-white'
                 : 'text-gray-400 hover:text-white hover:bg-gray-800'
             }`}
           >
@@ -236,7 +236,7 @@ export default function Profile({ wallet }) {
                   </div>
                   
                   <p className="text-sm text-gray-400 mb-4">
-                    🎉 Your creations sync with <a href="https://t.me/TrappistAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-400">@TrappistAI_bot</a>
+                    🎉 Your creations sync with <a href="https://t.me/TrappistAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-400">@TrappistAI_bot</a>
                   </p>
 
                   <button
@@ -252,13 +252,13 @@ export default function Profile({ wallet }) {
                     ✅ Code generated for <span className="font-bold">@{telegramUsername}</span>
                   </p>
                   
-                  <div className="bg-purple-900/30 border-2 border-purple-500/50 rounded-lg p-6 mb-6 text-center">
+                  <div className="bg-green-900/30 border-2 border-green-500/50 rounded-lg p-6 mb-6 text-center">
                     <p className="text-sm text-gray-400 mb-2">Your verification code:</p>
-                    <p className="text-4xl font-bold tracking-widest text-purple-400 mb-4">{generatedCode}</p>
+                    <p className="text-4xl font-bold tracking-widest text-green-400 mb-4">{generatedCode}</p>
                     <p className="text-sm text-gray-300">
-                      Go to <a href="https://t.me/TrappistAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-400 font-bold">@TrappistAI_bot</a> and type:
+                      Go to <a href="https://t.me/TrappistAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-400 font-bold">@TrappistAI_bot</a> and type:
                     </p>
-                    <code className="inline-block mt-2 px-4 py-2 bg-black border border-purple-500/30 rounded text-purple-400">
+                    <code className="inline-block mt-2 px-4 py-2 bg-black border border-green-500/30 rounded text-green-400">
                       /verify {generatedCode}
                     </code>
                   </div>
@@ -279,7 +279,7 @@ export default function Profile({ wallet }) {
                         setLoading(false)
                       }}
                       disabled={loading}
-                      className="flex-1 px-4 py-3 bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 text-white font-bold"
+                      className="flex-1 px-4 py-3 bg-green-600 rounded hover:bg-green-700 disabled:opacity-50 text-white font-bold"
                     >
                       {loading ? (
                         <span className="flex items-center justify-center gap-2">
@@ -307,7 +307,7 @@ export default function Profile({ wallet }) {
               ) : (
                 <div>
                   <p className="text-sm text-gray-400 mb-4">
-                    Link your Telegram account to sync with <a href="https://t.me/TrappistAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-400">@TrappistAI_bot</a>
+                    Link your Telegram account to sync with <a href="https://t.me/TrappistAI_bot" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-400">@TrappistAI_bot</a>
                   </p>
 
                   <div className="space-y-4">
@@ -318,14 +318,14 @@ export default function Profile({ wallet }) {
                         value={telegramUsername}
                         onChange={(e) => setTelegramUsername(e.target.value)}
                         placeholder="@your_username"
-                        className="w-full px-4 py-3 bg-black border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                        className="w-full px-4 py-3 bg-black border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                       />
                     </div>
 
                     <button
                       onClick={handleLinkTelegram}
                       disabled={!telegramUsername.trim() || isLinking}
-                      className="w-full px-4 py-3 bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold flex items-center justify-center gap-2"
+                      className="w-full px-4 py-3 bg-green-600 rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold flex items-center justify-center gap-2"
                     >
                       {isLinking ? (
                         <>
@@ -359,7 +359,7 @@ export default function Profile({ wallet }) {
             </div>
 
             {/* Info */}
-            <div className="p-4 bg-purple-900/20 border border-purple-500/20 rounded text-sm text-gray-300">
+            <div className="p-4 bg-green-900/20 border border-green-500/20 rounded text-sm text-gray-300">
               <p className="mb-2">ℹ️ <strong className="text-white">Why link Telegram?</strong></p>
               <ul className="list-disc list-inside space-y-1 ml-2 text-gray-400">
                 <li>Generate AI content directly from Telegram</li>
@@ -379,7 +379,7 @@ export default function Profile({ wallet }) {
 
             {tokensLoading ? (
               <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
+                <Loader2 className="w-8 h-8 animate-spin text-green-400" />
               </div>
             ) : tokens.length === 0 ? (
               <div className="text-center py-20">
@@ -392,7 +392,7 @@ export default function Profile({ wallet }) {
                   href="https://t.me/TrappistAI_bot"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium"
                 >
                   <ExternalLink className="w-4 h-4" />
                   Open @TrappistAI_bot
@@ -401,14 +401,14 @@ export default function Profile({ wallet }) {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {tokens.map((token) => (
-                  <div key={token.tokenId} className="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden hover:border-purple-500/50 transition">
+                  <div key={token.tokenId} className="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden hover:border-green-500/50 transition">
                     {/* Asset Preview */}
                     {token.assetType === 'image' && (
                       <img src={token.assetUrl} alt="Asset" className="w-full h-48 object-cover" />
                     )}
                     {token.assetType === 'music' && (
-                      <div className="w-full h-48 bg-gradient-to-br from-purple-900/50 to-blue-900/50 flex items-center justify-center">
-                        <Music className="w-16 h-16 text-purple-400" />
+                      <div className="w-full h-48 bg-gradient-to-br from-green-900/50 to-gray-900/50 flex items-center justify-center">
+                        <Music className="w-16 h-16 text-green-400" />
                       </div>
                     )}
                     {token.assetType === '3d' && (
@@ -436,7 +436,7 @@ export default function Profile({ wallet }) {
                         href={token.assetUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm text-center block"
+                        className="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm text-center block"
                       >
                         View Full Size
                       </a>

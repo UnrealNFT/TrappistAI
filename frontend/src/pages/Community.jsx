@@ -63,13 +63,13 @@ const Community = ({ wallet }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-blue-900 pt-20 px-4 pb-20">
+    <div className="min-h-screen bg-gradient-to-br from-green-900 via-black to-gray-900 pt-20 px-4 pb-20">
       <div className="max-w-7xl mx-auto">
         
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2 flex items-center gap-3">
-            <Sparkles className="w-10 h-10 text-purple-400" />
+            <Sparkles className="w-10 h-10 text-green-400" />
             Community Feed
           </h1>
           <p className="text-gray-400">Discover AI creations shared by the community</p>
@@ -81,7 +81,7 @@ const Community = ({ wallet }) => {
             onClick={() => setFilter('all')}
             className={`px-4 py-2 rounded-lg font-medium transition whitespace-nowrap ${
               filter === 'all'
-                ? 'bg-purple-600 text-white'
+                ? 'bg-green-600 text-white'
                 : 'bg-gray-900/50 text-gray-400 hover:text-white'
             }`}
           >
@@ -91,7 +91,7 @@ const Community = ({ wallet }) => {
             onClick={() => setFilter('image')}
             className={`px-4 py-2 rounded-lg font-medium transition whitespace-nowrap flex items-center gap-2 ${
               filter === 'image'
-                ? 'bg-purple-600 text-white'
+                ? 'bg-green-600 text-white'
                 : 'bg-gray-900/50 text-gray-400 hover:text-white'
             }`}
           >
@@ -102,7 +102,7 @@ const Community = ({ wallet }) => {
             onClick={() => setFilter('music')}
             className={`px-4 py-2 rounded-lg font-medium transition whitespace-nowrap flex items-center gap-2 ${
               filter === 'music'
-                ? 'bg-purple-600 text-white'
+                ? 'bg-green-600 text-white'
                 : 'bg-gray-900/50 text-gray-400 hover:text-white'
             }`}
           >
@@ -113,7 +113,7 @@ const Community = ({ wallet }) => {
             onClick={() => setFilter('3d')}
             className={`px-4 py-2 rounded-lg font-medium transition whitespace-nowrap flex items-center gap-2 ${
               filter === '3d'
-                ? 'bg-purple-600 text-white'
+                ? 'bg-green-600 text-white'
                 : 'bg-gray-900/50 text-gray-400 hover:text-white'
             }`}
           >
@@ -125,7 +125,7 @@ const Community = ({ wallet }) => {
         {/* Loading */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
+            <Loader2 className="w-8 h-8 animate-spin text-green-400" />
           </div>
         ) : items.length === 0 ? (
           <div className="text-center py-20">
@@ -147,7 +147,7 @@ const Community = ({ wallet }) => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden hover:border-purple-500/50 transition group"
+                className="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden hover:border-green-500/50 transition group"
               >
                 {/* Asset Preview */}
                 <div className="relative">
@@ -159,8 +159,8 @@ const Community = ({ wallet }) => {
                     />
                   )}
                   {item.assetType === 'music' && (
-                    <div className="w-full h-64 bg-gradient-to-br from-purple-900/50 to-blue-900/50 flex items-center justify-center">
-                      <Music className="w-20 h-20 text-purple-400 group-hover:scale-110 transition-transform" />
+                    <div className="w-full h-64 bg-gradient-to-br from-green-900/50 to-gray-900/50 flex items-center justify-center">
+                      <Music className="w-20 h-20 text-green-400 group-hover:scale-110 transition-transform" />
                     </div>
                   )}
                   {item.assetType === '3d' && (
@@ -200,7 +200,7 @@ const Community = ({ wallet }) => {
                     href={item.assetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
+                    className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
                   >
                     <ExternalLink className="w-4 h-4" />
                     View Full
