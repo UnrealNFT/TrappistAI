@@ -3,7 +3,7 @@ import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle, Zap } from 'lucide-
 import { CLPublicKey, DeployUtil } from 'casper-js-sdk'
 
 const PACKAGES = [
-  { name: 'Starter', tokens: 100, cspr: 1000, popular: true }
+  { name: 'Starter', tokens: 100, cspr: 10, popular: true }  // TEST: 10 CSPR temporaire
 ]
 
 // 🔥 CONFIGURATION CASPER (à configurer avec ta vraie adresse)
