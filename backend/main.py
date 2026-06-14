@@ -1569,11 +1569,11 @@ async def mint_rwa_token(request: Request, data: MintRWARequest):
             result = session.execute(text("""
                 INSERT INTO rwa_tokens (
                     wallet_address, asset_type, ipfs_hash, asset_url, 
-                    prompt, model, telegram_user_id, metadata
+                    prompt, model, telegram_user_id, metadata, total_shares, is_public
                 )
                 VALUES (
                     :wallet, :type, :ipfs, :url, 
-                    :prompt, :model, :telegram_id, CAST(:metadata AS jsonb)
+                    :prompt, :model, :telegram_id, CAST(:metadata AS jsonb), :total_shares, :is_public
                 )
                 RETURNING token_id, created_at
             """), {
@@ -1584,7 +1584,9 @@ async def mint_rwa_token(request: Request, data: MintRWARequest):
                 "prompt": data.prompt,
                 "model": data.model,
                 "telegram_id": data.telegramUserId,
-                "metadata": str(data.metadata) if data.metadata else "{}"
+                "metadata": str(data.metadata) if data.metadata else "{}",
+                "total_shares": data.totalShares,
+                "is_public": data.isPublic
             })
             
             row = result.fetchone()
@@ -1926,10 +1928,62 @@ async def buy_parts(request: BuyPartsRequest):
         cursor.close()
         conn.close()
 
+@app.get("/api/community/feed")
+async def get_community_feed():
+    """
+    Get all public shared items (isPublic=True)
+    """
+    try:
+        print("📋 Fetching community feed (public items)...")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                token_id,
+                wallet_address,
+                asset_type,
+                asset_url,
+                prompt,
+                model,
+                total_shares,
+                created_at
+            FROM rwa_tokens
+            WHERE is_public = TRUE
+            ORDER BY created_at DESC
+            LIMIT 100
+        """)
+        
+        items = []
+        for row in cursor.fetchall():
+            token_id, wallet_address, asset_type, asset_url, prompt, model, total_shares, created_at = row
+            
+            items.append({
+                "listingId": token_id,  # For compatibility
+                "tokenId": token_id,
+                "walletAddress": wallet_address,
+                "assetType": asset_type,
+                "assetUrl": asset_url,
+                "prompt": prompt,
+                "model": model,
+                "totalShares": total_shares,
+                "createdAt": created_at.isoformat()
+            })
+        
+        cursor.close()
+        conn.close()
+        
+        return {"success": True, "listings": items, "count": len(items)}
+        
+    except Exception as e:
+        print(f"❌ Community feed error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/marketplace/listings")
 async def get_marketplace_listings(status: str = "active"):
     """
-    Get all marketplace listings
+    Get all marketplace listings (legacy - for sales)
     """
     try:
         print(f"📋 Fetching marketplace listings (status: {status})...")

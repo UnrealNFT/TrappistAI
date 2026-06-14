@@ -1396,9 +1396,13 @@ async def on_save_asset(update: Update, context) -> None:
         )
         return
     
-    # Remove buttons
+    # Keep buttons but update them to show saved status
     try:
-        await q.edit_message_reply_markup(reply_markup=None)
+        saved_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Saved to Gallery", callback_data="noop")],
+            [InlineKeyboardButton("📤 Save & Share (Public)", callback_data=f"share:{short_id}")],
+        ])
+        await q.edit_message_reply_markup(reply_markup=saved_keyboard)
     except Exception:
         pass
     
@@ -1426,6 +1430,16 @@ async def on_save_asset(update: Update, context) -> None:
         
         if result.get("success"):
             token_id = result.get("tokenId", "?")
+            # Update buttons to show both actions done
+            try:
+                both_saved_keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Saved to Gallery", callback_data="noop")],
+                    [InlineKeyboardButton("✅ Shared with Community", callback_data="noop")],
+                ])
+                await q.message.edit_reply_markup(reply_markup=both_saved_keyboard)
+            except Exception:
+                pass
+            
             await progress_msg.edit_text(
                 f"✅ *Saved to your private gallery!*\n\n"
                 f"📦 Item ID: #{token_id}\n"
@@ -1485,9 +1499,13 @@ async def on_share_asset(update: Update, context) -> None:
         )
         return
     
-    # Remove buttons
+    # Update buttons to show sharing in progress
     try:
-        await q.edit_message_reply_markup(reply_markup=None)
+        sharing_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💾 Save to Gallery (Private)", callback_data=f"save:{short_id}")],
+            [InlineKeyboardButton("⏳ Sharing...", callback_data="noop")],
+        ])
+        await q.edit_message_reply_markup(reply_markup=sharing_keyboard)
     except Exception:
         pass
     
@@ -1511,7 +1529,18 @@ async def on_share_asset(update: Update, context) -> None:
         result = resp.json()
         
         if result.get("success"):
-            item_id = result.get("itemId", "?")
+            item_id = result.get("tokenId", "?")
+            
+            # Update buttons to show both actions available
+            try:
+                shared_keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💾 Also Save Private", callback_data=f"save:{short_id}")],
+                    [InlineKeyboardButton("✅ Shared with Community", callback_data="noop")],
+                ])
+                await q.message.edit_reply_markup(reply_markup=shared_keyboard)
+            except Exception:
+                pass
+            
             await progress_msg.edit_text(
                 f"✅ *Saved and shared with community!*\n\n"
                 f"📦 Item ID: #{item_id}\n"
@@ -1736,6 +1765,8 @@ def main():
     app.add_handler(CallbackQueryHandler(on_save_asset, pattern=r"^save:"))
     app.add_handler(CallbackQueryHandler(on_share_asset, pattern=r"^share:"))
     app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.edit_message_reply_markup(reply_markup=None), pattern=r"^skip_save$"))
+    # Handle noop callbacks (disabled buttons)
+    app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer("✅"), pattern=r"^noop$"))
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("link",    cmd_link))

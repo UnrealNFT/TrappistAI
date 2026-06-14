@@ -17,7 +17,7 @@ const Community = ({ wallet }) => {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
       
       // Fetch all shared items (isPublic = true)
-      const response = await fetch(`${API_URL}/api/marketplace/listings?status=active`)
+      const response = await fetch(`${API_URL}/api/community/feed`)
       const data = await response.json()
       
       if (data.success) {
