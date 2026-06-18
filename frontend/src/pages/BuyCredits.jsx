@@ -370,7 +370,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
           wallet,
           deployHash: confirmedHash,
           amount: 10,  // 10 CSPR for x402
-          credits: 100
+          tokens: 100  // Backend expects "tokens" not "credits"
         })
       })
 
