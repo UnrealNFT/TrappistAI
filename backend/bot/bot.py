@@ -1485,7 +1485,7 @@ async def on_save_asset(update: Update, context) -> None:
             "totalShares": 100  # Default for gallery, user can tokenize on website
         }
         
-        resp = req.post(mint_url, json=mint_payload, timeout=15)
+        resp = req.post(mint_url, json=mint_payload, timeout=60)
         resp.raise_for_status()
         result = resp.json()
         
@@ -1585,7 +1585,7 @@ async def on_share_asset(update: Update, context) -> None:
             "isPublic": True  # Share publicly
         }
         
-        resp = req.post(share_url, json=share_payload, timeout=15)
+        resp = req.post(share_url, json=share_payload, timeout=60)
         resp.raise_for_status()
         result = resp.json()
         
