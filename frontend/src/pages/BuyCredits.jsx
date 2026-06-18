@@ -396,8 +396,15 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                 <div className="mb-8 glass p-6 rounded-xl border border-green-500/30">
                   <div className="flex justify-between items-center mb-4">
                     <span className="text-green-300/80 text-lg">Amount to pay:</span>
-                    <span className="text-4xl font-bold text-green-400">{selected.cspr} CSPR</span>
+                    <span className="text-4xl font-bold text-green-400">
+                      {paymentMode === 'x402' ? '10' : selected.cspr} CSPR
+                    </span>
                   </div>
+                  {paymentMode === 'x402' && (
+                    <div className="mb-4 p-3 bg-purple-500/20 border border-purple-500/50 rounded-lg">
+                      <p className="text-purple-300 text-sm">⚡ x402 Test Price: 10 CSPR (Production: 1000 CSPR)</p>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center mb-4">
                     <span className="text-green-300/80 text-lg">You will receive:</span>
                     <span className="text-3xl font-bold text-green-400">{selected.tokens} tokens</span>
@@ -465,12 +472,16 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                     </button>
                     
                     <button
-                      disabled
-                      className="p-4 rounded-lg border-2 border-gray-700 bg-gray-900/30 opacity-60 cursor-not-allowed"
+                      onClick={() => setPaymentMode('x402')}
+                      className={`p-4 rounded-lg border-2 transition ${
+                        paymentMode === 'x402'
+                          ? 'border-green-500 bg-green-500/20'
+                          : 'border-gray-700 bg-gray-900/50 hover:border-green-500/50'
+                      }`}
                     >
-                      <Zap className="w-6 h-6 mx-auto mb-2 text-gray-500" />
-                      <p className="text-gray-400 font-semibold text-sm">x402 Auto</p>
-                      <p className="text-yellow-400 text-xs mt-1 font-bold">🚧 Coming Soon</p>
+                      <Zap className="w-6 h-6 mx-auto mb-2 text-green-400" />
+                      <p className="text-white font-semibold text-sm">x402 Auto</p>
+                      <p className="text-green-400 text-xs mt-1 font-bold">⚡ TEST ENABLED</p>
                     </button>
                   </div>
                 </div>
@@ -528,7 +539,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                     ) : (
                       <>
                         <Zap className="w-6 h-6" />
-                        <span>Pay {selected.cspr} CSPR with x402</span>
+                        <span>Pay 10 CSPR with x402 (Test Price)</span>
                       </>
                     )}
                   </button>
