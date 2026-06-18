@@ -1214,9 +1214,9 @@ async def recover_batch_payments(
 RECIPIENT_WALLET = os.getenv("RECIPIENT_WALLET", "0202e5a88e2baf0306484eced583f8642902752668b4b91070dc2abd01d6304d2cd8")
 X402_SECRET = os.getenv("X402_SECRET", "")  # Secret for verifying x402 signatures
 
-# Packages configuration
+# Packages configuration (TEST: 10 CSPR for x402 debug, manual method stays at 1000)
 X402_PACKAGES = {
-    "starter": {"cspr": 1000, "credits": 100, "name": "Starter"}
+    "starter": {"cspr": 10, "credits": 100, "name": "Starter"}
 }
 
 # In-memory payment tracking (TODO: move to DB)
@@ -1255,7 +1255,7 @@ async def buy_credits_x402(request: Request, data: X402BuyCreditsRequest):
                 "amount": pkg["cspr"],
                 "currency": "CSPR",
                 "recipient": RECIPIENT_WALLET,
-                "facilitator_url": "https://facilitator.x402.network/pay",  # TODO: Real x402 Facilitator URL
+                "facilitator_url": "https://x402-facilitator.cspr.cloud",  # Official Casper x402 Facilitator
                 "description": f"{pkg['name']} Bundle - {pkg['credits']} credits",
                 "webhook_url": f"{os.getenv('BACKEND_URL', 'https://trappistai-backend.onrender.com')}/webhook/x402",
                 "metadata": {
