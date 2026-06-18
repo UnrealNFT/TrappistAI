@@ -247,60 +247,133 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
       return
     }
 
+    if (!provider) {
+      setError('Wallet provider not available. Please reconnect your wallet.')
+      return
+    }
+
     setPaying(true)
     setError('')
     setSuccess(false)
 
     try {
-      console.log('⚡ x402 Auto-Payment: 10 CSPR (test price, production: 1000 CSPR)')
+      console.log('🚀 x402 REAL Payment: 10 CSPR on blockchain')
       
-      // Step 1: Request x402 payment (backend returns 402)
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/buy-credits-x402`, {
+      // Amount: 10 CSPR (not 1000) for x402 pricing
+      const amountMotes = (10 * 1_000_000_000).toString()
+      
+      // Use existing provider
+      console.log('✅ Using existing provider')
+
+      // Check connection
+      const isConnected = await provider.isConnected()
+      
+      if (!isConnected) {
+        throw new Error('Wallet not connected. Please reconnect.')
+      }
+
+      console.log('✅ Wallet connected, creating deploy...')
+
+      // Create public keys
+      const senderPublicKey = CLPublicKey.fromHex(wallet)
+      const receiverPublicKey = CLPublicKey.fromHex(CASPER_CONFIG.receiverWallet)
+
+      // Create deploy parameters
+      const deployParams = new DeployUtil.DeployParams(
+        senderPublicKey,
+        CASPER_CONFIG.chainName,
+        1,  // gas price
+        1800000  // ttl (30 minutes)
+      )
+
+      // Create transfer with unique ID
+      const transferId = Date.now()
+      const transferArgs = DeployUtil.ExecutableDeployItem.newTransfer(
+        amountMotes,
+        receiverPublicKey,
+        null,
+        transferId
+      )
+
+      // Standard payment for gas fees
+      const payment = DeployUtil.standardPayment(CASPER_CONFIG.paymentAmount)
+
+      // Create deploy
+      const deploy = DeployUtil.makeDeploy(deployParams, transferArgs, payment)
+      const deployJSON = DeployUtil.deployToJson(deploy)
+
+      console.log('📝 Deploy created, requesting signature...')
+
+      // Request wallet signature
+      const signedResult = await provider.sign(JSON.stringify(deployJSON), wallet)
+
+      if (!signedResult || signedResult.cancelled) {
+        throw new Error('Payment cancelled')
+      }
+
+      console.log('✅ Deploy signed!')
+
+      // Calculate deploy hash
+      const deployHash = Array.from(deploy.hash)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+
+      console.log('📤 Deploying to blockchain...')
+      console.log('Deploy hash:', deployHash)
+
+      // Send transaction
+      const sendResult = await provider.send(JSON.stringify(deployJSON), wallet)
+
+      if (sendResult.cancelled || !sendResult.deploy) {
+        throw new Error('Failed to send transaction')
+      }
+
+      console.log('✅ Transaction sent to blockchain!')
+      
+      setTxHash(deployHash)
+      setPaying(false)
+      setVerifying(true)
+
+      // Submit to backend for verification (same as manual method)
+      const submitResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           wallet,
-          package: 'starter'
+          tx_hash: deployHash,
+          amount: 10,  // 10 CSPR for x402
+          credits: 100
         })
       })
 
-      if (response.status === 402) {
-        const paymentData = await response.json()
-        console.log('✅ x402 Payment Required:', paymentData)
+      if (!submitResponse.ok) {
+        throw new Error('Failed to submit payment for verification')
+      }
+
+      const submitData = await submitResponse.json()
+      console.log('✅ Payment submitted:', submitData)
+
+      // Verify payment (same polling logic as manual method)
+      const verifyResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify/${deployHash}`)
+      const verifyData = await verifyResponse.json()
+
+      if (verifyData.success) {
+        console.log('🔄 Starting auto-verification (polling every 10s)...')
         
-        setTxHash(paymentData.payment_id)
-        setPaying(false)
-        setVerifying(true)
-
-        // Step 2: Call webhook immediately (real x402 Facilitator would call this after user pays)
-        try {
-          console.log('📞 Calling x402 webhook to confirm payment...')
+        let attempts = 0
+        const maxAttempts = 18  // 3 minutes max
+        
+        const pollInterval = setInterval(async () => {
+          attempts++
+          console.log(`⏳ Verification attempt ${attempts}/${maxAttempts}...`)
           
-          const webhookResponse = await fetch(`${import.meta.env.VITE_API_URL}/webhook/x402`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              payment_id: paymentData.payment_id,
-              payer_wallet: wallet,
-              recipient_wallet: paymentData.recipient,
-              amount: paymentData.amount,
-              currency: 'CSPR',  // Required by backend webhook validation
-              status: 'completed',  // Backend expects "completed" not "confirmed"
-              tx_hash: `x402_tx_${Date.now()}`,
-              signature: 'test_signature_remove_in_production'
-            })
-          })
-
-          if (webhookResponse.ok) {
-            const webhookData = await webhookResponse.json()
-            console.log('✅ Webhook confirmed:', webhookData)
+          try {
+            const pollResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify/${deployHash}`)
+            const pollData = await pollResponse.json()
             
-            // Step 3: Verify tokens were credited
-            const balanceResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/user/${wallet}/balance`)
-            const balanceData = await balanceResponse.json()
-            
-            if (balanceData.tokens > balance) {
-              console.log('✅ Tokens credited! New balance:', balanceData.tokens)
+            if (pollData.verified) {
+              console.log('✅ Payment verified on blockchain!')
+              clearInterval(pollInterval)
               setSuccess(true)
               setVerifying(false)
               setError('')
@@ -311,23 +384,27 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                 setTxHash('')
                 setSuccess(false)
               }, 3000)
-            } else {
-              throw new Error('Tokens not credited. Please contact support.')
+            } else if (attempts >= maxAttempts) {
+              console.warn('❌ Auto-verification timeout after 3 minutes')
+              clearInterval(pollInterval)
+              setVerifying(false)
+              setError('⏳ Blockchain confirmation is taking longer than usual. Your payment has been sent successfully - please check your balance in 5-10 minutes. Refresh this page to see your updated balance.')
             }
-          } else {
-            const errorData = await webhookResponse.json()
-            throw new Error(errorData.detail || 'Webhook call failed')
+            
+          } catch (pollError) {
+            console.error('Poll error:', pollError)
+            if (attempts >= maxAttempts) {
+              clearInterval(pollInterval)
+              setVerifying(false)
+              setError('Unable to verify payment. Please check your balance in a few minutes.')
+            }
           }
-          
-        } catch (webhookError) {
-          console.error('❌ Webhook error:', webhookError)
-          setError(webhookError.message || 'Payment confirmation failed')
-          setVerifying(false)
-        }
+        }, 10000) // Every 10 seconds
+        
+        setError('⏳ Waiting for blockchain confirmation... Checking automatically every 10 seconds. Please wait, do not close this page.')
         
       } else {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || 'x402 payment request failed')
+        throw new Error(verifyData.error || 'Payment verification failed')
       }
 
     } catch (err) {
@@ -403,7 +480,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                   </div>
                   {paymentMode === 'x402' && (
                     <div className="mb-4 p-3 bg-purple-500/20 border border-purple-500/50 rounded-lg">
-                      <p className="text-purple-300 text-sm">⚡ x402 Test Price: 10 CSPR (Production: 1000 CSPR)</p>
+                      <p className="text-purple-300 text-sm">⚡ x402 Discounted Price: 10 CSPR (90% off!)</p>
                     </div>
                   )}
                   <div className="flex justify-between items-center mb-4">
@@ -481,8 +558,8 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                       }`}
                     >
                       <Zap className="w-6 h-6 mx-auto mb-2 text-green-400" />
-                      <p className="text-white font-semibold text-sm">x402 Auto</p>
-                      <p className="text-green-400 text-xs mt-1 font-bold">⚡ TEST ENABLED</p>
+                      <p className="text-white font-semibold text-sm">x402 Discounted</p>
+                      <p className="text-green-400 text-xs mt-1 font-bold">💰 Only 10 CSPR</p>
                     </button>
                   </div>
                 </div>
@@ -525,12 +602,12 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                     {paying ? (
                       <>
                         <Loader2 className="w-6 h-6 animate-spin" />
-                        <span>Initiating x402 payment...</span>
+                        <span>Waiting for wallet approval...</span>
                       </>
                     ) : verifying ? (
                       <>
                         <Loader2 className="w-6 h-6 animate-spin" />
-                        <span>Waiting for x402 confirmation...</span>
+                        <span>Verifying payment on blockchain...</span>
                       </>
                     ) : success ? (
                       <>
@@ -540,7 +617,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                     ) : (
                       <>
                         <Zap className="w-6 h-6" />
-                        <span>Pay 10 CSPR with x402 (Test Price)</span>
+                        <span>Pay 10 CSPR with x402 Discount</span>
                       </>
                     )}
                   </button>
@@ -548,9 +625,15 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
 
                 {/* Info Box */}
                 <div className="p-4 glass border border-green-500/30 rounded-xl">
-                  <p className="text-green-300 text-sm leading-relaxed">
-                    💡 <strong>How it works:</strong> Click the button above to sign the transaction with your Casper Wallet. We'll verify the payment on the blockchain and credit your tokens automatically!
-                  </p>
+                  {paymentMode === 'x402' ? (
+                    <p className="text-green-300 text-sm leading-relaxed">
+                      💡 <strong>x402 Discount:</strong> Get 100 tokens for only 10 CSPR (90% off)! This special price uses the x402 protocol for fast, automated payments. Just sign with your Casper Wallet and we'll handle the rest.
+                    </p>
+                  ) : (
+                    <p className="text-green-300 text-sm leading-relaxed">
+                      💡 <strong>How it works:</strong> Click the button above to sign the transaction with your Casper Wallet. We'll verify the payment on the blockchain and credit your tokens automatically!
+                    </p>
+                  )}
                 </div>
 
                 {/* Help Link */}
