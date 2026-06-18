@@ -380,22 +380,44 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
 
       const verifyData = await verifyResponse.json()
 
-      if (verifyData.success) {
-        console.log('🔄 Starting auto-verification (polling every 10s)...')
+      if (verifyResponse.ok && verifyData.success) {
+        console.log('✅ Payment verified and tokens credited!')
+        setSuccess(true)
+        setVerifying(false)
+        setError('')
+
+        setTimeout(() => {
+          onPurchaseComplete()
+          setSelected(null)
+          setTxHash('')
+          setSuccess(false)
+        }, 3000)
+      } else if (verifyData.pending) {
+        console.log('🔄 Payment pending - starting auto-verification (polling every 10s)...')
         
         let attempts = 0
-        const maxAttempts = 18  // 3 minutes max
+        const maxAttempts = 20  // 20 × 10s = 3 minutes max
         
         const pollInterval = setInterval(async () => {
           attempts++
-          console.log(`⏳ Verification attempt ${attempts}/${maxAttempts}...`)
+          console.log(`⏳ Auto-verification attempt ${attempts}/${maxAttempts}...`)
           
           try {
-            const pollResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/status/${confirmedHash}`)
-            const pollData = await pollResponse.json()
+            const retryResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                wallet,
+                deployHash: confirmedHash,
+                amount: 10,  // 10 CSPR for x402
+                tokens: 100
+              })
+            })
             
-            if (pollData.verified) {
-              console.log('✅ Payment verified on blockchain!')
+            const retryData = await retryResponse.json()
+            
+            if (retryResponse.ok && retryData.success) {
+              console.log('✅ AUTO-VERIFIED! Tokens credited!')
               clearInterval(pollInterval)
               setSuccess(true)
               setVerifying(false)
