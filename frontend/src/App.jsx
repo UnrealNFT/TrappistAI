@@ -6,6 +6,7 @@ import Home from './pages/Home'
 import Generate from './pages/Generate'
 import Profile from './pages/Profile'
 import BuyCredits from './pages/BuyCredits'
+import BuyCreditsX402 from './pages/BuyCreditsX402'
 import Community from './pages/Community'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
@@ -166,6 +167,9 @@ function App() {
                   provider={provider}
                   onPurchaseComplete={refreshBalance}
                 />
+              } />
+              <Route path="/buy-credits-x402" element={
+                <BuyCreditsX402 />
               } />
               <Route path="/my-rwa" element={<Navigate to="/profile" replace />} />
               <Route path="/explore" element={
