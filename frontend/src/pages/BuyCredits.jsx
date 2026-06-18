@@ -328,8 +328,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
         .map(b => b.toString(16).padStart(2, '0'))
         .join('')
 
-      // Build complete signed deploy
-      const deployJSON = DeployUtil.deployToJson(deploy)
+      // Update deploy JSON with signature (deployJSON already created above)
       deployJSON.deploy.header.account = deployJSON.deploy.header.account.toLowerCase()
 
       // Determine signature algorithm (01 = ED25519, 02 = SECP256K1)
