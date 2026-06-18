@@ -595,16 +595,12 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                     </button>
                     
                     <button
-                      onClick={() => setPaymentMode('x402')}
-                      className={`p-4 rounded-lg border-2 transition ${
-                        paymentMode === 'x402'
-                          ? 'border-green-500 bg-green-500/20'
-                          : 'border-gray-700 bg-gray-900/50 hover:border-green-500/50'
-                      }`}
+                      disabled
+                      className="p-4 rounded-lg border-2 border-gray-700 bg-gray-900/30 opacity-60 cursor-not-allowed"
                     >
-                      <Zap className="w-6 h-6 mx-auto mb-2 text-green-400" />
-                      <p className="text-white font-semibold text-sm">x402 Discounted</p>
-                      <p className="text-green-400 text-xs mt-1 font-bold">💰 Only 10 CSPR</p>
+                      <Zap className="w-6 h-6 mx-auto mb-2 text-gray-500" />
+                      <p className="text-gray-400 font-semibold text-sm">x402 Discounted</p>
+                      <p className="text-orange-400 text-xs mt-1 font-bold">🚧 Coming Soon</p>
                     </button>
                   </div>
                 </div>
