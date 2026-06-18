@@ -252,7 +252,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
     setSuccess(false)
 
     try {
-      console.log('⚡ x402 Auto-Payment:', selected.cspr, 'CSPR')
+      console.log('⚡ x402 Auto-Payment: 10 CSPR (test price, production: 1000 CSPR)')
       
       // Step 1: Request x402 payment (backend returns 402)
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/buy-credits-x402`, {
@@ -284,6 +284,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
               payer_wallet: wallet,
               recipient_wallet: paymentData.recipient,
               amount: paymentData.amount,
+              currency: 'CSPR',  // Required by backend webhook validation
               status: 'completed',  // Backend expects "completed" not "confirmed"
               tx_hash: `x402_tx_${Date.now()}`,
               signature: 'test_signature_remove_in_production'
