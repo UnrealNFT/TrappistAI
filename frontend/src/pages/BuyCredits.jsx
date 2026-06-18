@@ -320,41 +320,65 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
 
       console.log('📤 Deploying to blockchain...')
       console.log('Deploy hash:', deployHash)
-
-      // Send transaction
-      const sendResult = await provider.send(JSON.stringify(deployJSON), wallet)
-
-      if (sendResult.cancelled || !sendResult.deploy) {
-        throw new Error('Failed to send transaction')
-      }
-
-      console.log('✅ Transaction sent to blockchain!')
       
       setTxHash(deployHash)
+
+      // Convert signature to hex
+      const signatureHex = Array.from(signedResult.signature)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+
+      // Build complete signed deploy
+      const deployJSON = DeployUtil.deployToJson(deploy)
+      deployJSON.deploy.header.account = deployJSON.deploy.header.account.toLowerCase()
+
+      // Determine signature algorithm (01 = ED25519, 02 = SECP256K1)
+      const keyPrefix = wallet.substring(0, 2)
+
+      // Add approval with signature
+      deployJSON.deploy.approvals = [{
+        signer: senderPublicKey.toHex().toLowerCase(),
+        signature: keyPrefix + signatureHex
+      }]
+
+      console.log('📡 Sending deploy to blockchain via backend...')
       setPaying(false)
       setVerifying(true)
 
-      // Submit to backend for verification (same as manual method)
-      const submitResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/submit`, {
+      // Send deploy to RPC via backend
+      const sendResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/casper/send-deploy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deployJson: deployJSON })
+      })
+
+      if (!sendResponse.ok) {
+        const errorData = await sendResponse.json()
+        throw new Error(errorData.detail || 'Failed to send deploy')
+      }
+
+      const sendData = await sendResponse.json()
+      const confirmedHash = sendData.deployHash
+
+      console.log('✅ Deploy sent to blockchain:', confirmedHash)
+      console.log('🔐 Verifying payment on blockchain...')
+
+      // Verify payment and credit tokens
+      const verifyResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           wallet,
-          tx_hash: deployHash,
+          deployHash: confirmedHash,
           amount: 10,  // 10 CSPR for x402
           credits: 100
         })
       })
 
-      if (!submitResponse.ok) {
-        throw new Error('Failed to submit payment for verification')
+      if (!verifyResponse.ok) {
+        throw new Error('Failed to verify payment')
       }
 
-      const submitData = await submitResponse.json()
-      console.log('✅ Payment submitted:', submitData)
-
-      // Verify payment (same polling logic as manual method)
-      const verifyResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify/${deployHash}`)
       const verifyData = await verifyResponse.json()
 
       if (verifyData.success) {
@@ -368,7 +392,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
           console.log(`⏳ Verification attempt ${attempts}/${maxAttempts}...`)
           
           try {
-            const pollResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify/${deployHash}`)
+            const pollResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/status/${confirmedHash}`)
             const pollData = await pollResponse.json()
             
             if (pollData.verified) {
