@@ -1310,25 +1310,41 @@ async def buy_credits_x402_real(request: Request):
         # ========================================
         print("📡 x402: Settling on-chain via transfer_with_authorization...")
         
-        # TODO: Implement actual CEP-18 transfer_with_authorization settlement
-        # For now, we'll simulate settlement since we don't have full CEP-18 SDK
-        # In production, call:
-        # deploy_hash = await settle_transfer_with_authorization(
-        #     from_address=from_wallet,
-        #     to_address=accepted["payTo"],
-        #     amount=amount_motes,
-        #     authorization=auth,
-        #     signature=payment["signature"],
-        #     public_key=payment["publicKey"]
-        # )
-        
-        # SIMULATION: Generate fake deploy hash for now
-        import hashlib
-        fake_deploy_data = f"{from_wallet}{nonce}{amount_motes}".encode()
-        deploy_hash = hashlib.sha256(fake_deploy_data).hexdigest()
-        
-        print(f"⚠️ x402: SIMULATED settlement (deploy: {deploy_hash[:20]}...)")
-        print("⚠️ TODO: Implement real CEP-18 transfer_with_authorization call")
+        # Import settlement module (requires python_condor SDK)
+        try:
+            from x402_settlement import settle_transfer_with_authorization
+            
+            # Get facilitator public key from env (must be set!)
+            facilitator_pk = os.getenv("FACILITATOR_PUBLIC_KEY", "")
+            if not facilitator_pk:
+                print("⚠️ FACILITATOR_PUBLIC_KEY not set, falling back to simulation")
+                raise ImportError("Facilitator key not configured")
+            
+            # Call CEP-18 on-chain
+            settlement_result = await settle_transfer_with_authorization(
+                authorization=auth,
+                public_key=payment["publicKey"],
+                signature=payment["signature"],
+                facilitator_public_key=facilitator_pk
+            )
+            
+            if not settlement_result["success"]:
+                raise Exception(settlement_result["message"])
+            
+            deploy_hash = settlement_result["deploy_hash"]
+            print(f"✅ x402: REAL settlement succeeded (deploy: {deploy_hash[:20]}...)")
+            
+        except (ImportError, Exception) as settlement_error:
+            # FALLBACK: Simulate settlement if SDK not available or error
+            print(f"⚠️ Settlement error: {settlement_error}")
+            print("⚠️ FALLING BACK TO SIMULATED SETTLEMENT")
+            
+            import hashlib
+            fake_deploy_data = f"{from_wallet}{nonce}{amount_motes}".encode()
+            deploy_hash = hashlib.sha256(fake_deploy_data).hexdigest()
+            
+            print(f"⚠️ x402: SIMULATED settlement (deploy: {deploy_hash[:20]}...)")
+            print("⚠️ TODO: Set FACILITATOR_PUBLIC_KEY and FACILITATOR_KEY_PATH env vars")
         
         # ========================================
         # STEP 4: CREDIT TOKENS
