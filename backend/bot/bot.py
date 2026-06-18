@@ -155,7 +155,8 @@ def create_tokenize_keyboard(asset_type: str, url: str, prompt: str) -> InlineKe
     }
     
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("� Save as RWA (Coming Soon)", callback_data=f"coming_soon:rwa")],
+        [InlineKeyboardButton("💾 Save to Gallery (Private)", callback_data=f"save:{short_id}")],
+        [InlineKeyboardButton("📤 Save & Share (Public)", callback_data=f"share:{short_id}")],
         [InlineKeyboardButton("❌ Skip", callback_data="skip_save")]
     ])
 
@@ -1825,8 +1826,6 @@ def main():
     app.add_handler(CallbackQueryHandler(on_save_asset, pattern=r"^save:"))
     app.add_handler(CallbackQueryHandler(on_share_asset, pattern=r"^share:"))
     app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.edit_message_reply_markup(reply_markup=None), pattern=r"^skip_save$"))
-    # Handle coming soon RWA feature
-    app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer("🚧 RWA feature coming soon! Check back later.", show_alert=True), pattern=r"^coming_soon:"))
     # Handle noop callbacks (disabled buttons)
     app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer("✅"), pattern=r"^noop$"))
 
