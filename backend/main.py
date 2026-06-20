@@ -2568,6 +2568,7 @@ async def delete_broken_tokens_endpoint():
         print(f"❌ Admin delete error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     return JSONResponse(

@@ -36,7 +36,7 @@ except ImportError:
 try:
     import sys
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-    from news_search import search_news_fulltext, get_recent_news, format_news_for_chat
+    from news_search import search_news_fulltext, get_recent_news, format_news_for_chat, get_news_summary_for_ai
     from db import get_db_pool
     NEWS_AVAILABLE = True
 except ImportError as e:
@@ -404,25 +404,36 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
     return _groq_complete([{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}], max_tokens=1200)
 
 
-def _groq_chat(user_id: int, prompt: str) -> str:
+def _groq_chat(user_id: int, prompt: str, news_context: str = None) -> str:
     hist = _conv_history.setdefault(user_id, [])
     hist.append({"role": "user", "content": prompt})
     if len(hist) > 14:  # garde 7 échanges
         _conv_history[user_id] = hist[-14:]
-    messages = [
-        {"role": "system", "content": (
-            f"Your name is TrappistAI and ONLY TrappistAI - NEVER say another name. Today is {datetime.now().strftime('%d/%m/%Y')}. "
-            "You are an official Telegram bot @TrappistAI_bot offering 3 services: generate AI images (/image), "
-            "compose real complete songs with instrumental music (/music with HeartMuLa or MiniMax 2.5), "
-            "and chat freely with users (what you're doing right now). "
-            "You talk naturally, like a friend — cool, funny, direct, but always professional. "
-            "You love generative AI, music production, and Casper blockchain (CSPR). "
-            "You remember everything we talked about in this conversation. "
-            "Your training stopped in 2023 but we're in 2026, NEVER say we're in 2023. "
-            "Detect the user's language and always respond in that same language. "
-            "If asked who you are, answer 'I am TrappistAI' with pride."
-        )}
-    ] + _conv_history[user_id]
+    
+    # Base system prompt
+    system_content = (
+        f"Your name is TrappistAI and ONLY TrappistAI - NEVER say another name. Today is {datetime.now().strftime('%d/%m/%Y')}. "
+        "You are an official Telegram bot @TrappistAI_bot offering 3 services: generate AI images (/image), "
+        "compose real complete songs with instrumental music (/music with HeartMuLa or MiniMax 2.5), "
+        "and chat freely with users (what you're doing right now). "
+        "You talk naturally, like a friend — cool, funny, direct, but always professional. "
+        "You love generative AI, music production, and Casper blockchain (CSPR). "
+        "You remember everything we talked about in this conversation. "
+        "Your training stopped in 2023 but we're in 2026, NEVER say we're in 2023. "
+        "Detect the user's language and always respond in that same language. "
+        "If asked who you are, answer 'I am TrappistAI' with pride."
+    )
+    
+    # Add news context if available
+    if news_context:
+        system_content += (
+            "\n\n📰 **LATEST CRYPTO NEWS** (Use this to answer crypto-related questions):\n"
+            f"{news_context}\n\n"
+            "When answering about crypto topics, cite the sources naturally (e.g., 'According to CoinTelegraph...', 'Recent news shows...'). "
+            "Keep your answers accurate based on this fresh data."
+        )
+    
+    messages = [{"role": "system", "content": system_content}] + _conv_history[user_id]
     answer = _groq_complete(messages, max_tokens=900)
     _conv_history[user_id].append({"role": "assistant", "content": answer})
     return answer
@@ -1698,7 +1709,7 @@ async def cmd_text(update: Update, context) -> None:
 
 
 async def on_free_message(update: Update, context) -> None:
-    """Chat libre gratuit via Groq."""
+    """Chat libre gratuit via Groq avec RAG automatique des crypto news."""
     if not update.message or not update.message.text:
         return
     uid = update.effective_user.id
@@ -1708,8 +1719,34 @@ async def on_free_message(update: Update, context) -> None:
     _last_msg[uid] = now
     prompt = update.message.text.strip()
     msg = await update.message.reply_text("💬 En réflexion…")
+    
+    # Automatic news context injection for crypto-related questions
+    news_context = None
+    if NEWS_AVAILABLE:
+        # Detect crypto keywords (multi-language)
+        crypto_keywords = [
+            "bitcoin", "btc", "ethereum", "eth", "crypto", "blockchain", "defi", 
+            "nft", "casper", "cspr", "altcoin", "token", "market", "price", "pump",
+            "dump", "bull", "bear", "trading", "exchange", "wallet", "mining",
+            "staking", "dao", "web3", "metaverse", "regulation", "sec", "binance",
+            "coinbase", "solana", "cardano", "polkadot", "avalanche", "polygon",
+            "actualité", "actualite", "nouvelles", "news", "quoi de neuf"
+        ]
+        
+        prompt_lower = prompt.lower()
+        if any(keyword in prompt_lower for keyword in crypto_keywords):
+            try:
+                pool = await get_db_pool()
+                news_context = await get_news_summary_for_ai(prompt, pool, max_context=3)
+                if news_context:
+                    logger.info(f"📰 RAG: Injected news context for user {uid}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not fetch news context: {e}")
+    
     try:
-        answer = await asyncio.get_event_loop().run_in_executor(None, _groq_chat, uid, prompt)
+        answer = await asyncio.get_event_loop().run_in_executor(
+            None, _groq_chat, uid, prompt, news_context
+        )
         await msg.edit_text(f"🤖 {answer[:4000]}")
     except Exception as e:
         await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
