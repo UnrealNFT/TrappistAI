@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 from dotenv import load_dotenv
+import asyncpg
 
 load_dotenv()
 
@@ -27,6 +28,27 @@ else:
         max_overflow=20
     )
 
+
+# Asyncpg pool for news fetcher (PostgreSQL only)
+_asyncpg_pool = None
+
+async def get_db_pool():
+    """Get asyncpg connection pool for async operations (news fetcher)."""
+    global _asyncpg_pool
+    
+    if DATABASE_URL.startswith("sqlite"):
+        # SQLite not supported for async pool
+        raise RuntimeError("News fetcher requires PostgreSQL DATABASE_URL")
+    
+    if _asyncpg_pool is None:
+        _asyncpg_pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=2,
+            max_size=10,
+            command_timeout=60
+        )
+    
+    return _asyncpg_pool
 
 def get_db_session():
     """Get database connection"""
