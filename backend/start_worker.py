@@ -61,9 +61,9 @@ def run_telegram_bot():
     """Run Telegram bot (blocking)."""
     print("🤖 Telegram bot starting...")
     
-    # Import and run bot
-    import bot.bot
-    # The bot module runs on import (has if __name__ == "__main__" block)
+    # Import and run bot main function
+    from bot.bot import main as bot_main
+    bot_main()  # This is blocking - runs until bot stops
 
 
 if __name__ == "__main__":
