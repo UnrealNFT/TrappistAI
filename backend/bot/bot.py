@@ -429,8 +429,13 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None) -> str:
         system_content += (
             "\n\n📰 **LATEST CRYPTO NEWS** (Use this to answer crypto-related questions):\n"
             f"{news_context}\n\n"
-            "When answering about crypto topics, cite the sources naturally (e.g., 'According to CoinTelegraph...', 'Recent news shows...'). "
-            "Keep your answers accurate based on this fresh data."
+            "IMPORTANT RULES when using news:\n"
+            "1. ALWAYS cite the SOURCE NAME (e.g., 'Selon CoinTelegraph', 'D'après The Block', 'According to Decrypt')\n"
+            "2. ALWAYS mention it's RECENT news (e.g., 'récemment', 'dernières actualités', 'recently')\n"
+            "3. If possible, mention the LINK at the end: 'Source: [link]'\n"
+            "4. Use the EXACT information from the articles - don't make up details\n"
+            "5. If articles have dates, mention them (e.g., 'le 20 juin', 'published today')\n"
+            "Example: 'Selon CoinTelegraph, Bitcoin a récemment franchi les $70K... [summary]. Source: https://...'"
         )
     
     messages = [{"role": "system", "content": system_content}] + _conv_history[user_id]
@@ -1722,6 +1727,10 @@ async def on_free_message(update: Update, context) -> None:
     
     # Automatic news context injection for crypto-related questions
     news_context = None
+    
+    logger.info(f"📝 User {uid} message: {prompt[:50]}")
+    logger.info(f"🔍 NEWS_AVAILABLE: {NEWS_AVAILABLE}")
+    
     if NEWS_AVAILABLE:
         # Detect crypto keywords (multi-language)
         crypto_keywords = [
@@ -1730,18 +1739,30 @@ async def on_free_message(update: Update, context) -> None:
             "dump", "bull", "bear", "trading", "exchange", "wallet", "mining",
             "staking", "dao", "web3", "metaverse", "regulation", "sec", "binance",
             "coinbase", "solana", "cardano", "polkadot", "avalanche", "polygon",
-            "actualité", "actualite", "nouvelles", "news", "quoi de neuf"
+            "actualité", "actualite", "nouvelles", "news", "quoi de neuf", "derniere",
+            "dernière", "actus"
         ]
         
         prompt_lower = prompt.lower()
-        if any(keyword in prompt_lower for keyword in crypto_keywords):
+        detected = any(keyword in prompt_lower for keyword in crypto_keywords)
+        
+        logger.info(f"🔎 Crypto keyword detected: {detected}")
+        
+        if detected:
             try:
+                logger.info(f"📡 Fetching news context from DB...")
                 pool = await get_db_pool()
                 news_context = await get_news_summary_for_ai(prompt, pool, max_context=3)
+                
                 if news_context:
-                    logger.info(f"📰 RAG: Injected news context for user {uid}")
+                    logger.info(f"✅ RAG: Injected news context ({len(news_context)} chars)")
+                else:
+                    logger.warning(f"⚠️ RAG: No news found in DB")
+                    
             except Exception as e:
-                logger.warning(f"⚠️ Could not fetch news context: {e}")
+                logger.error(f"❌ Could not fetch news context: {e}", exc_info=True)
+    else:
+        logger.warning("⚠️ News search not available (import failed)")
     
     try:
         answer = await asyncio.get_event_loop().run_in_executor(
