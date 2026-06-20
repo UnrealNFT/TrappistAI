@@ -32,6 +32,17 @@ except ImportError:
     consume_tokens_pg = lambda *args: False
     add_tokens_pg = lambda *args: 0
 
+# Import crypto news search functions
+try:
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from news_search import search_news_fulltext, get_recent_news, format_news_for_chat
+    from db import get_db_pool
+    NEWS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ News search not available: {e}")
+    NEWS_AVAILABLE = False
+
 load_dotenv()
 logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1353,12 +1364,64 @@ async def cmd_help(update: Update, context) -> None:
         "🖼 */image* `prompt` — FLUX.1 image **(1 token)**\n"
         "🎵 */music* — wizard style→voice→theme→lyrics **(10 tokens)**\n"
         "💬 */text* `question` — Llama 3.3 AI chat **(free)**\n"
+        "� */news* `[topic]` — latest crypto news **(free)**\n"
         "💰 */balance* — check your balance\n"
         "🔋 */topup* — buy more tokens\n"
         "🔗 */link* — link with TrappistAI website\n\n"
         "⚡ WaveSpeed + HeartMuLa + Groq",
         parse_mode=ParseMode.MARKDOWN,
     )
+
+
+async def cmd_news(update: Update, context) -> None:
+    """Get latest crypto news or search by topic."""
+    if not NEWS_AVAILABLE:
+        await update.message.reply_text(
+            "❌ News feature not available yet.\n"
+            "The crypto news database is still loading."
+        )
+        return
+    
+    query = " ".join(context.args) if context.args else ""
+    
+    try:
+        pool = await get_db_pool()
+        
+        if query:
+            # Search specific topic
+            articles = await search_news_fulltext(query, pool, limit=3)
+            if not articles:
+                await update.message.reply_text(
+                    f"🔍 No news found for: *{query}*\n\n"
+                    "Try: `/news Bitcoin`, `/news Ethereum`, `/news DeFi`",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                return
+            response = f"🔍 *Search results for:* {query}\n\n"
+            response += await format_news_for_chat(articles, max_articles=3)
+        else:
+            # Get recent news (last 24 hours)
+            articles = await get_recent_news(pool, hours=24, limit=5)
+            if not articles:
+                await update.message.reply_text(
+                    "📰 No recent news available yet.\n"
+                    "The news fetcher is still collecting articles."
+                )
+                return
+            response = "📰 *Latest Crypto News (24h)*\n\n"
+            response += await format_news_for_chat(articles, max_articles=5)
+        
+        await update.message.reply_text(
+            response,
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True
+        )
+    
+    except Exception as e:
+        logger.error(f"News error: {e}")
+        await update.message.reply_text(
+            "❌ Error fetching news. Try again later."
+        )
 
 
 async def cmd_about(update: Update, context) -> None:
@@ -1833,6 +1896,7 @@ def main():
     app.add_handler(CommandHandler("link",    cmd_link))
     app.add_handler(CommandHandler("verify",  cmd_verify))
     app.add_handler(CommandHandler("help",    cmd_help))
+    app.add_handler(CommandHandler("news",    cmd_news))
     app.add_handler(CommandHandler("image",   cmd_image))
     app.add_handler(CommandHandler("balance", cmd_balance))
     app.add_handler(CommandHandler("topup",   cmd_topup))
