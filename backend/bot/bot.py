@@ -1488,6 +1488,91 @@ async def cmd_topup(update: Update, context) -> None:
     )
 
 
+async def cmd_gift(update: Update, context) -> None:
+    """Admin command to gift tokens to users. Alias for /admin topup."""
+    if not is_admin(update.effective_user):
+        await update.message.reply_text("❌ This command is admin-only.")
+        return
+    
+    args = context.args
+    if len(args) != 2:
+        await update.message.reply_text(
+            "🎁 *Gift Tokens Command*\n\n"
+            "Usage: `/gift @username AMOUNT`\n"
+            "   or: `/gift USER_ID AMOUNT`\n\n"
+            "Examples:\n"
+            "`/gift @turtlian 50` — gift 50 tokens to @turtlian\n"
+            "`/gift 123456 20` — gift 20 tokens to user 123456",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    
+    target_input = args[0]
+    try:
+        amount = int(args[1])
+        if amount <= 0:
+            await update.message.reply_text("❌ Amount must be positive.")
+            return
+    except ValueError:
+        await update.message.reply_text("❌ Amount must be a number.", parse_mode=ParseMode.MARKDOWN)
+        return
+    
+    # Resolve target user (username or user_id)
+    if target_input.startswith("@"):
+        target_id = get_user_id_by_username(target_input)
+        if not target_id:
+            await update.message.reply_text(
+                f"❌ User `{target_input}` not found.\n\n"
+                "💡 Tip: User must have used the bot at least once.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+        target_display = target_input
+    else:
+        try:
+            target_id = int(target_input)
+            target_display = f"`{target_id}`"
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Invalid format. Use:\n"
+                "`/gift @username AMOUNT` or `/gift USER_ID AMOUNT`",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+    
+    # Add tokens
+    new_bal = add_tokens(target_id, amount)
+    
+    # Notify admin
+    await update.message.reply_text(
+        f"✅ *Gift sent!*\n\n"
+        f"👤 Recipient: {target_display}\n"
+        f"🎁 Amount: *{amount} token(s)*\n"
+        f"💰 New balance: *{new_bal} token(s)*",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    
+    # Notify recipient
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=f"🎁 *Gift received!*\n\n"
+                 f"You received *{amount} token(s)* from the TrappistAI team!\n\n"
+                 f"💰 New balance: *{new_bal} token(s)*\n\n"
+                 f"🖼 Try `/image your prompt` to generate AI images\n"
+                 f"🎵 Or `/music` to create custom songs!",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        logger.info(f"✅ Notified user {target_id} about gift of {amount} tokens")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not notify user {target_id}: {e}")
+        await update.message.reply_text(
+            f"⚠️ Tokens added but could not notify user.\n"
+            f"User may have blocked the bot or hasn't started it yet.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+
 # ─── Tokenize Assets as RWA ──────────────────────────────────────────────────
 
 async def on_save_asset(update: Update, context) -> None:
@@ -1789,19 +1874,50 @@ async def cmd_admin(update: Update, context) -> None:
         await update.message.reply_text("❌ Access denied.")
         return
     args = context.args
-    # /admin topup <user_id> <amount>
+    # /admin topup <user_id|@username> <amount>
     if len(args) == 3 and args[0] == "topup":
+        target_input = args[1]
         try:
-            target_id = int(args[1])
-            amount    = int(args[2])
+            amount = int(args[2])
         except ValueError:
-            await update.message.reply_text("Use: `/admin topup USER_ID AMOUNT`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text("Use: `/admin topup USER_ID|@USERNAME AMOUNT`", parse_mode=ParseMode.MARKDOWN)
             return
+        
+        # Resolve target user (username or user_id)
+        if target_input.startswith("@"):
+            target_id = get_user_id_by_username(target_input)
+            if not target_id:
+                await update.message.reply_text(f"❌ User `{target_input}` not found in database.", parse_mode=ParseMode.MARKDOWN)
+                return
+            target_display = target_input
+        else:
+            try:
+                target_id = int(target_input)
+                target_display = f"`{target_id}`"
+            except ValueError:
+                await update.message.reply_text("Use: `/admin topup USER_ID|@USERNAME AMOUNT`", parse_mode=ParseMode.MARKDOWN)
+                return
+        
         new_bal = add_tokens(target_id, amount)
+        
+        # Notify admin
         await update.message.reply_text(
-            f"✅ +{amount} tokens for `{target_id}` — new balance: *{new_bal}*",
+            f"✅ +{amount} tokens for {target_display} — new balance: *{new_bal}*",
             parse_mode=ParseMode.MARKDOWN,
         )
+        
+        # Notify recipient
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=f"🎁 *Gift received!*\n\n"
+                     f"You received *{amount} token(s)* from the TrappistAI team!\n\n"
+                     f"💰 New balance: *{new_bal} token(s)*\n\n"
+                     f"Use `/image` to generate images or `/music` to create songs!",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except Exception as e:
+            logger.warning(f"Could not notify user {target_id}: {e}")
     # /admin balance <user_id>
     elif len(args) == 2 and args[0] == "balance":
         try:
@@ -1849,10 +1965,12 @@ async def cmd_admin(update: Update, context) -> None:
     else:
         await update.message.reply_text(
             "*Admin commands:*\n"
-            "`/admin topup USER_ID AMOUNT`\n"
+            "`/admin topup USER_ID|@USERNAME AMOUNT`\n"
             "`/admin balance USER_ID`\n"
             "`/admin list`\n"
-            "`/admin fetch TASK_ID USER_ID`",
+            "`/admin fetch TASK_ID USER_ID`\n\n"
+            "*Quick alias:*\n"
+            "`/gift @username AMOUNT` — gift tokens to user",
             parse_mode=ParseMode.MARKDOWN,
         )
 
@@ -1964,6 +2082,7 @@ def main():
     app.add_handler(CommandHandler("about",   cmd_about))
     app.add_handler(CommandHandler("myid",    cmd_myid))
     app.add_handler(CommandHandler("admin",   cmd_admin))
+    app.add_handler(CommandHandler("gift",    cmd_gift))
     # Handler texte libre — doit être en DERNIER (priorité basse, le wizard /music passe avant)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_free_message))
 
