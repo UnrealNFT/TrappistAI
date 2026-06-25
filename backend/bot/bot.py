@@ -24,8 +24,10 @@ try:
         consume_tokens_pg,
         add_tokens_pg
     )
-except ImportError:
-    print("⚠️ shared_db.py not found - PostgreSQL sync disabled")
+    print("✅ shared_db.py imported successfully")
+except ImportError as e:
+    print(f"⚠️ shared_db.py import failed: {e}")
+    print("⚠️ Using lambda fallbacks - tokens will NOT work!")
     store_username_mapping_pg = lambda *args: None
     get_user_id_by_username_pg = lambda *args: None
     get_tokens_pg = lambda *args: 0
@@ -61,6 +63,8 @@ BACKEND_API_URL   = os.getenv("BACKEND_API_URL", "https://trappistai-backend.onr
 ADMIN_USERNAME    = os.getenv("ADMIN_USERNAME", "djaf77").lstrip("@").lower()
 
 USE_POSTGRES = bool(DATABASE_URL)  # Use PostgreSQL if configured, else SQLite
+print(f"🔧 USE_POSTGRES: {USE_POSTGRES}")
+print(f"🔧 DATABASE_URL configured: {'Yes' if DATABASE_URL else 'No (using SQLite)'}")
 
 # ─── Mémoire de conversation ─────────────────────────────────────────────────
 _conv_history: dict[int, list] = {}  # user_id → derniers messages
@@ -96,9 +100,13 @@ def get_tokens(user_id: int) -> int:
 
 def add_tokens(user_id: int, amount: int) -> int:
     """Add tokens - uses PostgreSQL if configured, else SQLite"""
+    print(f"🔍 add_tokens called: user_id={user_id}, amount={amount}, USE_POSTGRES={USE_POSTGRES}")
     if USE_POSTGRES:
-        return add_tokens_pg(user_id, amount)
+        result = add_tokens_pg(user_id, amount)
+        print(f"🔍 add_tokens_pg returned: {result}")
+        return result
     # SQLite fallback
+    print(f"🔍 Using SQLite fallback for add_tokens")
     _db.execute(
         "INSERT INTO users(user_id, tokens) VALUES(?,?) "
         "ON CONFLICT(user_id) DO UPDATE SET tokens=tokens+?",
