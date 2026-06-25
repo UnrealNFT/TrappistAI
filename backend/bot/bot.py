@@ -431,6 +431,7 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None) -> str:
         "You remember everything we talked about in this conversation. "
         "Your training stopped in 2023 but we're in 2026, NEVER say we're in 2023. "
         "Detect the user's language and always respond in that same language. "
+        "If the language is unclear or the message is very short (a single word, a number, or a code), DEFAULT TO ENGLISH. "
         "If asked who you are, answer 'I am TrappistAI' with pride."
     )
     
@@ -1800,7 +1801,7 @@ async def cmd_text(update: Update, context) -> None:
     if not prompt:
         await update.message.reply_text("💬 Send me your message directly, no need for /text !", parse_mode=ParseMode.MARKDOWN)
         return
-    msg = await update.message.reply_text("💬 En réflexion…")
+    msg = await update.message.reply_text("💬 Thinking…")
     try:
         answer = await asyncio.get_event_loop().run_in_executor(None, _groq_chat, update.effective_user.id, prompt)
         await msg.edit_text(f"🤖 {answer[:4000]}")
@@ -1818,7 +1819,18 @@ async def on_free_message(update: Update, context) -> None:
         return  # anti-spam: ignore si < 4s depuis dernier message
     _last_msg[uid] = now
     prompt = update.message.text.strip()
-    msg = await update.message.reply_text("💬 En réflexion…")
+
+    # Detect bare verification code (6 digits typed without /verify)
+    if prompt.isdigit() and len(prompt) == 6:
+        await update.message.reply_text(
+            "🔑 *That looks like a verification code!*\n\n"
+            f"To verify your account, use:\n`/verify {prompt}`\n\n"
+            "💡 Get your code at trappist.land/profile",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    msg = await update.message.reply_text("💬 Thinking…")
     
     # Automatic news context injection for crypto-related questions
     news_context = None
