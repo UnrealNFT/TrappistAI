@@ -1001,6 +1001,14 @@ async def buy_credits_x402_settle(
     if not deploy_json or not wallet:
         raise HTTPException(status_code=400, detail="Missing deployJson or wallet in payment payload")
 
+    # Guard: you cannot pay the treasury from the treasury wallet itself
+    # (a self-transfer fails on-chain with "Invalid purse").
+    if wallet == X402_TREASURY.lower():
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot pay from the treasury wallet itself. Connect a different testnet account to pay.",
+        )
+
     actual_deploy = deploy_json.get("deploy", deploy_json)
 
     # Safety guard: x402 here is TESTNET-ONLY. Refuse anything else.
@@ -1071,25 +1079,44 @@ async def buy_credits_x402_settle(
             },
         )
 
-    # Extract failure (handles both old/new RPC formats, like the mainnet flow)
+    # Extract execution result + failure, fail-closed on any ambiguity.
+    exec_result = None
+    if isinstance(deploy_info.get("execution_info"), dict):
+        exec_result = deploy_info["execution_info"].get("execution_result")
+    elif isinstance(deploy_info.get("execution_results"), list) and deploy_info["execution_results"]:
+        first = deploy_info["execution_results"][0]
+        if isinstance(first, dict):
+            exec_result = first.get("result")
+
     error_message = None
-    if deploy_info.get("execution_info"):
-        exec_info = deploy_info.get("execution_info")
-        if exec_info and isinstance(exec_info, dict):
-            er = exec_info.get("execution_result", {})
-            if isinstance(er, dict):
-                v2 = er.get("Version2", {})
-                if isinstance(v2, dict):
-                    error_message = v2.get("error_message")
-    elif deploy_info.get("execution_results"):
-        ers = deploy_info.get("execution_results", [])
-        if ers and isinstance(ers[0], dict):
-            res = ers[0].get("result", {})
-            if isinstance(res, dict) and "Failure" in res:
-                error_message = res["Failure"].get("error_message", "Unknown error")
+    transfers = None
+    if isinstance(exec_result, dict):
+        v2 = exec_result.get("Version2")
+        if isinstance(v2, dict):
+            # Casper 2.0 (Condor): failure indicated by non-null error_message
+            error_message = v2.get("error_message")
+            transfers = v2.get("transfers")
+        elif "Failure" in exec_result:
+            # Casper 1.x failure
+            error_message = exec_result["Failure"].get("error_message", "Unknown error")
+        elif "Success" in exec_result:
+            transfers = exec_result["Success"].get("transfers")
 
     if error_message:
         raise HTTPException(status_code=400, detail=f"x402 settlement failed on testnet: {error_message}")
+
+    # Fail-closed: a successful native transfer MUST have moved funds.
+    # Empty transfers means the payment did not actually go through (e.g. invalid purse).
+    if transfers is not None and len(transfers) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="x402 settlement produced no transfer on-chain. Payment not credited.",
+        )
+    if exec_result is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not read execution result from testnet. Payment not credited.",
+        )
 
     print("✅ x402: testnet settlement confirmed")
 
