@@ -96,7 +96,9 @@ export default function BuyCreditsX402({ wallet, balance, provider, onPurchaseCo
         1,
         1800000
       )
-      const transferId = Date.now()
+      // On-chain marker: transfer-id starts with 402 so the payment is
+      // recognizable as an x402 purchase on the explorer.
+      const transferId = Number('402' + String(Date.now()).slice(-12))
       const transferArgs = DeployUtil.ExecutableDeployItem.newTransfer(
         amountMotes,
         receiverPublicKey,
@@ -211,6 +213,7 @@ export default function BuyCreditsX402({ wallet, balance, provider, onPurchaseCo
               <Row label="Network" value={requirement.network} />
               <Row label="Amount" value={formatCspr(requirement.amount)} />
               <Row label="Credits" value={`${requirement.extra?.tokens ?? 100} generation credits`} />
+              {requirement.extra?.memo && <Row label="Memo" value={requirement.extra.memo} />}
               <Row
                 label="Receiver"
                 value={`${requirement.payTo.slice(0, 16)}...${requirement.payTo.slice(-6)}`}

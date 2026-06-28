@@ -926,6 +926,11 @@ X402_TREASURY = os.getenv(
 X402_PRICE_CSPR = int(os.getenv("X402_PRICE_CSPR", "10"))   # testnet demo price
 X402_TOKENS = int(os.getenv("X402_TOKENS", "100"))
 X402_AMOUNT_MOTES = str(X402_PRICE_CSPR * 1_000_000_000)
+X402_SITE = os.getenv("X402_SITE", "trappist.land")
+X402_MEMO = f"Achat de {X402_TOKENS} credits sur {X402_SITE}"
+# On-chain numeric marker for the native transfer-id: starts with 402 so the
+# payment is recognizable as an x402 purchase on the explorer.
+X402_TRANSFER_ID_PREFIX = os.getenv("X402_TRANSFER_ID_PREFIX", "402")
 
 
 def _x402_requirements():
@@ -939,14 +944,22 @@ def _x402_requirements():
                 "payTo": X402_TREASURY,
                 "asset": "CSPR",
                 "amount": X402_AMOUNT_MOTES,
-                "resource": "/api/buy-credits-x402",
-                "description": f"Buy {X402_TOKENS} credits for {X402_PRICE_CSPR} CSPR (testnet)",
-                "extra": {"symbol": "CSPR", "decimals": 9, "tokens": X402_TOKENS},
+                "resource": X402_SITE,
+                "description": X402_MEMO,
+                "extra": {
+                    "symbol": "CSPR",
+                    "decimals": 9,
+                    "tokens": X402_TOKENS,
+                    "site": X402_SITE,
+                    "memo": X402_MEMO,
+                    "transferIdPrefix": X402_TRANSFER_ID_PREFIX,
+                },
             }
         ],
         "resource": {
             "url": "/api/buy-credits-x402",
-            "description": f"Buy {X402_TOKENS} generation credits",
+            "description": X402_MEMO,
+            "site": X402_SITE,
         },
     }
 
@@ -1136,6 +1149,10 @@ async def buy_credits_x402_settle(
         "payTo": X402_TREASURY,
         "asset": "CSPR",
         "amount": X402_AMOUNT_MOTES,
+        "tokens": X402_TOKENS,
+        "site": X402_SITE,
+        "memo": X402_MEMO,
+        "resource": X402_SITE,
         "transaction": deploy_hash,
         "settled": True,
         "explorer": f"https://testnet.cspr.live/deploy/{deploy_hash}",
