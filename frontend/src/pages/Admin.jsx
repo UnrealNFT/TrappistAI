@@ -16,6 +16,7 @@ const Admin = () => {
   const [loading, setLoading] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [selected, setSelected] = useState(null)
+  const [migrating, setMigrating] = useState(false)
 
   // Try to auto-login if a secret is stored
   useEffect(() => {
@@ -92,6 +93,28 @@ const Admin = () => {
     setItems([])
   }
 
+  const migrateOldLinks = async () => {
+    if (!window.confirm('Migrate old temporary links (CloudFront/WaveSpeed) to permanent R2 storage? Still-valid assets will be re-uploaded.')) return
+    setMigrating(true)
+    try {
+      const res = await fetch(`${API_URL}/api/admin/migrate-r2?limit=25`, {
+        method: 'POST',
+        headers: { 'X-Admin-Secret': secret },
+      })
+      const data = await res.json()
+      if (data.success) {
+        alert(`Migrated: ${data.migrated.length}\nSkipped (expired): ${data.skipped.length}\nRemaining old links: ${data.remaining}`)
+        fetchItems()
+      } else {
+        alert('Migration failed')
+      }
+    } catch (e) {
+      alert('Connection error during migration')
+    } finally {
+      setMigrating(false)
+    }
+  }
+
   const formatDate = (d) => {
     if (!d) return ''
     return new Date(d).toLocaleString()
@@ -143,6 +166,14 @@ const Admin = () => {
             Moderation — Explore
           </h1>
           <div className="flex gap-2">
+            <button
+              onClick={migrateOldLinks}
+              disabled={migrating}
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg flex items-center gap-2 text-sm"
+            >
+              {migrating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Migrate old links
+            </button>
             <button
               onClick={() => fetchItems()}
               className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg flex items-center gap-2 text-sm"

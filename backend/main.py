@@ -2674,6 +2674,66 @@ async def admin_delete_community_item(request: Request, token_id: int, x_admin_s
         conn.close()
 
 
+@app.post("/api/admin/migrate-r2")
+@limiter.limit("3/minute")
+async def admin_migrate_to_r2(request: Request, limit: int = 25, x_admin_secret: str = Header(default="")):
+    """
+    Migrate old temporary asset URLs (CloudFront/WaveSpeed) to permanent R2 storage.
+    Re-downloads each still-valid asset, uploads it to R2, and updates asset_url.
+    Expired/unreachable assets are skipped. Processes up to `limit` items per call.
+    """
+    _check_admin(x_admin_secret)
+    if not r2_storage.is_configured():
+        raise HTTPException(status_code=503, detail="R2 not configured")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    migrated, skipped = [], []
+    try:
+        cursor.execute("""
+            SELECT token_id, asset_type, asset_url
+            FROM rwa_tokens
+            WHERE asset_url LIKE '%cloudfront.net%'
+               OR asset_url LIKE '%wavespeed%'
+            ORDER BY created_at DESC
+            LIMIT %s
+        """, (max(1, min(limit, 100)),))
+        rows = cursor.fetchall()
+
+        for token_id, asset_type, asset_url in rows:
+            new_url = r2_storage.upload_asset(asset_url, asset_type or "image")
+            if new_url and new_url.startswith(r2_storage.R2_PUBLIC_URL):
+                cursor.execute(
+                    "UPDATE rwa_tokens SET asset_url = %s WHERE token_id = %s",
+                    (new_url, token_id),
+                )
+                conn.commit()
+                migrated.append({"tokenId": token_id, "url": new_url})
+            else:
+                skipped.append({"tokenId": token_id, "reason": "expired or unreachable"})
+
+        remaining_q = cursor.execute("""
+            SELECT COUNT(*) FROM rwa_tokens
+            WHERE asset_url LIKE '%cloudfront.net%' OR asset_url LIKE '%wavespeed%'
+        """)
+        remaining = cursor.fetchone()[0]
+
+        print(f"🔄 Migration: {len(migrated)} migrated, {len(skipped)} skipped, {remaining} remaining")
+        return {
+            "success": True,
+            "migrated": migrated,
+            "skipped": skipped,
+            "remaining": remaining,
+        }
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Migration error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
