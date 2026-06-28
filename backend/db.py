@@ -230,11 +230,55 @@ async def process_payment_manual(wallet_address: str, tx_hash: str, amount_cspr:
                 {"wallet": wallet_normalized, "tokens": tokens}
             )
             
+            # Read back telegram link + new balance for notification
+            info = conn.execute(
+                text("""
+                    SELECT telegram_user_id, telegram_verified, tokens
+                    FROM users WHERE wallet_address = :wallet LIMIT 1
+                """),
+                {"wallet": wallet_normalized}
+            ).fetchone()
+            
             trans.commit()
+            
+            # Notify the user on Telegram if their account is linked (best-effort)
+            if info and info[0] and info[1]:
+                await _notify_telegram_topup(info[0], tokens, info[2])
             
         except Exception as e:
             trans.rollback()
             raise e
+
+
+async def _notify_telegram_topup(telegram_user_id: int, tokens_added: int, new_balance: int):
+    """Send a 'credits received' message to the user on Telegram. Best-effort."""
+    bot_token = os.getenv("BOT_TOKEN", "")
+    if not bot_token:
+        print("⚠️ BOT_TOKEN not set — skipping Telegram top-up notification")
+        return
+    try:
+        import httpx
+        message = (
+            "✅ *Credits received!*\n\n"
+            f"💎 *+{tokens_added} tokens* added to your account\n"
+            f"💰 New balance: *{new_balance} tokens*\n\n"
+            "🖼 `/image your prompt` — generate AI images\n"
+            "🎵 `/music` — create custom songs\n"
+            "🧊 `/3d` — turn images into 3D models"
+        )
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={
+                    "chat_id": telegram_user_id,
+                    "text": message,
+                    "parse_mode": "Markdown",
+                    "disable_web_page_preview": True,
+                },
+            )
+        print(f"✅ Notified Telegram user {telegram_user_id}: +{tokens_added} tokens")
+    except Exception as e:
+        print(f"⚠️ Could not send Telegram top-up notification: {e}")
 
 
 async def get_payment_history(wallet_address: str) -> list:
