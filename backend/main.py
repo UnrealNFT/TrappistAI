@@ -2693,11 +2693,10 @@ async def admin_migrate_to_r2(request: Request, limit: int = 25, x_admin_secret:
         cursor.execute("""
             SELECT token_id, asset_type, asset_url
             FROM rwa_tokens
-            WHERE asset_url LIKE '%cloudfront.net%'
-               OR asset_url LIKE '%wavespeed%'
+            WHERE asset_url LIKE %s OR asset_url LIKE %s
             ORDER BY created_at DESC
             LIMIT %s
-        """, (max(1, min(limit, 100)),))
+        """, ('%cloudfront.net%', '%wavespeed%', max(1, min(limit, 100))))
         rows = cursor.fetchall()
 
         for token_id, asset_type, asset_url in rows:
@@ -2712,10 +2711,10 @@ async def admin_migrate_to_r2(request: Request, limit: int = 25, x_admin_secret:
             else:
                 skipped.append({"tokenId": token_id, "reason": "expired or unreachable"})
 
-        remaining_q = cursor.execute("""
+        cursor.execute("""
             SELECT COUNT(*) FROM rwa_tokens
-            WHERE asset_url LIKE '%cloudfront.net%' OR asset_url LIKE '%wavespeed%'
-        """)
+            WHERE asset_url LIKE %s OR asset_url LIKE %s
+        """, ('%cloudfront.net%', '%wavespeed%'))
         remaining = cursor.fetchone()[0]
 
         print(f"🔄 Migration: {len(migrated)} migrated, {len(skipped)} skipped, {remaining} remaining")
