@@ -24,6 +24,7 @@ from sqlalchemy import text
 from cspr_listener import listen_payments
 from db import get_db_session, get_user_balance, consume_user_tokens, get_payment_history
 import wavespeed
+import r2_storage
 
 load_dotenv()
 
@@ -1802,6 +1803,11 @@ async def mint_rwa_token(request: Request, data: MintRWARequest):
         # Validate asset type
         if data.assetType not in ['image', 'music', '3d']:
             raise HTTPException(status_code=400, detail="Invalid asset type")
+        
+        # Persist the asset to Cloudflare R2 so the URL never expires.
+        # Falls back to the original (temporary) URL if R2 is not configured.
+        permanent_url = r2_storage.upload_asset(data.assetUrl, data.assetType)
+        data.assetUrl = permanent_url
         
         # Insert into database
         with get_db_session() as session:
