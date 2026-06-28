@@ -125,7 +125,13 @@ def consume_tokens_pg(telegram_user_id: int, amount: int, admin_username: str = 
         return False
 
 def add_tokens_pg(telegram_user_id: int, amount: int) -> int:
-    """Add tokens to PostgreSQL users table. Returns new balance."""
+    """Add tokens to PostgreSQL users table. Returns new balance.
+
+    If the user has not linked a wallet yet (no row with this telegram_user_id),
+    a placeholder row keyed by `telegram:{id}` is created so gifted tokens are
+    never lost. When the user later links a real wallet via /verify, those
+    tokens are transferred to the real wallet row.
+    """
     if not DATABASE_URL:
         return 0
     
@@ -134,11 +140,25 @@ def add_tokens_pg(telegram_user_id: int, amount: int) -> int:
             with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE users 
-                    SET tokens = tokens + %s 
+                    SET tokens = tokens + %s, updated_at = NOW()
                     WHERE telegram_user_id = %s
                     RETURNING tokens
                 """, (amount, telegram_user_id))
                 result = cur.fetchone()
+
+                if result is None:
+                    # No wallet-linked row yet — store the gift on a placeholder row.
+                    placeholder_wallet = f"telegram:{telegram_user_id}"
+                    cur.execute("""
+                        INSERT INTO users (wallet_address, tokens, telegram_user_id, telegram_verified)
+                        VALUES (%s, %s, %s, FALSE)
+                        ON CONFLICT (wallet_address)
+                        DO UPDATE SET tokens = users.tokens + EXCLUDED.tokens, updated_at = NOW()
+                        RETURNING tokens
+                    """, (placeholder_wallet, amount, telegram_user_id))
+                    result = cur.fetchone()
+                    print(f"🆕 No linked wallet for {telegram_user_id}, stored gift on placeholder row")
+
                 conn.commit()
                 new_balance = result[0] if result else 0
                 print(f"✅ Added {amount} tokens to user {telegram_user_id}, new balance: {new_balance}")

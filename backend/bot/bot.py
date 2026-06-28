@@ -1327,12 +1327,29 @@ async def cmd_verify(update: Update, context) -> None:
                     WHERE verification_code = %s
                 """, (code,))
                 
-                # Also update users table
+                # Transfer any tokens gifted before linking (placeholder row)
+                placeholder_wallet = f"telegram:{uid}"
+                cur.execute(
+                    "SELECT tokens FROM users WHERE wallet_address = %s",
+                    (placeholder_wallet,)
+                )
+                ph_row = cur.fetchone()
+                gifted = ph_row[0] if ph_row else 0
+                
+                # Also update users table (link telegram + carry over gifted tokens)
                 cur.execute("""
                     UPDATE users
-                    SET telegram_verified = TRUE, telegram_user_id = %s
+                    SET telegram_verified = TRUE, telegram_user_id = %s, tokens = tokens + %s
                     WHERE wallet_address = %s
-                """, (uid, wallet))
+                """, (uid, gifted, wallet))
+                
+                # Remove the placeholder so there is only one row per telegram id
+                if ph_row is not None:
+                    cur.execute(
+                        "DELETE FROM users WHERE wallet_address = %s",
+                        (placeholder_wallet,)
+                    )
+                    print(f"🔄 Transferred {gifted} gifted tokens from placeholder to {wallet[:10]}...")
                 
                 # Get user's token balance
                 cur.execute("""
