@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle, Zap } from 'lucide-react'
 import { CLPublicKey, DeployUtil } from 'casper-js-sdk'
 
@@ -14,6 +15,7 @@ const CASPER_CONFIG = {
 }
 
 export default function BuyCredits({ wallet, balance, provider, onPurchaseComplete }) {
+  const navigate = useNavigate()
   const [selected, setSelected] = useState(null)
   const [paymentMode, setPaymentMode] = useState('manual') // 'manual' or 'x402'
   const [paying, setPaying] = useState(false)
@@ -595,12 +597,12 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                     </button>
                     
                     <button
-                      disabled
-                      className="p-4 rounded-lg border-2 border-gray-700 bg-gray-900/30 opacity-60 cursor-not-allowed"
+                      onClick={() => navigate('/buy-credits-x402')}
+                      className="p-4 rounded-lg border-2 border-purple-500/50 bg-purple-500/10 hover:border-purple-500 hover:bg-purple-500/20 transition"
                     >
-                      <Zap className="w-6 h-6 mx-auto mb-2 text-gray-500" />
-                      <p className="text-gray-400 font-semibold text-sm">x402 Discounted</p>
-                      <p className="text-orange-400 text-xs mt-1 font-bold">🚧 Coming Soon</p>
+                      <Zap className="w-6 h-6 mx-auto mb-2 text-purple-400" />
+                      <p className="text-white font-semibold text-sm">x402 (Testnet)</p>
+                      <p className="text-purple-300 text-xs mt-1 font-bold">Try it now →</p>
                     </button>
                   </div>
                 </div>
