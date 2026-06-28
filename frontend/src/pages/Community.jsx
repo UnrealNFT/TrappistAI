@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Sparkles, Image, Music, Box, Calendar, Loader2, ExternalLink, User } from 'lucide-react'
+import { Sparkles, Image, Music, Box, Calendar, Loader2, ExternalLink, User, Play } from 'lucide-react'
+import MediaViewer from '../components/MediaViewer'
 
 const Community = ({ wallet }) => {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all') // all, image, music, 3d
+  const [selected, setSelected] = useState(null)
 
   useEffect(() => {
     fetchCommunityItems()
@@ -150,7 +152,7 @@ const Community = ({ wallet }) => {
                 className="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden hover:border-green-500/50 transition group"
               >
                 {/* Asset Preview */}
-                <div className="relative">
+                <div className="relative cursor-pointer" onClick={() => setSelected(item)}>
                   {item.assetType === 'image' && (
                     <img 
                       src={item.assetUrl} 
@@ -168,6 +170,13 @@ const Community = ({ wallet }) => {
                       <Box className="w-20 h-20 text-cyan-400 group-hover:scale-110 transition-transform" />
                     </div>
                   )}
+
+                  {/* Play overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition">
+                    <div className="opacity-0 group-hover:opacity-100 transition w-14 h-14 rounded-full bg-green-600/90 flex items-center justify-center">
+                      <Play className="w-7 h-7 text-white ml-1" />
+                    </div>
+                  </div>
                   
                   {/* Type Badge */}
                   <div className="absolute top-3 left-3 px-3 py-1 bg-black/70 backdrop-blur-sm rounded-full flex items-center gap-2">
@@ -196,21 +205,21 @@ const Community = ({ wallet }) => {
                     </p>
                   )}
 
-                  <a
-                    href={item.assetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => setSelected(item)}
                     className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    View Full
-                  </a>
+                    <Play className="w-4 h-4" />
+                    {item.assetType === 'image' ? 'View' : item.assetType === 'music' ? 'Play' : 'View 3D'}
+                  </button>
                 </div>
               </motion.div>
             ))}
           </motion.div>
         )}
       </div>
+
+      <MediaViewer item={selected} onClose={() => setSelected(null)} />
     </div>
   )
 }

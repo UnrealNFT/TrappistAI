@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
-import { User, Link as LinkIcon, CheckCircle, X, Loader2, ExternalLink, Image as ImageIcon, Music, Box, Calendar } from 'lucide-react'
+import { User, Link as LinkIcon, CheckCircle, X, Loader2, ExternalLink, Image as ImageIcon, Music, Box, Calendar, Play } from 'lucide-react'
 import { getProfileInfo, linkTelegram, verifyTelegramCode, unlinkTelegram } from '../services/api'
+import MediaViewer from '../components/MediaViewer'
 
 export default function Profile({ wallet }) {
   // Tab state - 2 tabs only
   const [activeTab, setActiveTab] = useState('telegram') // telegram, gallery
+  const [selected, setSelected] = useState(null)
   
   // Telegram state
   const [loading, setLoading] = useState(false)
@@ -401,21 +403,29 @@ export default function Profile({ wallet }) {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {tokens.map((token) => (
-                  <div key={token.tokenId} className="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden hover:border-green-500/50 transition">
+                  <div key={token.tokenId} className="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden hover:border-green-500/50 transition group">
                     {/* Asset Preview */}
-                    {token.assetType === 'image' && (
-                      <img src={token.assetUrl} alt="Asset" className="w-full h-48 object-cover" />
-                    )}
-                    {token.assetType === 'music' && (
-                      <div className="w-full h-48 bg-gradient-to-br from-green-900/50 to-gray-900/50 flex items-center justify-center">
-                        <Music className="w-16 h-16 text-green-400" />
+                    <div className="relative cursor-pointer" onClick={() => setSelected(token)}>
+                      {token.assetType === 'image' && (
+                        <img src={token.assetUrl} alt="Asset" className="w-full h-48 object-cover" />
+                      )}
+                      {token.assetType === 'music' && (
+                        <div className="w-full h-48 bg-gradient-to-br from-green-900/50 to-gray-900/50 flex items-center justify-center">
+                          <Music className="w-16 h-16 text-green-400" />
+                        </div>
+                      )}
+                      {token.assetType === '3d' && (
+                        <div className="w-full h-48 bg-gradient-to-br from-blue-900/50 to-cyan-900/50 flex items-center justify-center">
+                          <Box className="w-16 h-16 text-cyan-400" />
+                        </div>
+                      )}
+                      {/* Play overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition">
+                        <div className="opacity-0 group-hover:opacity-100 transition w-12 h-12 rounded-full bg-green-600/90 flex items-center justify-center">
+                          <Play className="w-6 h-6 text-white ml-0.5" />
+                        </div>
                       </div>
-                    )}
-                    {token.assetType === '3d' && (
-                      <div className="w-full h-48 bg-gradient-to-br from-blue-900/50 to-cyan-900/50 flex items-center justify-center">
-                        <Box className="w-16 h-16 text-cyan-400" />
-                      </div>
-                    )}
+                    </div>
 
                     <div className="p-4">
                       <div className="flex items-center gap-2 mb-2">
@@ -432,14 +442,13 @@ export default function Profile({ wallet }) {
                         <p className="text-xs text-gray-500 mb-3 line-clamp-2">{token.prompt}</p>
                       )}
 
-                      <a
-                        href={token.assetUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm text-center block"
+                      <button
+                        onClick={() => setSelected(token)}
+                        className="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm text-center flex items-center justify-center gap-2"
                       >
-                        View Full Size
-                      </a>
+                        <Play className="w-4 h-4" />
+                        {token.assetType === 'image' ? 'View' : token.assetType === 'music' ? 'Play' : 'View 3D'}
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -448,6 +457,8 @@ export default function Profile({ wallet }) {
           </div>
         )}
       </div>
+
+      <MediaViewer item={selected} onClose={() => setSelected(null)} />
     </div>
   )
 }
