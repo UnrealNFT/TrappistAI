@@ -33,6 +33,7 @@ export default function BuyCreditsX402({ wallet, balance, provider, onPurchaseCo
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [receipt, setReceipt] = useState(null)
+  const [pendingHash, setPendingHash] = useState('')
 
   useEffect(() => {
     loadPaymentInfo()
@@ -62,6 +63,42 @@ export default function BuyCreditsX402({ wallet, balance, provider, onPurchaseCo
   const formatCspr = (motes) => {
     if (!motes || !/^\d+$/.test(String(motes))) return `${motes} CSPR`
     return `${(Number(motes) / 1_000_000_000).toLocaleString()} CSPR`
+  }
+
+  // Re-verify a submitted deploy without re-sending funds (recovers slow confirms).
+  const verifyPayment = async (hash, auto = false) => {
+    const h = hash || pendingHash
+    if (!h) return false
+    setVerifying(true)
+    if (!auto) setError('')
+    try {
+      const res = await fetch(
+        `${API_URL}/api/buy-credits-x402/verify?deployHash=${encodeURIComponent(h)}&wallet=${encodeURIComponent(wallet)}`
+      )
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.success) {
+        setReceipt(data.receipt || null)
+        setSuccess(true)
+        setPendingHash('')
+        setVerifying(false)
+        toast.success(`✅ x402 settled! +${data.tokens} credits`)
+        setTimeout(() => {
+          onPurchaseComplete && onPurchaseComplete()
+        }, 2000)
+        return true
+      }
+      if (res.status === 202 && data.pending) {
+        setVerifying(false)
+        if (!auto) setError('Still confirming on testnet. Try again in ~30s.')
+        return false
+      }
+      setVerifying(false)
+      throw new Error(data.detail || data.message || 'Verification failed')
+    } catch (e) {
+      setVerifying(false)
+      setError(e.message || 'Verification failed')
+      return false
+    }
   }
 
   const handlePay = async () => {
@@ -156,7 +193,18 @@ export default function BuyCreditsX402({ wallet, balance, provider, onPurchaseCo
         }, 2000)
       } else if (settleResponse.status === 202 && data.pending) {
         setVerifying(false)
-        setError('Payment sent but testnet confirmation is pending. Wait ~1 min and refresh.')
+        setPendingHash(data.deployHash || '')
+        setError('')
+        toast('⏳ Confirming on testnet…')
+        // Auto-retry verification (no funds re-sent) before asking the user.
+        let ok = false
+        for (let i = 0; i < 6 && !ok; i++) {
+          await new Promise((r) => setTimeout(r, 15000))
+          ok = await verifyPayment(data.deployHash, true)
+        }
+        if (!ok) {
+          setError('Your payment is on-chain but still confirming. Click “Verify payment” below in a moment.')
+        }
       } else {
         setVerifying(false)
         throw new Error(data.detail || data.message || 'Payment failed')
@@ -236,6 +284,28 @@ export default function BuyCreditsX402({ wallet, balance, provider, onPurchaseCo
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-6 flex items-start gap-2 text-red-200 text-sm">
             <XCircle size={18} className="flex-shrink-0 mt-0.5" /> {error}
+          </div>
+        )}
+
+        {/* Pending: recover a slow testnet confirmation without re-paying */}
+        {pendingHash && !success && (
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6">
+            <div className="text-yellow-200 text-sm mb-3">
+              Payment submitted on-chain. If credits aren't added yet, verify it (no funds are re-sent).
+            </div>
+            <button
+              onClick={() => verifyPayment(pendingHash)}
+              disabled={verifying}
+              className="w-full bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/40 text-yellow-100 font-semibold py-2.5 px-4 rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {verifying ? (
+                <>
+                  <Loader2 className="animate-spin" size={16} /> Verifying…
+                </>
+              ) : (
+                'Verify payment'
+              )}
+            </button>
           </div>
         )}
 
