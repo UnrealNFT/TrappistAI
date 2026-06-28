@@ -23,10 +23,9 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 from cspr_listener import listen_payments
-from db import get_db_session, get_user_balance, consume_user_tokens, get_payment_history, user_is_testnet_only
+from db import get_db_session, get_user_balance, consume_user_tokens, get_payment_history
 import wavespeed
 import r2_storage
-import watermark
 
 load_dotenv()
 
@@ -1755,13 +1754,6 @@ async def generate_image(request: Request, data: GenerateImageRequest):
             print(f"❌ Image generation failed: {gen_error}")
             raise HTTPException(status_code=500, detail=f"Generation failed: {str(gen_error)}")
 
-        # Stamp the trappist.land watermark ONLY for testnet/demo users.
-        # Real paying users (any mainnet payment) are never watermarked.
-        if await user_is_testnet_only(data.walletAddress):
-            url = await asyncio.get_event_loop().run_in_executor(
-                None, watermark.process_image_url, url
-            )
-        
         # Only consume tokens if generation succeeded
         consumed = await consume_user_tokens(data.walletAddress, 1, "image", data.prompt)
         if not consumed:

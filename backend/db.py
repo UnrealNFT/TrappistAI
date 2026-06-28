@@ -126,39 +126,6 @@ async def consume_user_tokens(wallet_address: str, tokens: int, gen_type: str, p
             return False
 
 
-async def user_is_testnet_only(wallet_address: str) -> bool:
-    """
-    True only if this wallet has bought testnet (x402) credits and has NEVER
-    made a real payment. Used to watermark demo/testnet images while ensuring
-    real paying users are never watermarked.
-    """
-    w = wallet_address.lower().strip()
-    try:
-        with engine.connect() as conn:
-            real = conn.execute(
-                text("""
-                    SELECT COUNT(*) FROM payments
-                    WHERE wallet_address = :w AND status = 'confirmed'
-                      AND COALESCE(package_name, '') NOT LIKE '%testnet%'
-                """),
-                {"w": w},
-            ).scalar() or 0
-            if real > 0:
-                return False
-            testnet = conn.execute(
-                text("""
-                    SELECT COUNT(*) FROM payments
-                    WHERE wallet_address = :w AND status = 'confirmed'
-                      AND COALESCE(package_name, '') LIKE '%testnet%'
-                """),
-                {"w": w},
-            ).scalar() or 0
-            return testnet > 0
-    except Exception as e:
-        print(f"[DB] user_is_testnet_only error: {e}")
-        return False
-
-
 async def process_payment(wallet_address: str, tx_hash: str, amount_cspr: float, tokens: int, package_name: str) -> bool:
     """
     Process payment: save payment record and credit tokens
