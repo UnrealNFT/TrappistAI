@@ -26,6 +26,7 @@ from cspr_listener import listen_payments
 from db import get_db_session, get_user_balance, consume_user_tokens, get_payment_history
 import wavespeed
 import r2_storage
+import watermark
 
 load_dotenv()
 
@@ -924,7 +925,7 @@ X402_TREASURY = os.getenv(
     "0202e5a88e2baf0306484eced583f8642902752668b4b91070dc2abd01d6304d2cd8",
 )
 X402_PRICE_CSPR = int(os.getenv("X402_PRICE_CSPR", "10"))   # testnet demo price
-X402_TOKENS = int(os.getenv("X402_TOKENS", "100"))
+X402_TOKENS = int(os.getenv("X402_TOKENS", "1000"))
 X402_AMOUNT_MOTES = str(X402_PRICE_CSPR * 1_000_000_000)
 X402_SITE = os.getenv("X402_SITE", "trappist.land")
 X402_MEMO = f"Achat de {X402_TOKENS} credits sur {X402_SITE}"
@@ -1720,6 +1721,12 @@ async def generate_image(request: Request, data: GenerateImageRequest):
             # API failed - DON'T consume tokens
             print(f"❌ Image generation failed: {gen_error}")
             raise HTTPException(status_code=500, detail=f"Generation failed: {str(gen_error)}")
+
+        # Stamp the trappist.land watermark (testnet demo branding).
+        # Falls back to the original URL if watermarking/R2 is unavailable.
+        url = await asyncio.get_event_loop().run_in_executor(
+            None, watermark.process_image_url, url
+        )
         
         # Only consume tokens if generation succeeded
         consumed = await consume_user_tokens(data.walletAddress, 1, "image", data.prompt)

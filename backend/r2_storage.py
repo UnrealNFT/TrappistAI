@@ -125,6 +125,34 @@ def upload_asset(source_url: str, asset_type: str = "image") -> str:
         return source_url
 
 
+def upload_bytes(content: bytes, asset_type: str = "image", content_type: str = "image/png") -> str:
+    """
+    Upload raw bytes directly to R2 (e.g. a watermarked image).
+
+    Returns the permanent public R2 URL on success, or an empty string if
+    R2 is not configured or the upload fails (caller decides the fallback).
+    """
+    if not content or not is_configured():
+        return ""
+    try:
+        ext = ".png" if content_type == "image/png" else _EXT.get(asset_type, ".bin")
+        key = f"{asset_type}/{uuid.uuid4().hex}{ext}"
+        if not content_type:
+            content_type = mimetypes.guess_type(key)[0] or "application/octet-stream"
+        _client().put_object(
+            Bucket=R2_BUCKET,
+            Key=key,
+            Body=content,
+            ContentType=content_type,
+        )
+        permanent_url = f"{R2_PUBLIC_URL}/{key}"
+        print(f"✅ Uploaded watermarked image to R2: {permanent_url}")
+        return permanent_url
+    except Exception as e:
+        print(f"⚠️ R2 upload_bytes failed ({e})")
+        return ""
+
+
 def delete_asset(asset_url: str) -> bool:
     """
     Best-effort delete of an object from R2 given its public URL.
