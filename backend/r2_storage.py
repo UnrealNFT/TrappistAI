@@ -123,3 +123,29 @@ def upload_asset(source_url: str, asset_type: str = "image") -> str:
     except Exception as e:
         print(f"⚠️ R2 upload failed ({e}); keeping original URL")
         return source_url
+
+
+def delete_asset(asset_url: str) -> bool:
+    """
+    Best-effort delete of an object from R2 given its public URL.
+
+    Returns True if a delete request was issued, False otherwise.
+    Only deletes objects that live under our R2_PUBLIC_URL (our own bucket).
+    """
+    if not asset_url or not is_configured():
+        return False
+
+    # Only handle URLs that belong to our public bucket.
+    if not asset_url.startswith(R2_PUBLIC_URL + "/"):
+        return False
+
+    try:
+        key = asset_url[len(R2_PUBLIC_URL) + 1:].split("?")[0]
+        if not key:
+            return False
+        _client().delete_object(Bucket=R2_BUCKET, Key=key)
+        print(f"🗑️ Deleted from R2: {key}")
+        return True
+    except Exception as e:
+        print(f"⚠️ R2 delete failed ({e})")
+        return False

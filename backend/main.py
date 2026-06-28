@@ -6,12 +6,13 @@ Payment: CSPR (Casper blockchain)
 import os
 import asyncio
 import random
+import secrets
 import requests
 import psycopg2
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -2573,6 +2574,104 @@ async def delete_broken_tokens_endpoint():
     except Exception as e:
         print(f"❌ Admin delete error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# ADMIN MODERATION (community feed)
+# ============================================
+
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
+
+
+def _check_admin(secret: str):
+    """Raise 401/503 unless the provided secret matches ADMIN_SECRET."""
+    if not ADMIN_SECRET:
+        raise HTTPException(status_code=503, detail="Admin not configured (set ADMIN_SECRET)")
+    if not secret or not secrets.compare_digest(secret, ADMIN_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid admin secret")
+
+
+class AdminAuthRequest(BaseModel):
+    secret: str
+
+
+@app.post("/api/admin/verify")
+@limiter.limit("10/minute")
+async def admin_verify(request: Request, data: AdminAuthRequest):
+    """Check whether an admin secret is valid (for the admin login screen)."""
+    _check_admin(data.secret)
+    return {"success": True}
+
+
+@app.get("/api/admin/community")
+@limiter.limit("30/minute")
+async def admin_list_community(request: Request, x_admin_secret: str = Header(default="")):
+    """List all public community items for moderation (admin only)."""
+    _check_admin(x_admin_secret)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT token_id, wallet_address, asset_type, asset_url, prompt, model, created_at
+            FROM rwa_tokens
+            WHERE is_public = TRUE
+            ORDER BY created_at DESC
+            LIMIT 500
+        """)
+        items = []
+        for row in cursor.fetchall():
+            items.append({
+                "tokenId": row[0],
+                "walletAddress": row[1],
+                "assetType": row[2],
+                "assetUrl": row[3],
+                "prompt": row[4],
+                "model": row[5],
+                "createdAt": row[6].isoformat() if row[6] else None,
+            })
+        return {"success": True, "items": items, "count": len(items)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.delete("/api/admin/community/{token_id}")
+@limiter.limit("60/minute")
+async def admin_delete_community_item(request: Request, token_id: int, x_admin_secret: str = Header(default="")):
+    """Delete a community/RWA item by token_id (admin only). Cascades to children."""
+    _check_admin(x_admin_secret)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Fetch the asset URL first so we can also remove the R2 object.
+        cursor.execute("SELECT asset_url FROM rwa_tokens WHERE token_id = %s", (token_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Item not found")
+        asset_url = row[0]
+
+        cursor.execute("DELETE FROM rwa_tokens WHERE token_id = %s", (token_id,))
+        deleted = cursor.rowcount
+        conn.commit()
+
+        # Best-effort removal of the stored file from R2.
+        try:
+            r2_storage.delete_asset(asset_url)
+        except Exception as e:
+            print(f"⚠️ R2 cleanup skipped: {e}")
+
+        print(f"🗑️ Admin deleted community item #{token_id}")
+        return {"success": True, "deleted": deleted, "tokenId": token_id}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Admin delete community error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @app.exception_handler(Exception)

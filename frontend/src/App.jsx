@@ -8,6 +8,7 @@ import Profile from './pages/Profile'
 import BuyCredits from './pages/BuyCredits'
 import BuyCreditsX402 from './pages/BuyCreditsX402'
 import Community from './pages/Community'
+import Admin from './pages/Admin'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
 import { getBalance } from './services/api'
@@ -179,6 +180,7 @@ function App() {
               } />
               {/* Legacy route redirect */}
               <Route path="/marketplace" element={<Navigate to="/explore" replace />} />
+              <Route path="/admin" element={<Admin />} />
             </Routes>
           </main>
           
