@@ -170,7 +170,12 @@ function App() {
                 />
               } />
               <Route path="/buy-credits-x402" element={
-                <BuyCreditsX402 />
+                <BuyCreditsX402 
+                  wallet={wallet}
+                  balance={balance}
+                  provider={provider}
+                  onPurchaseComplete={refreshBalance}
+                />
               } />
               <Route path="/my-rwa" element={<Navigate to="/profile" replace />} />
               <Route path="/explore" element={

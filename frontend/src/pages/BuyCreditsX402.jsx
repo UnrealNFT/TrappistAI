@@ -1,396 +1,295 @@
 /**
- * x402 Payment Flow with CSPR.click
- * 
- * Based on: https://github.com/make-software/casper-x402/tree/master/go/examples/csprclick-x402
- * 
+ * x402 Payment Flow — Option B (native CSPR, TESTNET)
+ *
+ * x402 here = an HTTP envelope (402 challenge + on-chain proof receipt) around a
+ * native CSPR transfer to the SAME treasury wallet as the manual flow, but on
+ * the Casper TESTNET. No CEP-18 token, no external facilitator.
+ *
  * Flow:
- * 1. Fetch payment requirements (HTTP 402)
- * 2. Sign EIP-712 typed data with CSPR.click
- * 3. Submit payment signature
- * 4. Display result
+ *  1. GET  /api/buy-credits-x402            -> HTTP 402 + PAYMENT-REQUIRED header
+ *  2. Build a native CSPR transfer deploy on `casper-test`, sign with wallet
+ *  3. POST /api/buy-credits-x402            -> PAYMENT-SIGNATURE header (base64)
+ *  4. Backend settles on testnet, credits tokens, returns PAYMENT-RESPONSE receipt
  */
 
 import { useState, useEffect } from 'react'
-import { PublicKey } from 'casper-js-sdk'
+import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle, ExternalLink, Zap } from 'lucide-react'
+import { CLPublicKey, DeployUtil } from 'casper-js-sdk'
 import toast from 'react-hot-toast'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-const DEFAULT_DOMAIN_NAME = 'Wrapped Casper'
-const DEFAULT_DOMAIN_VERSION = '1'
 
-export default function BuyCreditsX402() {
-  const [activeAccount, setActiveAccount] = useState(null)
-  const [paymentInfo, setPaymentInfo] = useState(null)
-  const [paymentRequirement, setPaymentRequirement] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState('')
-  const [paymentResponse, setPaymentResponse] = useState('')
+// TESTNET configuration (native CSPR, same treasury wallet as manual payment)
+const X402_CONFIG = {
+  chainName: 'casper-test',
+  paymentAmount: '100000000', // 0.1 CSPR gas (motes)
+}
 
-  // Initialize CSPR.click
-  useEffect(() => {
-    const scriptId = 'csprclick-script'
+export default function BuyCreditsX402({ wallet, balance, provider, onPurchaseComplete }) {
+  const [requirement, setRequirement] = useState(null)
+  const [loadingInfo, setLoadingInfo] = useState(true)
+  const [paying, setPaying] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+  const [receipt, setReceipt] = useState(null)
 
-    const onSignedIn = async (evt) => {
-      console.log('✅ CSPR.click signed in:', evt.account)
-      setActiveAccount(evt.account)
-    }
-
-    const onSwitchedAccount = async (evt) => {
-      console.log('🔄 CSPR.click switched account:', evt.account)
-      setActiveAccount(evt.account)
-    }
-
-    const onSignedOut = async () => {
-      console.log('👋 CSPR.click signed out')
-      setActiveAccount(null)
-    }
-
-    const onDisconnected = async () => {
-      console.log('⚠️ CSPR.click disconnected')
-      setActiveAccount(null)
-    }
-
-    const addListeners = () => {
-      if (window.csprclick) {
-        window.csprclick.on('csprclick:signed_in', onSignedIn)
-        window.csprclick.on('csprclick:switched_account', onSwitchedAccount)
-        window.csprclick.on('csprclick:signed_out', onSignedOut)
-        window.csprclick.on('csprclick:disconnected', onDisconnected)
-      }
-    }
-
-    // Load CSPR.click script if not already loaded
-    if (!document.getElementById(scriptId)) {
-      const script = document.createElement('script')
-      script.id = scriptId
-      script.src = 'https://cdn.cspr.click/ui/v2.1.0/csprclick-client-2.1.0.js'
-      script.defer = true
-      script.onload = addListeners
-      document.body.appendChild(script)
-    } else {
-      addListeners()
-    }
-
-    return () => {
-      if (window.csprclick) {
-        window.csprclick.off('csprclick:signed_in', onSignedIn)
-        window.csprclick.off('csprclick:switched_account', onSwitchedAccount)
-        window.csprclick.off('csprclick:signed_out', onSignedOut)
-        window.csprclick.off('csprclick:disconnected', onDisconnected)
-      }
-    }
-  }, [])
-
-  // Fetch payment requirements on mount
   useEffect(() => {
     loadPaymentInfo()
   }, [])
 
   const loadPaymentInfo = async () => {
+    setLoadingInfo(true)
+    setError('')
     try {
-      console.log('📡 Fetching payment requirements...')
-      
       const response = await fetch(`${API_URL}/api/buy-credits-x402`)
-      
-      // Check for 402 Payment Required
       if (response.status !== 402) {
         throw new Error(`Expected HTTP 402, got ${response.status}`)
       }
-
-      const paymentRequired = response.headers.get('payment-required') || response.headers.get('PAYMENT-REQUIRED')
-      
-      if (!paymentRequired) {
-        throw new Error('Missing PAYMENT-REQUIRED header')
-      }
-
-      // Parse base64 JSON
-      const decoded = atob(paymentRequired)
-      const nextPaymentInfo = JSON.parse(decoded)
-      
-      console.log('✅ Payment requirements:', nextPaymentInfo)
-
-      const accepted = nextPaymentInfo.accepts[0]
-      if (!accepted) {
-        throw new Error('No accepted payment options')
-      }
-
-      setPaymentInfo(nextPaymentInfo)
-      setPaymentRequirement(accepted)
-      
-    } catch (error) {
-      console.error('❌ Error loading payment info:', error)
-      toast.error(`Failed to load payment info: ${error.message}`)
-      setResult(JSON.stringify({ error: error.message }, null, 2))
+      const header = response.headers.get('payment-required') || response.headers.get('PAYMENT-REQUIRED')
+      const info = header ? JSON.parse(atob(header)) : await response.json()
+      const accepted = info.accepts?.[0]
+      if (!accepted) throw new Error('No accepted payment option returned')
+      setRequirement(accepted)
+    } catch (e) {
+      console.error('x402 load info error:', e)
+      setError(`Failed to load payment info: ${e.message}`)
+    } finally {
+      setLoadingInfo(false)
     }
   }
 
-  const handlePayment = async () => {
-    if (!activeAccount) {
-      toast.error('Please sign in with CSPR.click first')
+  const formatCspr = (motes) => {
+    if (!motes || !/^\d+$/.test(String(motes))) return `${motes} CSPR`
+    return `${(Number(motes) / 1_000_000_000).toLocaleString()} CSPR`
+  }
+
+  const handlePay = async () => {
+    if (!wallet || !provider) {
+      setError('Please connect your wallet first.')
+      return
+    }
+    if (!requirement) {
+      setError('Payment information not loaded.')
       return
     }
 
-    if (!paymentInfo || !paymentRequirement) {
-      toast.error('Payment information not loaded')
-      return
-    }
-
-    setLoading(true)
-    setResult('Requesting signature from CSPR.click...')
-    setPaymentResponse('')
+    setPaying(true)
+    setError('')
+    setSuccess(false)
+    setReceipt(null)
 
     try {
-      const publicKey = activeAccount.public_key
-      
-      // Calculate account hash (00 + blake2b hash of public key)
-      const accountHash = '00' + PublicKey.fromHex(publicKey)
-        .accountHash()
-        .toHex()
-        .replace('account-hash-', '')
+      const amountMotes = String(requirement.amount)
 
-      // Generate random nonce (32 bytes = 64 hex chars)
-      const randomBytes = new Uint8Array(32)
-      crypto.getRandomValues(randomBytes)
-      const nonce = '0x' + Array.from(randomBytes)
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
+      // Ensure wallet is connected
+      const isConnected = await provider.isConnected()
+      if (!isConnected) throw new Error('Wallet not connected. Please reconnect.')
 
-      // Time bounds
-      const validAfter = Math.floor(Date.now() / 1000)
-      const validBefore = validAfter + 60 * 60 // 1 hour
+      const senderPublicKey = CLPublicKey.fromHex(wallet)
+      const receiverPublicKey = CLPublicKey.fromHex(requirement.payTo)
 
-      // Parse amount to integer
-      const value = parseInt(paymentRequirement.amount)
-
-      // Get domain info from extra
-      const assetName = paymentRequirement.extra?.name || DEFAULT_DOMAIN_NAME
-      const assetVersion = paymentRequirement.extra?.version || DEFAULT_DOMAIN_VERSION
-
-      // Build EIP-712 typed data
-      const typedData = {
-        domain: {
-          name: assetName,
-          version: assetVersion,
-          chain_name: paymentRequirement.network,
-          contract_package_hash: paymentRequirement.asset
-        },
-        types: {
-          TransferWithAuthorization: [
-            { name: 'from', type: 'address' },
-            { name: 'to', type: 'address' },
-            { name: 'value', type: 'uint256' },
-            { name: 'validAfter', type: 'uint256' },
-            { name: 'validBefore', type: 'uint256' },
-            { name: 'nonce', type: 'bytes32' }
-          ]
-        },
-        primaryType: 'TransferWithAuthorization',
-        message: {
-          from: accountHash,
-          to: paymentRequirement.payTo,
-          value,
-          validAfter,
-          validBefore,
-          nonce
-        }
-      }
-
-      console.log('📝 Signing typed data:', typedData)
-
-      // Request signature from CSPR.click
-      const signResult = await window.csprclick.signTypedData(
-        { typedData, options: { returnHashArtifacts: true } },
-        publicKey.toLowerCase()
+      // Build a native CSPR transfer deploy on TESTNET
+      const deployParams = new DeployUtil.DeployParams(
+        senderPublicKey,
+        X402_CONFIG.chainName, // 'casper-test'
+        1,
+        1800000
       )
+      const transferId = Date.now()
+      const transferArgs = DeployUtil.ExecutableDeployItem.newTransfer(
+        amountMotes,
+        receiverPublicKey,
+        null,
+        transferId
+      )
+      const payment = DeployUtil.standardPayment(X402_CONFIG.paymentAmount)
+      const deploy = DeployUtil.makeDeploy(deployParams, transferArgs, payment)
+      const deployJSON = DeployUtil.deployToJson(deploy)
 
-      if (signResult?.cancelled || signResult?.error) {
-        throw new Error(signResult.error || 'Signing cancelled')
+      // Request signature
+      const signedResult = await provider.sign(JSON.stringify(deployJSON), wallet)
+      if (!signedResult || signedResult.cancelled) {
+        throw new Error('Payment cancelled')
       }
 
-      console.log('✅ Signature obtained:', signResult)
-
-      // Build PaymentPayload
-      const paymentPayload = {
-        x402Version: paymentInfo.x402Version,
-        resource: {
-          url: paymentInfo.resource.url || '/api/buy-credits-x402'
+      // Assemble signed deploy JSON
+      const signatureHex = Array.from(signedResult.signature)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+      const deployJson = DeployUtil.deployToJson(deploy)
+      deployJson.deploy.header.account = deployJson.deploy.header.account.toLowerCase()
+      const keyPrefix = wallet.substring(0, 2) // 01 = ED25519, 02 = SECP256K1
+      deployJson.deploy.approvals = [
+        {
+          signer: senderPublicKey.toHex().toLowerCase(),
+          signature: keyPrefix + signatureHex,
         },
-        accepted: paymentRequirement,
-        payload: {
-          authorization: {
-            from: accountHash,
-            to: paymentRequirement.payTo,
-            value: paymentRequirement.amount,
-            validAfter: validAfter.toString(),
-            validBefore: validBefore.toString(),
-            nonce: nonce
-          },
-          publicKey: signResult.publicKey,
-          signature: signResult.signatureHex
-        }
-      }
+      ]
 
-      console.log('📤 Submitting payment:', paymentPayload)
-      setResult('Submitting payment to backend...')
+      setPaying(false)
+      setVerifying(true)
 
-      // Send payment signature
-      const paidResponse = await fetch(`${API_URL}/api/buy-credits-x402`, {
+      // Build x402 PAYMENT-SIGNATURE payload (base64 JSON)
+      const paymentPayload = { deployJson, wallet }
+      const paymentSignature = btoa(JSON.stringify(paymentPayload))
+
+      const settleResponse = await fetch(`${API_URL}/api/buy-credits-x402`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'PAYMENT-SIGNATURE': btoa(JSON.stringify(paymentPayload))
-        }
+          'PAYMENT-SIGNATURE': paymentSignature,
+        },
       })
 
-      const responseText = await paidResponse.text()
-      let formattedResponse = responseText
+      const data = await settleResponse.json().catch(() => ({}))
 
-      try {
-        formattedResponse = JSON.stringify(JSON.parse(responseText), null, 2)
-      } catch {
-        // Keep non-JSON as-is
-      }
-
-      setResult(formattedResponse)
-
-      // Check for PAYMENT-RESPONSE header
-      const paymentResponseHeader = paidResponse.headers.get('payment-response') || paidResponse.headers.get('PAYMENT-RESPONSE')
-      if (paymentResponseHeader) {
-        const decoded = atob(paymentResponseHeader)
-        setPaymentResponse(decoded)
-      }
-
-      if (paidResponse.ok) {
-        toast.success('✅ Payment successful! Tokens credited.')
+      if (settleResponse.ok && data.success) {
+        setReceipt(data.receipt || null)
+        setSuccess(true)
+        setVerifying(false)
+        toast.success(`✅ x402 settled! +${data.tokens} credits`)
+        setTimeout(() => {
+          onPurchaseComplete && onPurchaseComplete()
+        }, 2000)
+      } else if (settleResponse.status === 202 && data.pending) {
+        setVerifying(false)
+        setError('Payment sent but testnet confirmation is pending. Wait ~1 min and refresh.')
       } else {
-        toast.error('❌ Payment failed')
+        setVerifying(false)
+        throw new Error(data.detail || data.message || 'Payment failed')
       }
-
-    } catch (error) {
-      console.error('❌ Payment error:', error)
-      toast.error(`Payment failed: ${error.message}`)
-      setResult(JSON.stringify({ error: error.message }, null, 2))
-    } finally {
-      setLoading(false)
+    } catch (e) {
+      console.error('x402 payment error:', e)
+      setPaying(false)
+      setVerifying(false)
+      setError(e.message || 'Payment failed')
+      toast.error(e.message || 'Payment failed')
     }
-  }
-
-  const formatAmount = (amount, decimals, symbol) => {
-    if (!amount || !/^\d+$/.test(amount)) {
-      return `${amount} ${symbol || ''}`
-    }
-
-    const parsedDecimals = parseInt(decimals) || 0
-    const paddedAmount = amount.padStart(parsedDecimals + 1, '0')
-    
-    const integerPart = parsedDecimals === 0 
-      ? paddedAmount 
-      : paddedAmount.slice(0, -parsedDecimals).replace(/^0+(?=\d)/, '') || '0'
-    
-    const fractionPart = parsedDecimals === 0 
-      ? '' 
-      : '.' + paddedAmount.slice(-parsedDecimals)
-    
-    return `${integerPart}${fractionPart} ${symbol || ''}`
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 py-12 px-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-dark-bg py-12 px-4">
+      <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">
-            x402 Payment (CSPR.click)
+          <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 flex items-center justify-center gap-2">
+            <Zap className="text-purple-400" /> x402 Payment
           </h1>
           <p className="text-slate-300">
-            Buy 100 tokens for 10 CSPR using x402 protocol
+            Pay with native CSPR via the x402 protocol — on{' '}
+            <span className="text-yellow-400 font-semibold">Casper Testnet</span>.
           </p>
         </div>
 
-        {/* CSPR.click Container */}
-        <div className="bg-white/10 backdrop-blur-md rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-bold text-white mb-4">
-            1. Connect Wallet
-          </h2>
-          <div id="csprclick-connect" className="flex justify-center">
-            {/* CSPR.click widget will render here */}
+        {/* Testnet notice */}
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6 flex items-start gap-3">
+          <AlertCircle className="text-yellow-400 flex-shrink-0 mt-0.5" size={20} />
+          <div className="text-sm text-yellow-100">
+            This uses the <strong>Casper Testnet</strong>. Switch your wallet to a
+            testnet account and fund it with the{' '}
+            <a
+              href="https://testnet.cspr.live/tools/faucet"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline text-yellow-300"
+            >
+              testnet faucet
+            </a>
+            . No real funds are used.
           </div>
-          {activeAccount && (
-            <div className="mt-4 text-center text-green-400">
-              ✅ Connected: {activeAccount.public_key.slice(0, 10)}...
-            </div>
-          )}
         </div>
 
-        {/* Payment Info */}
-        <div className="bg-white/10 backdrop-blur-md rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-bold text-white mb-4">
-            2. Payment Details
-          </h2>
-          {paymentRequirement ? (
+        {/* Payment details */}
+        <div className="bg-white/5 border border-white/10 rounded-xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-white mb-4">Payment Details</h2>
+          {loadingInfo ? (
+            <div className="flex items-center gap-2 text-slate-400">
+              <Loader2 className="animate-spin" size={18} /> Loading requirements...
+            </div>
+          ) : requirement ? (
             <div className="space-y-3 text-sm">
-              <div>
-                <span className="text-slate-400">Network:</span>
-                <span className="text-white ml-2">{paymentRequirement.network}</span>
-              </div>
-              <div>
-                <span className="text-slate-400">Amount:</span>
-                <span className="text-white ml-2">
-                  {formatAmount(
-                    paymentRequirement.amount,
-                    paymentRequirement.extra?.decimals,
-                    paymentRequirement.extra?.symbol
-                  )}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400">Receiver:</span>
-                <span className="text-white ml-2 font-mono text-xs">
-                  {paymentRequirement.payTo.slice(0, 20)}...
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400">Tokens:</span>
-                <span className="text-white ml-2">100 generation credits</span>
-              </div>
+              <Row label="Network" value={requirement.network} />
+              <Row label="Amount" value={formatCspr(requirement.amount)} />
+              <Row label="Credits" value={`${requirement.extra?.tokens ?? 100} generation credits`} />
+              <Row
+                label="Receiver"
+                value={`${requirement.payTo.slice(0, 16)}...${requirement.payTo.slice(-6)}`}
+                mono
+              />
             </div>
           ) : (
-            <div className="text-slate-400">Loading payment requirements...</div>
+            <div className="text-red-400 text-sm">Could not load payment requirements.</div>
           )}
         </div>
 
-        {/* Pay Button */}
+        {/* Wallet status */}
+        {!wallet && (
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6 flex items-center gap-2 text-slate-300 text-sm">
+            <Wallet size={18} /> Connect your wallet (top-right) and switch it to a testnet account.
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-6 flex items-start gap-2 text-red-200 text-sm">
+            <XCircle size={18} className="flex-shrink-0 mt-0.5" /> {error}
+          </div>
+        )}
+
+        {/* Success + receipt */}
+        {success && (
+          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2 text-green-300 font-semibold mb-2">
+              <CheckCircle size={18} /> x402 payment settled on testnet!
+            </div>
+            {receipt && (
+              <div className="text-xs text-green-100 space-y-1">
+                <div>Tokens credited: {requirement?.extra?.tokens ?? 100}</div>
+                {receipt.explorer && (
+                  <a
+                    href={receipt.explorer}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 underline text-green-300"
+                  >
+                    View proof on testnet explorer <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Pay button */}
         <button
-          onClick={handlePayment}
-          disabled={!activeAccount || loading || !paymentRequirement}
-          className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:from-slate-600 disabled:to-slate-700 text-white font-bold py-4 px-6 rounded-lg transition-all disabled:cursor-not-allowed"
+          onClick={handlePay}
+          disabled={!wallet || !requirement || paying || verifying || success}
+          className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 text-white font-bold py-4 px-6 rounded-xl transition-all disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
-          {loading ? '⏳ Processing...' : '💳 Pay with x402'}
+          {paying ? (
+            <>
+              <Loader2 className="animate-spin" size={18} /> Signing...
+            </>
+          ) : verifying ? (
+            <>
+              <Loader2 className="animate-spin" size={18} /> Settling on testnet...
+            </>
+          ) : (
+            <>
+              <Zap size={18} /> Pay with x402
+            </>
+          )}
         </button>
-
-        {/* Result */}
-        {result && (
-          <div className="bg-white/10 backdrop-blur-md rounded-lg p-6 mt-6">
-            <h2 className="text-xl font-bold text-white mb-4">
-              Result
-            </h2>
-            <pre className="bg-black/50 text-green-400 p-4 rounded overflow-x-auto text-xs">
-              {result}
-            </pre>
-          </div>
-        )}
-
-        {/* Payment Response */}
-        {paymentResponse && (
-          <div className="bg-white/10 backdrop-blur-md rounded-lg p-6 mt-6">
-            <h2 className="text-xl font-bold text-white mb-4">
-              Payment Response (x402)
-            </h2>
-            <pre className="bg-black/50 text-blue-400 p-4 rounded overflow-x-auto text-xs">
-              {paymentResponse}
-            </pre>
-          </div>
-        )}
       </div>
+    </div>
+  )
+}
+
+function Row({ label, value, mono }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span className="text-slate-400">{label}</span>
+      <span className={`text-white text-right ${mono ? 'font-mono text-xs break-all' : ''}`}>{value}</span>
     </div>
   )
 }

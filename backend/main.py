@@ -908,6 +908,228 @@ async def verify_payment(request: Request, data: VerifyPaymentRequest):
         print(f"❌ Payment processing error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============================================================
+# x402 Payment (TESTNET, native CSPR) — ADDITIVE.
+# Does NOT touch the mainnet manual flow above.
+# x402 = HTTP envelope (402 challenge + cryptographic on-chain proof)
+# around a native CSPR transfer to the SAME treasury wallet, on TESTNET.
+# ============================================================
+import base64 as _x402_b64
+import json as _x402_json
+
+X402_NETWORK = "casper:casper-test"
+X402_TESTNET_RPC = os.getenv("X402_TESTNET_RPC", "https://node.testnet.casper.network/rpc")
+X402_TREASURY = os.getenv(
+    "X402_TREASURY_WALLET",
+    "0202e5a88e2baf0306484eced583f8642902752668b4b91070dc2abd01d6304d2cd8",
+)
+X402_PRICE_CSPR = int(os.getenv("X402_PRICE_CSPR", "10"))   # testnet demo price
+X402_TOKENS = int(os.getenv("X402_TOKENS", "100"))
+X402_AMOUNT_MOTES = str(X402_PRICE_CSPR * 1_000_000_000)
+
+
+def _x402_requirements():
+    """Build the x402 PaymentRequirements object (testnet, native CSPR)."""
+    return {
+        "x402Version": 1,
+        "accepts": [
+            {
+                "scheme": "exact",
+                "network": X402_NETWORK,
+                "payTo": X402_TREASURY,
+                "asset": "CSPR",
+                "amount": X402_AMOUNT_MOTES,
+                "resource": "/api/buy-credits-x402",
+                "description": f"Buy {X402_TOKENS} credits for {X402_PRICE_CSPR} CSPR (testnet)",
+                "extra": {"symbol": "CSPR", "decimals": 9, "tokens": X402_TOKENS},
+            }
+        ],
+        "resource": {
+            "url": "/api/buy-credits-x402",
+            "description": f"Buy {X402_TOKENS} generation credits",
+        },
+    }
+
+
+def _x402_challenge_response():
+    reqs = _x402_requirements()
+    header_b64 = _x402_b64.b64encode(_x402_json.dumps(reqs).encode()).decode()
+    return JSONResponse(
+        status_code=402,
+        content=reqs,
+        headers={
+            "PAYMENT-REQUIRED": header_b64,
+            "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+        },
+    )
+
+
+@app.get("/api/buy-credits-x402")
+@limiter.limit("30/minute")
+async def buy_credits_x402_challenge(request: Request):
+    """x402 step 1: return HTTP 402 + PaymentRequirements (testnet, native CSPR)."""
+    return _x402_challenge_response()
+
+
+@app.post("/api/buy-credits-x402")
+@limiter.limit("10/minute")
+async def buy_credits_x402_settle(
+    request: Request,
+    payment_signature: str = Header(None, alias="PAYMENT-SIGNATURE"),
+):
+    """x402 step 2: settle a signed native-CSPR transfer on TESTNET and credit tokens.
+
+    The client sends a base64(JSON) PAYMENT-SIGNATURE header containing:
+        { "deployJson": <signed deploy>, "wallet": <payer public key hex> }
+    Backend submits the deploy to the testnet RPC, verifies execution on-chain
+    (this is the cryptographic x402 proof), credits tokens, and returns an
+    x402 receipt in the PAYMENT-RESPONSE header.
+    """
+    import httpx
+
+    if not payment_signature:
+        # No payment attached yet → re-issue the challenge.
+        return _x402_challenge_response()
+
+    try:
+        payload = _x402_json.loads(_x402_b64.b64decode(payment_signature).decode())
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid PAYMENT-SIGNATURE header (expected base64 JSON)")
+
+    deploy_json = payload.get("deployJson") or payload.get("deploy")
+    wallet = (payload.get("wallet") or "").lower().strip()
+    if not deploy_json or not wallet:
+        raise HTTPException(status_code=400, detail="Missing deployJson or wallet in payment payload")
+
+    actual_deploy = deploy_json.get("deploy", deploy_json)
+
+    # Safety guard: x402 here is TESTNET-ONLY. Refuse anything else.
+    chain = actual_deploy.get("header", {}).get("chain_name")
+    if chain != "casper-test":
+        raise HTTPException(
+            status_code=400,
+            detail=f"x402 payment must be on testnet (casper-test), got chain_name={chain}",
+        )
+
+    print(f"🧾 x402: submitting testnet deploy for {wallet[:16]}...")
+
+    # 1) Submit signed deploy to TESTNET RPC
+    try:
+        async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+            send = await client.post(
+                X402_TESTNET_RPC,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "account_put_deploy",
+                    "params": {"deploy": actual_deploy},
+                },
+            )
+            send_data = send.json()
+        if "error" in send_data:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Testnet RPC error: {send_data['error'].get('message', send_data['error'])}",
+            )
+        deploy_hash = send_data["result"]["deploy_hash"]
+        print(f"✅ x402: testnet deploy submitted: {deploy_hash}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to submit deploy to testnet: {str(e)}")
+
+    # 2) Verify execution on testnet (the on-chain proof)
+    deploy_info = None
+    for attempt in range(1, 31):  # up to ~90s
+        try:
+            async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+                r = await client.post(
+                    X402_TESTNET_RPC,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "info_get_deploy",
+                        "params": {"deploy_hash": deploy_hash},
+                    },
+                )
+                rd = r.json()
+            result = rd.get("result")
+            if result and (result.get("execution_results") or result.get("execution_info")):
+                deploy_info = result
+                break
+        except Exception as fetch_err:
+            print(f"⏳ x402 verify attempt {attempt}: {fetch_err}")
+        await asyncio.sleep(3)
+
+    if not deploy_info:
+        return JSONResponse(
+            status_code=202,
+            content={
+                "pending": True,
+                "deployHash": deploy_hash,
+                "message": "Testnet confirmation pending. Wait ~1 min and refresh.",
+            },
+        )
+
+    # Extract failure (handles both old/new RPC formats, like the mainnet flow)
+    error_message = None
+    if deploy_info.get("execution_info"):
+        exec_info = deploy_info.get("execution_info")
+        if exec_info and isinstance(exec_info, dict):
+            er = exec_info.get("execution_result", {})
+            if isinstance(er, dict):
+                v2 = er.get("Version2", {})
+                if isinstance(v2, dict):
+                    error_message = v2.get("error_message")
+    elif deploy_info.get("execution_results"):
+        ers = deploy_info.get("execution_results", [])
+        if ers and isinstance(ers[0], dict):
+            res = ers[0].get("result", {})
+            if isinstance(res, dict) and "Failure" in res:
+                error_message = res["Failure"].get("error_message", "Unknown error")
+
+    if error_message:
+        raise HTTPException(status_code=400, detail=f"x402 settlement failed on testnet: {error_message}")
+
+    print("✅ x402: testnet settlement confirmed")
+
+    # 3) Credit tokens (reuse the proven manual path → also notifies Telegram)
+    from db import process_payment_manual
+
+    await process_payment_manual(wallet, deploy_hash, X402_PRICE_CSPR, X402_TOKENS, "x402-testnet")
+    print(f"💰 x402: credited {X402_TOKENS} tokens to {wallet[:16]}...")
+
+    # 4) Build the x402 receipt (proof of settlement)
+    receipt = {
+        "success": True,
+        "x402Version": 1,
+        "network": X402_NETWORK,
+        "scheme": "exact",
+        "payer": wallet,
+        "payTo": X402_TREASURY,
+        "asset": "CSPR",
+        "amount": X402_AMOUNT_MOTES,
+        "transaction": deploy_hash,
+        "settled": True,
+        "explorer": f"https://testnet.cspr.live/deploy/{deploy_hash}",
+    }
+    receipt_b64 = _x402_b64.b64encode(_x402_json.dumps(receipt).encode()).decode()
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "tokens": X402_TOKENS,
+            "deployHash": deploy_hash,
+            "message": f"x402 payment settled on testnet! {X402_TOKENS} credits added.",
+            "receipt": receipt,
+        },
+        headers={
+            "PAYMENT-RESPONSE": receipt_b64,
+            "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+        },
+    )
+
 @app.post("/api/payments/verify")
 @limiter.limit("10/minute")
 async def verify_payment_legacy(request: Request, data: VerifyPaymentRequestLegacy):
