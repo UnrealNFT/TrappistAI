@@ -649,7 +649,7 @@ async def _generate_and_send(update: Update, context) -> int:
         
         await update.effective_message.reply_audio(
             audio=url,
-            caption=f"🎵 *{label}* {vi}\n🎸 `{tags}`\n\n[Lien direct]({url})",
+            caption=f"🎵 *{label}* {vi}\n🎸 `{tags}`\n\n[Direct link]({url})",
             parse_mode=ParseMode.MARKDOWN,
             title=f"TrappistAI — {label}",
             performer="HeartMuLa x WaveSpeed",
@@ -927,7 +927,7 @@ async def cmd_image(update: Update, context) -> None:
         
         await update.message.reply_photo(
             photo=url,
-            caption=f"🎨 *{prompt[:80]}*\n\n[Lien direct]({url})",
+            caption=f"🎨 *{prompt[:80]}*\n\n[Direct link]({url})",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard,
         )

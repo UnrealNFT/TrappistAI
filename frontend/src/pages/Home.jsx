@@ -51,7 +51,7 @@ export default function Home() {
             icon: <Box className="w-10 h-10" />,
             title: "3D Models",
             description: "Hunyuan & Tripo3D",
-            cost: "5-20 tokens"
+            cost: "20-30 tokens"
           },
           {
             icon: <MessageSquare className="w-10 h-10" />,

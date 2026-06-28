@@ -10,7 +10,7 @@ Generate images, music, 3D models, and chat with AI. Pay with CSPR tokens.
 
 - **🎨 Image Generation**: FLUX.1-schnell (1024x1024) — 1 token
 - **🎵 Music Creation**: HeartMuLa & MiniMax HD — 10-15 tokens
-- **📦 3D Models**: Hunyuan & Tripo3D — 5-20 tokens  
+- **📦 3D Models**: Hunyuan & Tripo3D — 20-30 tokens  
 - **💬 AI Chat**: Groq LLM — Free (0 tokens)
 - **💰 CSPR Payments**: Automatic token crediting via blockchain
 
@@ -191,7 +191,7 @@ VITE_RECEIVER_WALLET=your-public-key
 ### Generation
 - `POST /api/generate/image` — Generate image (1 token)
 - `POST /api/generate/music` — Generate music (10-15 tokens)
-- `POST /api/generate/3d` — Generate 3D model (5-20 tokens)
+- `POST /api/generate/3d` — Generate 3D model (20-30 tokens)
 - `POST /api/chat` — AI chat (free)
 
 ---
