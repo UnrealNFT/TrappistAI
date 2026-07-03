@@ -202,7 +202,7 @@ STYLES = {
     "rai":        ("rai algerian chaabi",         "🌙 Raï"),
     "afro":       ("afrobeat",                    "🌍 Afrobeat"),
     "gospel":     ("gospel spiritual",            "🙏 Gospel"),
-    "romantic":   ("romantic slow",               "💕 Romantique"),
+    "romantic":   ("romantic slow",               "💕 Romantic"),
 }
 
 # Conversation states
@@ -213,8 +213,8 @@ S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW
 
 def _kb_quality():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎵 Standard (HM) - 14 tokens", callback_data="ms_quality:hm")],
-        [InlineKeyboardButton("🎶 HD Premium (MiniMax 2.5) - 10 tokens", callback_data="ms_quality:hd")],
+        [InlineKeyboardButton("� HeartMuLa — 14 tokens", callback_data="ms_quality:hm")],
+        [InlineKeyboardButton("💎 MiniMax 2.5 — 10 tokens", callback_data="ms_quality:hd")],
         [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")],
     ])
 
@@ -235,13 +235,12 @@ def _kb_voice():
     ], [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")]])
 
 def _kb_choice():
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🎤 With Lyrics", callback_data="ms_choice:lyrics"),
-        InlineKeyboardButton("🎸 Instrumental", callback_data="ms_choice:instrumental"),
-    ], [
-        InlineKeyboardButton("✏️ My Lyrics",    callback_data="ms_choice:own"),
-        InlineKeyboardButton("🤖 Generate via AI", callback_data="ms_choice:ai"),
-    ], [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🤖 AI Lyrics — FREE", callback_data="ms_choice:ai")],
+        [InlineKeyboardButton("✍️ My Lyrics", callback_data="ms_choice:own")],
+        [InlineKeyboardButton("🎸 Instrumental", callback_data="ms_choice:instrumental")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")],
+    ])
 
 def _kb_preview():
     return InlineKeyboardMarkup([[
@@ -286,6 +285,7 @@ def _ollama_lyrics(style_label: str, voice: str, theme: str) -> str:
             "- Every [Chorus]: 4-6 catchy lines that stick in your head. Strong hook.\n"
             "- [Bridge]: 3-4 lines emotional twist.\n"
             "- Write TWO verses + ONE bridge + chorus repeated.\n"
+            "- NEVER write the style/genre/instrument/BPM words inside the lyrics. Sing the story, not the style.\n"
             "- DO NOT translate to French. Write ENTIRELY in English.\n"
             "- Output ONLY the structure markers and lyrics. NO explanations, NO comments, NO titles.\n\n"
             "Example rhyme style:\n"
@@ -305,6 +305,7 @@ def _ollama_lyrics(style_label: str, voice: str, theme: str) -> str:
             "- Each [Chorus]: 4-6 catchy lines, strong hook that sticks.\n"
             "- [Bridge]: 3-4 lines of emotional break.\n"
             "- Two verses + one bridge + repeated chorus.\n"
+            "- NEVER write the style/genre/instrument/BPM words inside the lyrics. Sing the story, not the style.\n"
             f"- Write ONLY in {detected_lang}.\n"
             "- ONLY markers and lyrics. No comments, no title, no explanations.\n\n"
             "[intro-short]\n[Verse]\n...\n[Chorus]\n...\n[Verse]\n...\n[Bridge]\n...\n[Chorus]\n...\n[outro-short]"
@@ -386,6 +387,7 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
         "SUBJECT defines WHAT you write about (the content, the topic). "
         "These are COMPLETELY SEPARATE concepts. A trap song can be about ANYTHING (love, dogs, cars, life). "
         "Detect the language of the subject description and write ALL lyrics in that EXACT same language. "
+        "ABSOLUTE RULE: NEVER write the name of the musical style, genre, instruments, tempo, BPM or vocal type inside the lyrics themselves. The listener must NEVER hear the style described — sing the STORY, not the style. "
         "Write ONLY lyrics with structure markers. NO explanations, NO titles."
     )
     
@@ -400,6 +402,7 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
         "- Style: 'Pop' + Subject: 'broken laptop, frustration' → Catchy pop song about tech problems\n"
         "- Style: 'Drill' + Subject: 'grandmother, warm cookies' → Dark menacing delivery about grandma\n\n"
         "STRICT TECHNICAL REQUIREMENTS:\n"
+        f"- NEVER write or sing the style/genre/instrument/BPM/vocal words (e.g. from '{style_label}') inside the lyrics — sing the STORY only\n"
         "- Structure markers: [intro-short] [Verse] [Chorus] [Bridge] [outro-short]\n"
         "- Every [Verse]: 6-8 lines with MANDATORY end-of-line rhymes (AABB or ABAB scheme)\n"
         "- Every [Chorus]: 4-6 catchy sticky hook lines (repeatable, memorable)\n"
@@ -457,28 +460,32 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None) -> str:
 
 
 def _ai_lyrics(style_label: str, voice: str, theme: str, artists: list = None) -> str:
-    """Try Groq first (fast + free), fallback to Ollama."""
+    """Try Groq first (fast + free), fallback to Ollama. Strips any style leak from the result."""
     if GROQ_KEY:
-        return _groq_lyrics(style_label, voice, theme, artists)
-    return _ollama_lyrics(style_label, voice, theme)
+        raw = _groq_lyrics(style_label, voice, theme, artists)
+    else:
+        raw = _ollama_lyrics(style_label, voice, theme)
+    return _strip_style_leak(raw, style_label)
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
-def _build_tags(style_key: str, voice: str, artists: list = None, instrumental: bool = False) -> str:
-    """Build tags in creative format: 'theme --Style genre' (no fixed BPM/instruments)."""
-    base_genre = STYLES.get(style_key, ("music", "🎵"))[0]
+def _build_tags(beat: str, voice: str, artists: list = None, instrumental: bool = False) -> str:
+    """Build tags from the free-text beat description. The beat IS the style (Suno-custom style)."""
+    beat = (beat or "music").strip().rstrip(",").strip()
     
-    # Voice handling
+    parts = [beat]
+    
+    # Voice handling: don't duplicate if the beat already mentions vocals
     if instrumental:
-        voice_tag = "instrumental"
-    else:
-        voice_tag = "male vocals" if voice == "male" else "female vocals"
+        parts.append("instrumental")
+    elif "vocal" not in beat.lower():
+        parts.append("male vocals" if voice == "male" else "female vocals")
     
     # Artist inspiration
-    artist_tag = f", inspired by {', '.join(artists)}" if artists else ""
+    if artists:
+        parts.append(f"inspired by {', '.join(artists)}")
     
-    # Format libre: "voice --Style genre" (HeartMuLa choisit BPM/instruments)
-    return f"{voice_tag} --{base_genre.title()}{artist_tag}"
+    return ", ".join(parts)
 
 def _ollama_enrich_tags(lyrics: str, base_tags: str) -> str:
     """Ollama adds MAX 2 mood words to the tags based on lyrics. Genre is locked."""
@@ -523,6 +530,30 @@ def _format_lyrics(text: str) -> str:
     chorus = "\n".join(lines[mid:] if len(lines) >= 4 else lines)
     return f"[intro-short]\n[Verse]\n{verse}\n\n[Chorus]\n{chorus}\n\n[outro-short]"
 
+
+def _strip_style_leak(lyrics: str, beat: str) -> str:
+    """Remove short lyric lines that just echo the style/beat descriptors (anti-leak safety net)."""
+    import re
+    beat_words = {w.strip(" ,.-").lower() for w in re.split(r"[\s,]+", beat or "") if len(w.strip(" ,.-")) > 2}
+    noise = {"bpm", "vocals", "vocal", "beat", "instrumental", "tempo", "melody", "genre", "style"}
+    out = []
+    for line in lyrics.splitlines():
+        s = line.strip()
+        if not s or s.startswith("["):
+            out.append(line)
+            continue
+        words = [w.strip(" ,.-!?()").lower() for w in s.split()]
+        words = [w for w in words if w]
+        if not words:
+            out.append(line)
+            continue
+        styleish = sum(1 for w in words if w in beat_words or w in noise)
+        # Drop only SHORT lines that are mostly style words (a leak, not a real lyric)
+        if len(words) <= 6 and styleish / len(words) >= 0.6:
+            continue
+        out.append(line)
+    return "\n".join(out)
+
 async def _generate_and_send(update: Update, context) -> int:
     ud  = context.user_data
     uid = update.effective_user.id
@@ -542,18 +573,18 @@ async def _generate_and_send(update: Update, context) -> int:
         context.user_data.clear()
         return ConversationHandler.END
     
-    style_key = ud["style_key"]
-    voice     = ud["voice"]
+    beat      = ud.get("beat", "music")
+    voice     = ud.get("voice", "male")
     artists   = ud.get("artists", [])
     instrumental = ud.get("instrumental", False)
     
     # Build tags with instrumental support
-    base_tags = _build_tags(style_key, voice, artists, instrumental)
+    base_tags = _build_tags(beat, voice, artists, instrumental)
     
     # Format lyrics (empty for instrumental)
     lyrics = "" if instrumental else _format_lyrics(ud["lyrics"])
     
-    _, label  = STYLES[style_key]
+    label     = (beat[:40] + "…") if len(beat) > 40 else beat
     vi        = "👨" if voice == "male" else "👩"
     mode_text = "🎸 Instrumental" if instrumental else f"{vi} With Lyrics"
 
@@ -572,15 +603,15 @@ async def _generate_and_send(update: Update, context) -> int:
 
     async def _progress():
         steps = [
-            (120,  "⏳ 2 min… HeartMuLa compose 🎼"),
-            (240,  "⏳ 4 min… Arrangement en cours 🎸"),
-            (360,  "⏳ 6 min… Mixage 🎚️"),
-            (480,  "⏳ 8 min… Mastering 🔊"),
-            (600,  "⏳ 10 min… Finalisation 🎵"),
-            (900,  "⏳ 15 min… Toujours en cours, tiens bon 💪"),
-            (1200, "⏳ 20 min… Presque là… 🔥"),
-            (1500, "⏳ 25 min… WaveSpeed prend son temps 😅"),
-            (1800, "⏳ 30 min… J'abandonne pas, je t'envoie dès que c'est prêt 🤞"),
+            (120,  "⏳ 2 min… composing 🎼"),
+            (240,  "⏳ 4 min… arranging 🎸"),
+            (360,  "⏳ 6 min… mixing 🎚️"),
+            (480,  "⏳ 8 min… mastering 🔊"),
+            (600,  "⏳ 10 min… finalizing 🎵"),
+            (900,  "⏳ 15 min… still working, hang tight 💪"),
+            (1200, "⏳ 20 min… almost there… 🔥"),
+            (1500, "⏳ 25 min… WaveSpeed is taking its time 😅"),
+            (1800, "⏳ 30 min… not giving up, sending it as soon as it's ready 🤞"),
         ]
         last = 0
         for wait, text in steps:
@@ -612,7 +643,7 @@ async def _generate_and_send(update: Update, context) -> int:
         try:
             await msg.edit_text(
                 f"⏳ *{label}* {vi} — Long generation, I'll send as soon as ready…\n"
-                f"_Task `{e.task_id[:16]}…` toujours en cours_",
+                f"_Task `{e.task_id[:16]}…` still running_",
                 parse_mode=ParseMode.MARKDOWN,
             )
         except Exception:
@@ -667,9 +698,9 @@ async def _generate_and_send(update: Update, context) -> int:
 async def cmd_music(update: Update, context) -> int:
     context.user_data.clear()
     await update.message.reply_text(
-        "🎼 *Choose generation quality:*\n\n"
-        "🎵 **Standard (HeartMuLa)** — Fast, good quality/price ratio\n"
-        "🎶 **HD Premium (MiniMax 2.5)** — High fidelity, humanized voices",
+        "� *Step 1/4 — Choose your model:*\n\n"
+        "🎙 *HeartMuLa* — Great quality/price ratio · 14 tokens\n"
+        "💎 *MiniMax 2.5* — High fidelity, humanized voices · 10 tokens",
         reply_markup=_kb_quality(),
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -684,41 +715,43 @@ async def on_quality_choice(update: Update, context) -> int:
     model_name = "HeartMuLa" if quality == "hm" else "MiniMax 2.5 HD"
     tokens_needed = 14 if quality == "hm" else 10
     await q.edit_message_text(
-        f"✅ *{model_name}* selected ({tokens_needed} tokens)\n\n🎼 *Step 2/4 — Choose your style:*",
+        f"✅ *{model_name}* selected ({tokens_needed} tokens)\n\n"
+        "🥁 *Step 2/4 — Pick a genre* — or *type your own beat*:\n"
+        "_(ex: dark trap, egyptian flute, 90 bpm, female vocals)_",
         reply_markup=_kb_styles(),
         parse_mode=ParseMode.MARKDOWN,
     )
     return S_STYLE
 
 async def on_style(update: Update, context) -> int:
+    """Genre preset button tapped — sets the beat from STYLES, then goes to theme."""
     q = update.callback_query
     await q.answer()
     key = q.data.split(":", 1)[1]
-    if key not in STYLES:
-        await q.edit_message_text("❌ Unknown style.")
-        return ConversationHandler.END
-    context.user_data["style_key"] = key
-    _, label = STYLES[key]
+    tags, label = STYLES.get(key, (key, key))
+    context.user_data["beat"] = tags
+    context.user_data["voice"] = "male"
     await q.edit_message_text(
-        f"✅ Style: *{label}*\n\n🎤 *Step 3/4 — Voice:*",
-        reply_markup=_kb_voice(),
+        f"✅ Genre: *{label}*\n\n"
+        "✍️ *Step 3/4 — What's the song about?*\n"
+        "_(ex: bitcoin going up, lost love, night in the city…)_",
         parse_mode=ParseMode.MARKDOWN,
     )
-    return S_VOICE
+    return S_DESC
 
-
-# ─── Step 2: Voice ───────────────────────────────────────────────────────────
-
-async def on_voice(update: Update, context) -> int:
-    q = update.callback_query
-    await q.answer()
-    voice = q.data.split(":", 1)[1]
-    context.user_data["voice"] = voice
-    _, label = STYLES[context.user_data["style_key"]]
-    vi = "👨 Male" if voice == "male" else "👩 Female"
-    await q.edit_message_text(
-        f"✅ *{label}* · {vi}\n\n"
-        "✍️ *Step 3/3 — Describe your song theme:*\n"
+async def on_beat(update: Update, context) -> int:
+    """Free-text beat/style description (alternative to the genre buttons). Goes to theme."""
+    beat = update.message.text.strip()
+    context.user_data["beat"] = beat
+    # Infer vocal gender from the beat description (defaults to male)
+    low = beat.lower()
+    if any(w in low for w in ("female", "woman", "girl")):
+        context.user_data["voice"] = "female"
+    else:
+        context.user_data["voice"] = "male"
+    await update.message.reply_text(
+        f"✅ Beat: _{beat}_\n\n"
+        "✍️ *Step 3/4 — What's the song about?*\n"
         "_(ex: bitcoin going up, lost love, night in the city…)_",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -733,21 +766,20 @@ async def on_desc(update: Update, context) -> int:
     context.user_data["theme"] = clean_theme or raw
     context.user_data["artists"] = artists
     
-    # Protection: si style_key manquant, reset la conversation
-    style_key = context.user_data.get("style_key")
-    if not style_key or style_key not in STYLES:
+    # Protection: si beat manquant, reset la conversation
+    beat = context.user_data.get("beat")
+    if not beat:
         await update.message.reply_text(
             "⚠️ Corrupted state detected. Restart /music to begin again.",
             parse_mode=ParseMode.MARKDOWN,
         )
         return ConversationHandler.END
     
-    _, label = STYLES[style_key]
     vi = "👨" if context.user_data.get("voice") == "male" else "👩"
-    artist_hint = f"\n🎤 Style artiste: *{'  '.join('#'+a for a in artists)}*" if artists else ""
+    artist_hint = f"\n🎤 Artist style: *{'  '.join('#'+a for a in artists)}*" if artists else ""
     await update.message.reply_text(
-        f"✅ *{label}* {vi} · _{clean_theme or raw}_{artist_hint}\n\n"
-        "🎵 *Do you want lyrics or just instrumental?*",
+        f"✅ _{beat}_ {vi} · _{clean_theme or raw}_{artist_hint}\n\n"
+        "🎵 *Step 4/4 — How do you want the lyrics?*",
         reply_markup=_kb_choice(),
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -788,10 +820,11 @@ async def on_choice_instrumental(update: Update, context) -> int:
 async def on_lyrics_own(update: Update, context) -> int:
     q = update.callback_query
     await q.answer()
+    context.user_data["instrumental"] = False
     await q.edit_message_text(
         "✍️ *Send your lyrics now:*\n"
         "_(You can use `[Verse]`, `[Chorus]`, `[Bridge]` or free text)_\n"
-        "_(ou /cancel)_",
+        "_(or /cancel)_",
         parse_mode=ParseMode.MARKDOWN,
     )
     return S_OWN
@@ -807,12 +840,13 @@ async def on_lyrics_ai(update: Update, context) -> int:
     q = update.callback_query
     await q.answer()
     ud = context.user_data
-    _, label = STYLES[ud["style_key"]]
+    ud["instrumental"] = False
+    label = ud.get("beat", "music")
     vi = "👨" if ud["voice"] == "male" else "👩"
     await q.edit_message_text(
-        f"🤖 *IA parolière en train d\'écrire…*\n"
+        f"🤖 *AI songwriter is writing…*\n"
         f"Style: *{label}* {vi} · Theme: _{ud.get('theme', '')}_\n"
-        "_(~15 secondes)_",
+        "_(~15 seconds)_",
         parse_mode=ParseMode.MARKDOWN,
     )
     try:
@@ -830,7 +864,7 @@ async def on_lyrics_ai(update: Update, context) -> int:
     except Exception as e:
         logger.error("AI lyrics error: %s", e)
         await q.edit_message_text(
-            f"❌ IA indisponible: `{str(e)[:120]}`\n\n"
+            f"❌ AI unavailable: `{str(e)[:120]}`\n\n"
             "✍️ *Send your lyrics manually:*\n_(or /cancel)_",
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -849,7 +883,7 @@ async def on_preview(update: Update, context) -> int:
 
     if action == "redo":
         ud = context.user_data
-        _, label = STYLES[ud["style_key"]]
+        label = ud.get("beat", "music")
         vi = "👨" if ud["voice"] == "male" else "👩"
         await q.edit_message_text(
             f"🔄 *Rewriting in progress…*\nStyle: *{label}* {vi} · Theme: _{ud.get('theme', '')}_",
@@ -890,7 +924,7 @@ async def on_edit_lyrics(update: Update, context) -> int:
 async def on_cancel_cb(update: Update, context) -> int:
     q = update.callback_query
     await q.answer()
-    await q.edit_message_text("❌ Annulé.")
+    await q.edit_message_text("❌ Cancelled.")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2062,12 +2096,13 @@ def main():
             S_QUALITY: [CallbackQueryHandler(on_quality_choice, pattern=r"^ms_quality:"),
                         CallbackQueryHandler(on_cancel_cb,  pattern=r"^ms_cancel$")],
             S_STYLE:   [CallbackQueryHandler(on_style,      pattern=r"^ms_style:"),
-                        CallbackQueryHandler(on_cancel_cb,  pattern=r"^ms_cancel$")],
-            S_VOICE:   [CallbackQueryHandler(on_voice,      pattern=r"^ms_voice:"),
-                        CallbackQueryHandler(on_cancel_cb,  pattern=r"^ms_cancel$")],
+                        CallbackQueryHandler(on_cancel_cb,  pattern=r"^ms_cancel$"),
+                        MessageHandler(filters.TEXT & ~filters.COMMAND, on_beat),
+                        CommandHandler("cancel", cmd_cancel)],
             S_DESC:    [MessageHandler(filters.TEXT & ~filters.COMMAND, on_desc),
                         CommandHandler("cancel", cmd_cancel)],
-            S_CHOICE:  [CallbackQueryHandler(on_choice_lyrics, pattern=r"^ms_choice:lyrics$"),
+            S_CHOICE:  [CallbackQueryHandler(on_lyrics_ai, pattern=r"^ms_choice:ai$"),
+                        CallbackQueryHandler(on_lyrics_own, pattern=r"^ms_choice:own$"),
                         CallbackQueryHandler(on_choice_instrumental,  pattern=r"^ms_choice:instrumental$"),
                         CallbackQueryHandler(on_cancel_cb,  pattern=r"^ms_cancel$")],
             S_LYRICS_CHOICE: [CallbackQueryHandler(on_lyrics_own, pattern=r"^ms_lyrics:own$"),
