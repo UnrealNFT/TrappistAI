@@ -285,7 +285,8 @@ def _ollama_lyrics(style_label: str, voice: str, theme: str) -> str:
             "- Every [Chorus]: 4-6 catchy lines that stick in your head. Strong hook.\n"
             "- [Bridge]: 3-4 lines emotional twist.\n"
             "- Write TWO verses + ONE bridge + chorus repeated.\n"
-            "- NEVER write the style/genre/instrument/BPM words inside the lyrics. Sing the story, not the style.\n"
+            "- NEVER write the style/genre/instrument/BPM words inside the lyrics. Sing the SUBJECT, not the style.\n"
+            "- NO ad-lib or filler intros: never use 'listen up', 'yeah', 'uh', 'check it', \"y'all\", 'ayy', \"let's go\", 'one two', 'yo'. Start directly with real lyrics.\n"
             "- DO NOT translate to French. Write ENTIRELY in English.\n"
             "- Output ONLY the structure markers and lyrics. NO explanations, NO comments, NO titles.\n\n"
             "Example rhyme style:\n"
@@ -305,7 +306,8 @@ def _ollama_lyrics(style_label: str, voice: str, theme: str) -> str:
             "- Each [Chorus]: 4-6 catchy lines, strong hook that sticks.\n"
             "- [Bridge]: 3-4 lines of emotional break.\n"
             "- Two verses + one bridge + repeated chorus.\n"
-            "- NEVER write the style/genre/instrument/BPM words inside the lyrics. Sing the story, not the style.\n"
+            "- NEVER write the style/genre/instrument/BPM words inside the lyrics. Sing the SUBJECT, not the style.\n"
+            "- NO ad-lib or filler intros: never use 'listen up', 'yeah', 'uh', 'check it', \"y'all\", 'ayy', \"let's go\", 'one two', 'yo'. Start directly with real lyrics.\n"
             f"- Write ONLY in {detected_lang}.\n"
             "- ONLY markers and lyrics. No comments, no title, no explanations.\n\n"
             "[intro-short]\n[Verse]\n...\n[Chorus]\n...\n[Verse]\n...\n[Bridge]\n...\n[Chorus]\n...\n[outro-short]"
@@ -387,7 +389,8 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
         "SUBJECT defines WHAT you write about (the content, the topic). "
         "These are COMPLETELY SEPARATE concepts. A trap song can be about ANYTHING (love, dogs, cars, life). "
         "Detect the language of the subject description and write ALL lyrics in that EXACT same language. "
-        "ABSOLUTE RULE: NEVER write the name of the musical style, genre, instruments, tempo, BPM or vocal type inside the lyrics themselves. The listener must NEVER hear the style described — sing the STORY, not the style. "
+        "ABSOLUTE RULE: NEVER write the name of the musical style, genre, instruments, tempo, BPM or vocal type inside the lyrics themselves. The listener must NEVER hear the style described — sing the SUBJECT, not the style. "
+        "NO ad-lib or filler intros: never open with 'listen up', 'yeah', 'uh', 'check it', \"y'all\", 'ayy', \"let's go\", 'one two', 'yo'. Start directly with real, meaningful lyrics. "
         "Write ONLY lyrics with structure markers. NO explanations, NO titles."
     )
     
@@ -402,7 +405,8 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
         "- Style: 'Pop' + Subject: 'broken laptop, frustration' → Catchy pop song about tech problems\n"
         "- Style: 'Drill' + Subject: 'grandmother, warm cookies' → Dark menacing delivery about grandma\n\n"
         "STRICT TECHNICAL REQUIREMENTS:\n"
-        f"- NEVER write or sing the style/genre/instrument/BPM/vocal words (e.g. from '{style_label}') inside the lyrics — sing the STORY only\n"
+        f"- NEVER write or sing the style/genre/instrument/BPM/vocal words (e.g. from '{style_label}') inside the lyrics — sing the SUBJECT only\n"
+        "- NO ad-lib or filler intros: never open with 'listen up', 'yeah', 'uh', 'check it', \"y'all\", 'ayy', \"let's go\", 'one two', 'yo'. Go straight to real lyrics\n"
         "- Structure markers: [intro-short] [Verse] [Chorus] [Bridge] [outro-short]\n"
         "- Every [Verse]: 6-8 lines with MANDATORY end-of-line rhymes (AABB or ABAB scheme)\n"
         "- Every [Chorus]: 4-6 catchy sticky hook lines (repeatable, memorable)\n"
@@ -532,20 +536,27 @@ def _format_lyrics(text: str) -> str:
 
 
 def _strip_style_leak(lyrics: str, beat: str) -> str:
-    """Remove short lyric lines that just echo the style/beat descriptors (anti-leak safety net)."""
+    """Remove short lyric lines that just echo the style/beat descriptors or are cliche ad-lib fillers (anti-leak safety net)."""
     import re
     beat_words = {w.strip(" ,.-").lower() for w in re.split(r"[\s,]+", beat or "") if len(w.strip(" ,.-")) > 2}
     noise = {"bpm", "vocals", "vocal", "beat", "instrumental", "tempo", "melody", "genre", "style"}
+    filler_starts = (
+        "listen up", "yeah", "uh", "check it", "y'all", "yall", "ayy", "aye",
+        "let's go", "lets go", "one two", "1 2", "yo", "woo", "skrrt", "brr", "uh uh",
+    )
     out = []
     for line in lyrics.splitlines():
         s = line.strip()
         if not s or s.startswith("["):
             out.append(line)
             continue
-        words = [w.strip(" ,.-!?()").lower() for w in s.split()]
-        words = [w for w in words if w]
+        norm = re.sub(r"[^\w' ]", "", s).strip().lower()
+        words = [w for w in norm.split() if w]
         if not words:
             out.append(line)
+            continue
+        # Drop short cliche ad-lib intros (e.g. "Listen up y'all", "Yeah, uh")
+        if len(words) <= 5 and norm.startswith(filler_starts):
             continue
         styleish = sum(1 for w in words if w in beat_words or w in noise)
         # Drop only SHORT lines that are mostly style words (a leak, not a real lyric)
