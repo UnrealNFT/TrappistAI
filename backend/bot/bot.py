@@ -280,7 +280,7 @@ def _ollama_lyrics(style_label: str, voice: str, theme: str) -> str:
             f"You are a world-class {style_label} songwriter. Write a complete song with strong RHYMES and punchlines.\n"
             f"Voice: {voice_word}. Theme: {theme}\n\n"
             "STRICT RULES:\n"
-            "- Structure markers: [intro-short], [Verse], [Chorus], [Bridge], [outro-short]\n"
+            "- Structure markers: [Verse], [Chorus], [Bridge] (NO intro/outro tags — start straight on [Verse])\n"
             "- Every [Verse]: 6-8 lines. End-of-line RHYMES mandatory (AABB or ABAB scheme). Punchlines, wordplay, vivid imagery.\n"
             "- Every [Chorus]: 4-6 catchy lines that stick in your head. Strong hook.\n"
             "- [Bridge]: 3-4 lines emotional twist.\n"
@@ -293,7 +293,7 @@ def _ollama_lyrics(style_label: str, voice: str, theme: str) -> str:
             "[Verse]\n"
             "Red candle dropping, world is at war / charts are bleeding out, I can't take no more /\n"
             "WW3 on screen, hawks are in flight / moon was a dream but it vanished by night /\n\n"
-            "[intro-short]\n[Verse]\n...\n[Chorus]\n...\n[Verse]\n...\n[Bridge]\n...\n[Chorus]\n...\n[outro-short]"
+            "[Verse]\n...\n[Chorus]\n...\n[Verse]\n...\n[Bridge]\n...\n[Chorus]"
         )
     else:
         detected_lang = _detect_lang(theme)
@@ -301,7 +301,7 @@ def _ollama_lyrics(style_label: str, voice: str, theme: str) -> str:
             f"You are a genius lyricist in {style_label} style, {'male' if voice == 'male' else 'female'} voice.\n"
             f"Theme: {theme}\n\n"
             "STRICT RULES:\n"
-            "- Markers: [intro-short], [Verse], [Chorus], [Bridge], [outro-short]\n"
+            "- Markers: [Verse], [Chorus], [Bridge] (NO intro/outro tags — start straight on [Verse])\n"
             "- Each [Verse]: 6-8 lines. END rhymes mandatory (AABB or ABAB scheme). Punchlines, wordplay, strong imagery.\n"
             "- Each [Chorus]: 4-6 catchy lines, strong hook that sticks.\n"
             "- [Bridge]: 3-4 lines of emotional break.\n"
@@ -310,7 +310,7 @@ def _ollama_lyrics(style_label: str, voice: str, theme: str) -> str:
             "- NO ad-lib or filler intros: never use 'listen up', 'yeah', 'uh', 'check it', \"y'all\", 'ayy', \"let's go\", 'one two', 'yo'. Start directly with real lyrics.\n"
             f"- Write ONLY in {detected_lang}.\n"
             "- ONLY markers and lyrics. No comments, no title, no explanations.\n\n"
-            "[intro-short]\n[Verse]\n...\n[Chorus]\n...\n[Verse]\n...\n[Bridge]\n...\n[Chorus]\n...\n[outro-short]"
+            "[Verse]\n...\n[Chorus]\n...\n[Verse]\n...\n[Bridge]\n...\n[Chorus]"
         )
     r = req.post(
         f"{OLLAMA_URL}/api/generate",
@@ -407,7 +407,7 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
         "STRICT TECHNICAL REQUIREMENTS:\n"
         f"- NEVER write or sing the style/genre/instrument/BPM/vocal words (e.g. from '{style_label}') inside the lyrics — sing the SUBJECT only\n"
         "- NO ad-lib or filler intros: never open with 'listen up', 'yeah', 'uh', 'check it', \"y'all\", 'ayy', \"let's go\", 'one two', 'yo'. Go straight to real lyrics\n"
-        "- Structure markers: [intro-short] [Verse] [Chorus] [Bridge] [outro-short]\n"
+        "- Structure markers: [Verse] [Chorus] [Bridge] (NO intro/outro tags — start straight on [Verse])\n"
         "- Every [Verse]: 6-8 lines with MANDATORY end-of-line rhymes (AABB or ABAB scheme)\n"
         "- Every [Chorus]: 4-6 catchy sticky hook lines (repeatable, memorable)\n"
         "- [Bridge]: 3-4 lines (emotional twist or shift in perspective)\n"
@@ -532,7 +532,7 @@ def _format_lyrics(text: str) -> str:
     mid = len(lines) // 2 if len(lines) >= 4 else len(lines)
     verse  = "\n".join(lines[:mid])
     chorus = "\n".join(lines[mid:] if len(lines) >= 4 else lines)
-    return f"[intro-short]\n[Verse]\n{verse}\n\n[Chorus]\n{chorus}\n\n[outro-short]"
+    return f"[Verse]\n{verse}\n\n[Chorus]\n{chorus}"
 
 
 def _strip_style_leak(lyrics: str, beat: str) -> str:
