@@ -234,11 +234,17 @@ def _kb_voice():
         InlineKeyboardButton("👩 Female",  callback_data="ms_voice:female"),
     ], [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")]])
 
-def _kb_choice():
+def _kb_mode():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🤖 AI Lyrics — FREE", callback_data="ms_choice:ai")],
-        [InlineKeyboardButton("✍️ My Lyrics", callback_data="ms_choice:own")],
         [InlineKeyboardButton("🎸 Instrumental", callback_data="ms_choice:instrumental")],
+        [InlineKeyboardButton("🎤 With Lyrics", callback_data="ms_choice:lyrics")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")],
+    ])
+
+def _kb_lyrics_method():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🤖 AI Lyrics — FREE", callback_data="ms_lyrics:ai")],
+        [InlineKeyboardButton("✍️ My Lyrics", callback_data="ms_lyrics:own")],
         [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")],
     ])
 
@@ -787,11 +793,11 @@ async def on_style(update: Update, context) -> int:
     context.user_data["voice"] = "male"
     await q.edit_message_text(
         f"✅ Genre: *{label}*\n\n"
-        "✍️ *Step 3/4 — What's the song about?*\n"
-        "_(ex: bitcoin going up, lost love, night in the city…)_",
+        "🎚 *Step 3/4 — Instrumental or with lyrics?*",
+        reply_markup=_kb_mode(),
         parse_mode=ParseMode.MARKDOWN,
     )
-    return S_DESC
+    return S_CHOICE
 
 async def on_beat(update: Update, context) -> int:
     """Free-text beat/style description (alternative to the genre buttons). Goes to theme."""
@@ -805,11 +811,11 @@ async def on_beat(update: Update, context) -> int:
         context.user_data["voice"] = "male"
     await update.message.reply_text(
         f"✅ Beat: _{beat}_\n\n"
-        "✍️ *Step 3/4 — What's the song about?*\n"
-        "_(ex: bitcoin going up, lost love, night in the city…)_",
+        "🎚 *Step 3/4 — Instrumental or with lyrics?*",
+        reply_markup=_kb_mode(),
         parse_mode=ParseMode.MARKDOWN,
     )
-    return S_DESC
+    return S_CHOICE
 
 
 # ─── Step 3: Theme ───────────────────────────────────────────────────────────
@@ -833,32 +839,26 @@ async def on_desc(update: Update, context) -> int:
     artist_hint = f"\n🎤 Artist style: *{'  '.join('#'+a for a in artists)}*" if artists else ""
     await update.message.reply_text(
         f"✅ _{beat}_ {vi} · _{clean_theme or raw}_{artist_hint}\n\n"
-        "🎵 *Step 4/4 — How do you want the lyrics?*",
-        reply_markup=_kb_choice(),
+        "� *How do you want the lyrics?*",
+        reply_markup=_kb_lyrics_method(),
         parse_mode=ParseMode.MARKDOWN,
     )
-    return S_CHOICE
+    return S_LYRICS_CHOICE
 
 
 # ─── Step 4: Lyrics or Instrumental ─────────────────────────────────────────
 
 async def on_choice_lyrics(update: Update, context) -> int:
-    """User wants vocals - ask for own lyrics or AI generation."""
+    """User wants vocals - ask for the song theme, then the lyrics method."""
     q = update.callback_query
     await q.answer()
     context.user_data["instrumental"] = False
-    
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✍️ I write my lyrics", callback_data="ms_lyrics:own")],
-        [InlineKeyboardButton("🤖 AI generates lyrics", callback_data="ms_lyrics:ai")],
-        [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")],
-    ])
     await q.edit_message_text(
-        "🎤 *How do you want to create the lyrics?*",
-        reply_markup=keyboard,
+        "✍️ *Step 4/4 — What's the song about?*\n"
+        "_(ex: bitcoin going up, lost love, night in the city…)_",
         parse_mode=ParseMode.MARKDOWN,
     )
-    return S_LYRICS_CHOICE
+    return S_DESC
 
 async def on_choice_instrumental(update: Update, context) -> int:
     """User wants instrumental only - skip lyrics and generate."""
@@ -2155,9 +2155,8 @@ def main():
                         CommandHandler("cancel", cmd_cancel)],
             S_DESC:    [MessageHandler(filters.TEXT & ~filters.COMMAND, on_desc),
                         CommandHandler("cancel", cmd_cancel)],
-            S_CHOICE:  [CallbackQueryHandler(on_lyrics_ai, pattern=r"^ms_choice:ai$"),
-                        CallbackQueryHandler(on_lyrics_own, pattern=r"^ms_choice:own$"),
-                        CallbackQueryHandler(on_choice_instrumental,  pattern=r"^ms_choice:instrumental$"),
+            S_CHOICE:  [CallbackQueryHandler(on_choice_instrumental, pattern=r"^ms_choice:instrumental$"),
+                        CallbackQueryHandler(on_choice_lyrics, pattern=r"^ms_choice:lyrics$"),
                         CallbackQueryHandler(on_cancel_cb,  pattern=r"^ms_cancel$")],
             S_LYRICS_CHOICE: [CallbackQueryHandler(on_lyrics_own, pattern=r"^ms_lyrics:own$"),
                         CallbackQueryHandler(on_lyrics_ai,  pattern=r"^ms_lyrics:ai$"),
