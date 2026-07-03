@@ -498,20 +498,21 @@ def _build_tags(beat: str, voice: str, artists: list = None, instrumental: bool 
     return ", ".join(parts)
 
 def _ollama_enrich_tags(lyrics: str, base_tags: str) -> str:
-    """Ollama adds MAX 2 mood words to the tags based on lyrics. Genre is locked."""
+    """Ollama adds mood + texture/production words to the tags. Genre stays locked."""
     # Extract the genre lock (first 3 tags) so Ollama can't change them
     genre_lock = ", ".join(base_tags.split(",")[:3]).strip()
     prompt = (
-        "You are a music mood analyst.\n"
-        f"GENRE (DO NOT CHANGE): {genre_lock}\n"
+        "You are a music producer refining style tags.\n"
+        f"GENRE (KEEP EXACTLY, DO NOT CHANGE): {genre_lock}\n"
         f"FULL TAGS: {base_tags}\n"
         f"LYRICS EXCERPT:\n{lyrics[:600]}\n\n"
-        "TASK: Read the lyrics. Add EXACTLY 2 mood/emotion words that match the feel.\n"
+        "TASK: Read the lyrics and enrich the vibe. Add 2 mood words AND up to 2 texture/production words that fit the feel.\n"
         "STRICT RULES:\n"
-        "- Output ONLY: the original FULL TAGS + ', ' + your 2 mood words. Nothing else.\n"
-        "- Your 2 words must be mood/energy ONLY (e.g.: melancholic, triumphant, cold, raw, desperate, fierce)\n"
-        "- DO NOT add instruments, DO NOT add genres, DO NOT add BPM, DO NOT add production terms\n"
-        "- DO NOT explain. ONE LINE only. Max 200 characters total."
+        "- Output ONLY: the original FULL TAGS + ', ' + your extra words. Nothing else.\n"
+        "- Mood words = emotion/energy (e.g.: melancholic, triumphant, cold, raw, fierce, dreamy, hopeful)\n"
+        "- Texture words = sonic feel/production (e.g.: reverb-heavy, lo-fi, cinematic, gritty, spacious, nocturnal, warm, hazy)\n"
+        "- DO NOT change or add a GENRE. DO NOT add BPM/tempo. DO NOT add specific instruments.\n"
+        "- Max 4 extra words total. DO NOT explain. ONE LINE only. Max 240 characters total."
     )
     try:
         r = req.post(
@@ -522,8 +523,8 @@ def _ollama_enrich_tags(lyrics: str, base_tags: str) -> str:
         r.raise_for_status()
         result = r.json()["response"].strip().split("\n")[0].strip()
         # Sanity: must start with the genre lock and be reasonable length
-        if genre_lock.split(",")[0].strip().lower() in result.lower() and 30 < len(result) < 250:
-            return result[:240]
+        if genre_lock.split(",")[0].strip().lower() in result.lower() and 30 < len(result) < 300:
+            return result[:280]
     except Exception as e:
         logger.warning("Ollama tag enrichment failed: %s", e)
     return base_tags

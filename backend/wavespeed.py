@@ -73,34 +73,50 @@ def generate_image(prompt: str) -> str:
 
 def generate_music(lyrics: str, tags: str = "electronic, dark, cinematic") -> str:
     """Generate music with HeartMuLa. Returns URL.
-    
+
     For instrumental music, pass empty string for lyrics.
+    Note: HeartMuLa has NO duration param — length is driven by lyrics + structure markers.
     """
+    # Pure instrumental: use ONLY instrumental section markers (no vocal sections)
     final_lyrics = lyrics if lyrics else (
-        "[inst-medium]\n[inst-medium]\n[inst-medium]\n[inst-medium]"
+        "[intro-medium]\n[inst-medium]\n[inst-medium]\n[inst-medium]\n[outro-medium]"
     )
-    
+
     task_id = _submit("wavespeed-ai/heartmula/generate-music", {
         "lyrics": final_lyrics,
         "tags": tags,
         "seed": -1,
-        "duration": 90  # request a longer track
     })
     return _poll(task_id, max_wait=600)
 
 
+def _to_minimax_markers(text: str) -> str:
+    """MiniMax uses (parentheses) markers, NOT [brackets]. Convert them."""
+    import re
+    return re.sub(r"\[([^\]]+)\]", lambda m: f"({m.group(1)})", text)
+
+
 def generate_music_minimax(lyrics: str, tags: str = "electronic, dark, cinematic") -> str:
-    """Generate music with MiniMax Music 2.5 (HD quality). Returns URL."""
-    final_lyrics = lyrics if lyrics else (
-        "[inst-medium]\n[inst-medium]\n[inst-medium]\n[inst-medium]"
-    )
-    
+    """Generate music with MiniMax Music 2.5 (HD quality). Returns URL.
+
+    MiniMax always sings the provided lyrics and uses (parentheses) markers.
+    Note: NO duration param — length is driven by lyrics + structure.
+    """
+    if lyrics:
+        final_lyrics = _to_minimax_markers(lyrics)
+    else:
+        final_lyrics = (
+            "(Instrumental intro building up)\n"
+            "(Instrumental main section)\n"
+            "(Instrumental break)\n"
+            "(Instrumental outro)"
+        )
+
     task_id = _submit("minimax/music-2.5", {
         "prompt": tags,
         "lyrics": final_lyrics,
         "bitrate": 256000,
         "sample_rate": 44100,
-        "duration": 90  # request a longer track
     })
     return _poll(task_id, max_wait=600)
 
