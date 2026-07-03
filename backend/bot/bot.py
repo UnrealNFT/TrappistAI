@@ -682,23 +682,66 @@ async def _generate_and_send(update: Update, context) -> int:
 
     if url:
         progress_task.cancel()
+
+        # Create tokenize keyboard with short callback_data
+        keyboard = create_tokenize_keyboard("music", url, label)
+        caption = f"🎵 *{label}* {vi}\n🎸 `{tags}`\n\n[Direct link]({url})"
+
+        sent = False
+        # 1) Try sending directly by URL (fastest, Telegram fetches it)
+        try:
+            await update.effective_message.reply_audio(
+                audio=url,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN,
+                title=f"TrappistAI — {label}",
+                performer="HeartMuLa x WaveSpeed",
+                reply_markup=keyboard,
+            )
+            sent = True
+        except Exception as e1:
+            logger.warning("reply_audio by URL failed (%s), downloading and retrying…", e1)
+            # 2) Download the file ourselves and send the bytes (bypasses Telegram URL limits)
+            try:
+                import io
+                resp = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: req.get(url, timeout=180)
+                )
+                resp.raise_for_status()
+                buf = io.BytesIO(resp.content)
+                buf.name = f"{label[:30] or 'trappistai'}.mp3"
+                await update.effective_message.reply_audio(
+                    audio=buf,
+                    caption=caption,
+                    parse_mode=ParseMode.MARKDOWN,
+                    title=f"TrappistAI — {label}",
+                    performer="HeartMuLa x WaveSpeed",
+                    reply_markup=keyboard,
+                )
+                sent = True
+            except Exception as e2:
+                logger.error("reply_audio by bytes failed too: %s", e2)
+
+        # 3) Last resort: at least give the user the direct link so nothing is lost
+        if not sent:
+            try:
+                await update.effective_message.reply_text(
+                    f"✅ *{label}* {vi} is ready but Telegram couldn't attach the audio.\n"
+                    f"👉 Download it here: {url}",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=keyboard,
+                    disable_web_page_preview=False,
+                )
+            except Exception as e3:
+                logger.error("Fallback link message failed: %s", e3)
+
+        # Remove the progress message only after we've delivered (or attempted) the result
         try:
             await msg.delete()
         except Exception:
             pass
-        
-        # Create tokenize keyboard with short callback_data
-        keyboard = create_tokenize_keyboard("music", url, label)
-        
-        await update.effective_message.reply_audio(
-            audio=url,
-            caption=f"🎵 *{label}* {vi}\n🎸 `{tags}`\n\n[Direct link]({url})",
-            parse_mode=ParseMode.MARKDOWN,
-            title=f"TrappistAI — {label}",
-            performer="HeartMuLa x WaveSpeed",
-            reply_markup=keyboard,
-        )
-        logger.info("Music [%s/%s] %s → %s", label, voice, update.effective_user.id, url)
+
+        logger.info("Music [%s/%s] %s → %s (sent=%s)", label, voice, update.effective_user.id, url, sent)
 
     context.user_data.clear()
     return ConversationHandler.END
