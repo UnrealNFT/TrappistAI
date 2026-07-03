@@ -76,27 +76,31 @@ def generate_music(lyrics: str, tags: str = "electronic, dark, cinematic") -> st
     
     For instrumental music, pass empty string for lyrics.
     """
-    final_lyrics = lyrics if lyrics else "[Instrumental]"
+    final_lyrics = lyrics if lyrics else (
+        "[inst-medium]\n[inst-medium]\n[inst-medium]\n[inst-medium]"
+    )
     
     task_id = _submit("wavespeed-ai/heartmula/generate-music", {
         "lyrics": final_lyrics,
         "tags": tags,
         "seed": -1,
-        "duration": 60  # 60 seconds (try to request longer duration)
+        "duration": 90  # request a longer track
     })
     return _poll(task_id, max_wait=600)
 
 
 def generate_music_minimax(lyrics: str, tags: str = "electronic, dark, cinematic") -> str:
     """Generate music with MiniMax Music 2.5 (HD quality). Returns URL."""
-    final_lyrics = lyrics if lyrics else "(Instrumental intro with building tension)\n(Instrumental section)"
+    final_lyrics = lyrics if lyrics else (
+        "[inst-medium]\n[inst-medium]\n[inst-medium]\n[inst-medium]"
+    )
     
     task_id = _submit("minimax/music-2.5", {
         "prompt": tags,
         "lyrics": final_lyrics,
         "bitrate": 256000,
         "sample_rate": 44100,
-        "duration": 60  # 60 seconds
+        "duration": 90  # request a longer track
     })
     return _poll(task_id, max_wait=600)
 
