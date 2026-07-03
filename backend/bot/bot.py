@@ -497,6 +497,40 @@ def _build_tags(beat: str, voice: str, artists: list = None, instrumental: bool 
     
     return ", ".join(parts)
 
+def _groq_enrich_tags(lyrics: str, base_tags: str) -> str:
+    """Groq enriches tags with mood + texture that REINFORCE the genre.
+    Works in production (Groq is available; Ollama is not on Render)."""
+    if not GROQ_KEY:
+        return base_tags
+    genre = base_tags.split(",")[0].strip()
+    system = (
+        "You refine music style tags for an AI music generator. "
+        "The given GENRE must stay clearly dominant and coherent. "
+        "You only add flavor words that REINFORCE that genre — never words from a different genre."
+    )
+    user = (
+        f"GENRE (must stay dominant): {genre}\n"
+        f"CURRENT TAGS: {base_tags}\n"
+        f"LYRICS EXCERPT:\n{lyrics[:500]}\n\n"
+        "Return the CURRENT TAGS unchanged, then append ', ' and 3-4 extra words:\n"
+        "- 2 mood words (emotion/energy) that fit the lyrics\n"
+        f"- 1-2 texture/production words TYPICAL of {genre} that reinforce it\n"
+        f"RULES: never add instruments or descriptors from another genre (e.g. no electric guitars/rock feel for trap). "
+        "No BPM. Output ONE line only, comma-separated, max 240 chars. No explanation, no quotes."
+    )
+    try:
+        out = _groq_complete(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            max_tokens=120,
+        )
+        out = out.strip().split("\n")[0].strip().strip('"').strip()
+        if genre.lower() in out.lower() and 30 < len(out) < 300:
+            return out[:280]
+    except Exception as e:
+        logger.warning("Groq tag enrichment failed: %s", e)
+    return base_tags
+
+
 def _ollama_enrich_tags(lyrics: str, base_tags: str) -> str:
     """Ollama adds mood + texture/production words to the tags. Genre stays locked."""
     # Extract the genre lock (first 3 tags) so Ollama can't change them
@@ -606,12 +640,13 @@ async def _generate_and_send(update: Update, context) -> int:
     vi        = "👨" if voice == "male" else "👩"
     mode_text = "🎸 Instrumental" if instrumental else f"{vi} With Lyrics"
 
-    # Ollama enriches tags according to the actual lyric content (skip for instrumental)
-    if instrumental:
+    # Enrich tags via Groq (reinforces the genre). Ollama is unavailable on Render.
+    # Instrumental keeps the pure preset tags.
+    if instrumental or not GROQ_KEY:
         tags = base_tags
     else:
         tags = await asyncio.get_event_loop().run_in_executor(
-            None, _ollama_enrich_tags, lyrics, base_tags
+            None, _groq_enrich_tags, lyrics, base_tags
         )
 
     msg = await update.effective_message.reply_text(
