@@ -45,6 +45,14 @@ except ImportError as e:
     print(f"⚠️ News search not available: {e}")
     NEWS_AVAILABLE = False
 
+# Live on-demand RSS headlines (fallback when the news DB is empty)
+try:
+    from news_fetcher import fetch_live_headlines
+    LIVE_NEWS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Live headlines not available: {e}")
+    LIVE_NEWS_AVAILABLE = False
+
 # Import real-time crypto prices (CoinGecko, no key needed)
 try:
     from prices import (
@@ -2053,7 +2061,14 @@ async def on_free_message(update: Update, context) -> None:
         return
 
     msg = await update.message.reply_text("💬 Thinking…")
-    
+
+    prompt_lower = prompt.lower()
+    # Generic "latest news" style request (no specific coin needed)
+    generic_news = any(k in prompt_lower for k in (
+        "news", "actu", "nouvelles", "quoi de neuf", "latest", "headlines",
+        "derniere", "dernière", "actus",
+    ))
+
     # Automatic news context injection for crypto-related questions
     news_context = None
 
@@ -2076,8 +2091,9 @@ async def on_free_message(update: Update, context) -> None:
                 price_context = await asyncio.get_event_loop().run_in_executor(
                     None, format_prices, turn_ids
                 )
-            elif should_resolve(prompt):
-                # Unknown coin (e.g. EGLD) → dynamic search CoinGecko + DexScreener
+            elif should_resolve(prompt) and not generic_news:
+                # Unknown coin (e.g. EGLD) → dynamic search CoinGecko + DexScreener.
+                # Skipped for generic news questions to avoid resolving junk tokens.
                 price_context, ids = await asyncio.get_event_loop().run_in_executor(
                     None, resolve_context, prompt
                 )
@@ -2092,35 +2108,41 @@ async def on_free_message(update: Update, context) -> None:
     logger.info(f"📝 User {uid} message: {prompt[:50]}")
     logger.info(f"🔍 NEWS_AVAILABLE: {NEWS_AVAILABLE}")
     
-    if NEWS_AVAILABLE:
-        prompt_lower = prompt.lower()
-        # Generic "latest news" style request (no specific coin needed)
-        generic_news = any(k in prompt_lower for k in (
-            "news", "actu", "nouvelles", "quoi de neuf", "latest", "headlines",
-            "derniere", "dernière", "actus", "marché", "market",
-        ))
+    if NEWS_AVAILABLE or LIVE_NEWS_AVAILABLE:
         # Clean keyword: coin name if a coin was referenced this turn.
         # NEVER pass the raw sentence (French words poison plainto_tsquery → 0 matches).
-        # If no specific coin, fall back to recent headlines (generic).
         news_q = news_query(prompt, turn_ids) if turn_ids else None
 
         if news_q or generic_news:
-            try:
-                pool = await get_db_pool()
-                if news_q:
-                    logger.info(f"📡 News search keyword: {news_q!r}")
-                    news_context = await get_news_summary_for_ai(news_q, pool, max_context=3)
-                if not news_context and generic_news:
-                    # Fallback: latest headlines (last 48h)
-                    recent = await get_recent_news(pool, hours=48, limit=5)
-                    if recent:
-                        news_context = await format_news_for_chat(recent, max_articles=5)
-                if news_context:
-                    logger.info(f"✅ RAG: Injected news context ({len(news_context)} chars)")
-                else:
-                    logger.warning("⚠️ RAG: No news found in DB")
-            except Exception as e:
-                logger.error(f"❌ Could not fetch news context: {e}", exc_info=True)
+            # 1) Try the news DB (populated by the fetcher worker)
+            if NEWS_AVAILABLE:
+                try:
+                    pool = await get_db_pool()
+                    if news_q:
+                        logger.info(f"📡 News search keyword: {news_q!r}")
+                        news_context = await get_news_summary_for_ai(news_q, pool, max_context=3)
+                    if not news_context and generic_news:
+                        recent = await get_recent_news(pool, hours=48, limit=5)
+                        if recent:
+                            news_context = await format_news_for_chat(recent, max_articles=5)
+                except Exception as e:
+                    logger.error(f"❌ DB news fetch failed: {e}", exc_info=True)
+
+            # 2) Fallback: live RSS headlines (no DB) if the DB returned nothing
+            if not news_context and LIVE_NEWS_AVAILABLE:
+                try:
+                    news_context = await asyncio.get_event_loop().run_in_executor(
+                        None, fetch_live_headlines, news_q, 5
+                    )
+                    if news_context:
+                        logger.info("📰 Injected LIVE RSS headlines (DB fallback)")
+                except Exception as e:
+                    logger.error(f"❌ Live headlines failed: {e}")
+
+            if news_context:
+                logger.info(f"✅ News context injected ({len(news_context)} chars)")
+            else:
+                logger.warning("⚠️ No news found (DB + live)")
     else:
         logger.warning("⚠️ News search not available (import failed)")
     
