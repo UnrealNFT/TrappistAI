@@ -45,6 +45,14 @@ except ImportError as e:
     print(f"⚠️ News search not available: {e}")
     NEWS_AVAILABLE = False
 
+# Import real-time crypto prices (CoinGecko, no key needed)
+try:
+    from prices import format_price_context
+    PRICES_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Prices not available: {e}")
+    PRICES_AVAILABLE = False
+
 load_dotenv()
 logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -428,7 +436,7 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
     return _groq_complete([{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}], max_tokens=1200)
 
 
-def _groq_chat(user_id: int, prompt: str, news_context: str = None) -> str:
+def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_context: str = None) -> str:
     hist = _conv_history.setdefault(user_id, [])
     hist.append({"role": "user", "content": prompt})
     if len(hist) > 14:  # garde 7 échanges
@@ -448,7 +456,15 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None) -> str:
         "If the language is unclear or the message is very short (a single word, a number, or a code), DEFAULT TO ENGLISH. "
         "If asked who you are, answer 'I am TrappistAI' with pride."
     )
-    
+
+    # Add live price context if available (real-time, authoritative)
+    if price_context:
+        system_content += (
+            "\n\n💹 **LIVE MARKET PRICES** (real-time, use these EXACT numbers for any price question):\n"
+            f"{price_context}\n"
+            "Always state these are live/real-time prices. Never invent a price."
+        )
+
     # Add news context if available
     if news_context:
         system_content += (
@@ -2032,6 +2048,18 @@ async def on_free_message(update: Update, context) -> None:
     
     # Automatic news context injection for crypto-related questions
     news_context = None
+
+    # Live price context (real-time, CoinGecko) — independent of the news DB
+    price_context = None
+    if PRICES_AVAILABLE:
+        try:
+            price_context = await asyncio.get_event_loop().run_in_executor(
+                None, format_price_context, prompt
+            )
+            if price_context:
+                logger.info("💰 Injected live price context")
+        except Exception as e:
+            logger.error("❌ Could not fetch price context: %s", e)
     
     logger.info(f"📝 User {uid} message: {prompt[:50]}")
     logger.info(f"🔍 NEWS_AVAILABLE: {NEWS_AVAILABLE}")
@@ -2071,7 +2099,7 @@ async def on_free_message(update: Update, context) -> None:
     
     try:
         answer = await asyncio.get_event_loop().run_in_executor(
-            None, _groq_chat, uid, prompt, news_context
+            None, _groq_chat, uid, prompt, news_context, price_context
         )
         await msg.edit_text(f"🤖 {answer[:4000]}")
     except Exception as e:
