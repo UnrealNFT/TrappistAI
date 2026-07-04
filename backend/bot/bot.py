@@ -497,38 +497,92 @@ def _build_tags(beat: str, voice: str, artists: list = None, instrumental: bool 
     
     return ", ".join(parts)
 
+# Curated AUTHENTIC texture/production vocabulary per genre.
+# Groq only adds MOOD (emotion) — textures come from here so the genre never drifts.
+GENRE_TEXTURES = {
+    "trap": "808 slides, hi-hat rolls, triplet flow, deep sub bass, dark ambience, snappy snares",
+    "drill": "sliding 808s, sinister piano, aggressive hi-hats, gritty texture, menacing atmosphere",
+    "boom bap": "dusty vinyl samples, hard-hitting drums, scratches, deep bass, head-nodding groove",
+    "hip hop": "boom bap drums, vinyl samples, deep bass, punchy kicks, head-nodding groove",
+    "rock": "distorted electric guitars, driving live drums, power chords, raw energy, anthemic",
+    "metal": "heavy distorted riffs, double-kick drums, screaming leads, aggressive, powerful",
+    "pop": "catchy hooks, bright synths, punchy drums, polished production, radio-ready shine",
+    "lofi": "vinyl crackle, mellow rhodes keys, dusty drums, warm tape saturation, nostalgic haze",
+    "lo-fi": "vinyl crackle, mellow rhodes keys, dusty drums, warm tape saturation, nostalgic haze",
+    "house": "four-on-the-floor, deep bassline, shimmering pads, groovy swing, club-ready",
+    "techno": "hypnotic loops, driving kick, industrial textures, rumbling bass, dark energy",
+    "edm": "big drops, sidechain pumping, soaring supersaws, festival energy, euphoric build",
+    "rnb": "smooth rhodes, silky vocals, lush chords, sensual groove, warm sub bass",
+    "r&b": "smooth rhodes, silky vocals, lush chords, sensual groove, warm sub bass",
+    "afrobeat": "syncopated percussion, warm bassline, bright guitars, danceable groove, log drums",
+    "afrobeats": "syncopated percussion, warm bassline, bright guitars, danceable groove, log drums",
+    "reggaeton": "dembow rhythm, punchy kick, catchy hooks, tropical vibe, bouncy bass",
+    "jazz": "swinging brushes, walking upright bass, warm horns, smoky ambience, improvisation",
+    "cinematic": "sweeping strings, epic percussion, dramatic swells, orchestral, emotional",
+    "orchestral": "sweeping strings, epic brass, timpani hits, dramatic dynamics, grand scale",
+    "country": "acoustic guitar, twangy leads, warm vocals, storytelling, foot-stomping rhythm",
+    "funk": "slap bass, tight rhythm guitar, punchy horns, groovy pocket, danceable",
+    "disco": "four-on-the-floor, funky bassline, lush strings, shimmering hats, feel-good groove",
+    "punk": "fast power chords, raw drums, shouted vocals, gritty energy, rebellious",
+    "ambient": "evolving pads, airy textures, subtle reverb, spacious, meditative",
+    "phonk": "cowbell melodies, distorted 808s, memphis vocals, dark, aggressive bounce",
+}
+
+
+def _genre_texture_pack(base_tags: str) -> str:
+    """Return the authentic texture vocabulary for the detected genre (or empty)."""
+    low = base_tags.lower()
+    # Longest key first so 'boom bap' wins over 'hip hop', etc.
+    for key in sorted(GENRE_TEXTURES, key=len, reverse=True):
+        if key in low:
+            return GENRE_TEXTURES[key]
+    return ""
+
+
 def _groq_enrich_tags(lyrics: str, base_tags: str) -> str:
-    """Groq enriches tags with mood + texture that REINFORCE the genre.
-    Works in production (Groq is available; Ollama is not on Render)."""
-    if not GROQ_KEY:
-        return base_tags
-    genre = base_tags.split(",")[0].strip()
-    system = (
-        "You refine music style tags for an AI music generator. "
-        "The given GENRE must stay clearly dominant and coherent. "
-        "You only add flavor words that REINFORCE that genre — never words from a different genre."
-    )
-    user = (
-        f"GENRE (must stay dominant): {genre}\n"
-        f"CURRENT TAGS: {base_tags}\n"
-        f"LYRICS EXCERPT:\n{lyrics[:500]}\n\n"
-        "Return the CURRENT TAGS unchanged, then append ', ' and 3-4 extra words:\n"
-        "- 2 mood words (emotion/energy) that fit the lyrics\n"
-        f"- 1-2 texture/production words TYPICAL of {genre} that reinforce it\n"
-        f"RULES: never add instruments or descriptors from another genre (e.g. no electric guitars/rock feel for trap). "
-        "No BPM. Output ONE line only, comma-separated, max 240 chars. No explanation, no quotes."
-    )
-    try:
-        out = _groq_complete(
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            max_tokens=120,
-        )
-        out = out.strip().split("\n")[0].strip().strip('"').strip()
-        if genre.lower() in out.lower() and 30 < len(out) < 300:
-            return out[:280]
-    except Exception as e:
-        logger.warning("Groq tag enrichment failed: %s", e)
-    return base_tags
+    """Enrich tags to the max WITHOUT drifting the genre:
+    - textures/production come from a curated per-genre vocabulary (authentic)
+    - Groq only adds MOOD words (emotion) that fit the lyrics
+    Works in production (Groq available; Ollama is not on Render)."""
+    parts = [p.strip() for p in base_tags.split(",") if p.strip()]
+    seen = {p.lower() for p in parts}
+
+    def _add(chunk: str):
+        for w in chunk.split(","):
+            w = w.strip()
+            if w and w.lower() not in seen:
+                parts.append(w)
+                seen.add(w.lower())
+
+    # 1) Authentic genre textures (rich vocabulary, no drift)
+    _add(_genre_texture_pack(base_tags))
+
+    # 2) Mood words from Groq (emotion only — cannot change the genre)
+    if GROQ_KEY:
+        try:
+            genre = base_tags.split(",")[0].strip()
+            system = (
+                "You are a music tag assistant. You output ONLY mood/emotion words "
+                "(feelings and energy), never genres, instruments, tempo or production terms."
+            )
+            user = (
+                f"Genre: {genre}\n"
+                f"Lyrics excerpt:\n{lyrics[:500]}\n\n"
+                "Give 3 mood words that match the emotion of these lyrics "
+                "(e.g. melancholic, triumphant, euphoric, cold, raw, dreamy, defiant, hopeful). "
+                "Output ONE line, comma-separated, 3 words max. No explanation, no quotes."
+            )
+            out = _groq_complete(
+                [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                max_tokens=40,
+            )
+            out = out.strip().split("\n")[0].strip().strip('"').strip()
+            moods = [m.strip() for m in out.split(",") if m.strip() and len(m.strip()) < 20][:3]
+            _add(", ".join(moods))
+        except Exception as e:
+            logger.warning("Groq mood enrichment failed: %s", e)
+
+    return ", ".join(parts)[:300]
 
 
 def _ollama_enrich_tags(lyrics: str, base_tags: str) -> str:
@@ -640,9 +694,9 @@ async def _generate_and_send(update: Update, context) -> int:
     vi        = "👨" if voice == "male" else "👩"
     mode_text = "🎸 Instrumental" if instrumental else f"{vi} With Lyrics"
 
-    # Enrich tags via Groq (reinforces the genre). Ollama is unavailable on Render.
+    # Enrich tags: authentic per-genre textures (+ Groq mood if available).
     # Instrumental keeps the pure preset tags.
-    if instrumental or not GROQ_KEY:
+    if instrumental:
         tags = base_tags
     else:
         tags = await asyncio.get_event_loop().run_in_executor(
