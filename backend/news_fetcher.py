@@ -9,6 +9,7 @@ Can be run as:
 import asyncio
 import hashlib
 import json
+import os
 import re
 import time
 from datetime import datetime
@@ -17,9 +18,15 @@ from typing import List, Dict, Optional
 import requests
 import feedparser
 from deep_translator import GoogleTranslator
+from dotenv import load_dotenv
 
 # Import TrappistAI database connection
 from db import get_db_pool
+
+load_dotenv()
+
+GROQ_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 
 # === 20 CRYPTO RSS SOURCES ===
@@ -183,6 +190,54 @@ Respond ONLY with JSON:"""
         return None
 
 
+def summarize_with_groq(article: Dict) -> Optional[Dict]:
+    """Summarize article with Groq (available in production, unlike Ollama)."""
+    if not GROQ_KEY:
+        return None
+    prompt = (
+        "You are a crypto journalist. Analyze this article and return ONLY JSON.\n\n"
+        f"Title: {article['title']}\n"
+        f"Description: {article['description'][:500]}\n\n"
+        "Return this exact JSON shape:\n"
+        '{"title_en": "catchy clear title", "description_en": "1 sentence adding info", '
+        '"summary": "2 sentence summary", "hashtags": ["#Tag1", "#Tag2", "#Tag3"]}\n'
+        "Write original content, never mention the source. Respond ONLY with JSON."
+    )
+    try:
+        r = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": GROQ_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.6,
+                "max_tokens": 400,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=30,
+        )
+        if r.status_code != 200:
+            return None
+        content = r.json()["choices"][0]["message"]["content"].strip()
+        data = json.loads(content)
+        if data.get("title_en") and data.get("summary"):
+            return data
+    except Exception as e:
+        print(f"⚠️ Groq summary failed: {e}")
+    return None
+
+
+def _raw_summary(article: Dict) -> Dict:
+    """No-LLM fallback: store the cleaned article as-is so the DB is never empty."""
+    desc = (article.get("description") or "").strip()
+    return {
+        "title_en": article.get("title", "Crypto news")[:200],
+        "description_en": "",
+        "summary": desc[:300] if desc else article.get("title", ""),
+        "hashtags": ["#Crypto"],
+    }
+
+
 def translate_to_french(result_en: Dict) -> Dict:
     """Translate English content to French using Google Translate."""
     try:
@@ -203,11 +258,12 @@ def translate_to_french(result_en: Dict) -> Dict:
 async def store_article_in_db(article: Dict, pool):
     """Store article in PostgreSQL."""
     try:
-        # Summarize with Ollama
-        summary_result = summarize_with_ollama(article)
-        if not summary_result:
-            print(f"⚠️ Skipping (no summary): {article['title'][:50]}")
-            return False
+        # Summarize: Groq (prod) → Ollama (local) → raw fallback (never empty)
+        summary_result = (
+            summarize_with_groq(article)
+            or summarize_with_ollama(article)
+            or _raw_summary(article)
+        )
 
         # Translate to French
         fr_result = translate_to_french(summary_result)

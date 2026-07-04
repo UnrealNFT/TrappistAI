@@ -47,7 +47,10 @@ except ImportError as e:
 
 # Import real-time crypto prices (CoinGecko, no key needed)
 try:
-    from prices import format_prices, detect_coins, has_price_intent, resolve_context, should_resolve
+    from prices import (
+        format_prices, detect_coins, has_price_intent,
+        resolve_context, should_resolve, news_query,
+    )
     PRICES_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Prices not available: {e}")
@@ -2056,20 +2059,22 @@ async def on_free_message(update: Update, context) -> None:
 
     # Live price context (real-time, CoinGecko) — independent of the news DB
     price_context = None
+    turn_ids = []  # coin ids referenced this turn (shared with news search)
     if PRICES_AVAILABLE:
         try:
             coins = detect_coins(prompt)
             if coins:
                 # Known coin(s) named directly
+                turn_ids = coins
                 _last_coins[uid] = coins
                 price_context = await asyncio.get_event_loop().run_in_executor(
                     None, format_prices, coins
                 )
             elif has_price_intent(prompt) and _last_coins.get(uid):
                 # Follow-up like "prix ?" → reuse the last coin discussed
-                coins = _last_coins[uid]
+                turn_ids = _last_coins[uid]
                 price_context = await asyncio.get_event_loop().run_in_executor(
-                    None, format_prices, coins
+                    None, format_prices, turn_ids
                 )
             elif should_resolve(prompt):
                 # Unknown coin (e.g. EGLD) → dynamic search CoinGecko + DexScreener
@@ -2077,6 +2082,7 @@ async def on_free_message(update: Update, context) -> None:
                     None, resolve_context, prompt
                 )
                 if ids:
+                    turn_ids = ids
                     _last_coins[uid] = ids
             if price_context:
                 logger.info("💰 Injected live price context")
@@ -2087,33 +2093,32 @@ async def on_free_message(update: Update, context) -> None:
     logger.info(f"🔍 NEWS_AVAILABLE: {NEWS_AVAILABLE}")
     
     if NEWS_AVAILABLE:
-        # Detect crypto keywords (multi-language)
-        crypto_keywords = [
-            "bitcoin", "btc", "ethereum", "eth", "crypto", "blockchain", "defi", 
-            "nft", "casper", "cspr", "altcoin", "token", "market", "price", "pump",
-            "dump", "bull", "bear", "trading", "exchange", "wallet", "mining",
-            "staking", "dao", "web3", "metaverse", "regulation", "sec", "binance",
-            "coinbase", "solana", "cardano", "polkadot", "avalanche", "polygon",
-            "actualité", "actualite", "nouvelles", "news", "quoi de neuf", "derniere",
-            "dernière", "actus"
-        ]
-        
         prompt_lower = prompt.lower()
-        detected = any(keyword in prompt_lower for keyword in crypto_keywords)
-        
-        logger.info(f"🔎 Crypto keyword detected: {detected}")
-        
-        if detected:
+        # Generic "latest news" style request (no specific coin needed)
+        generic_news = any(k in prompt_lower for k in (
+            "news", "actu", "nouvelles", "quoi de neuf", "latest", "headlines",
+            "derniere", "dernière", "actus", "marché", "market",
+        ))
+        # Clean keyword: coin name if a coin was referenced this turn.
+        # NEVER pass the raw sentence (French words poison plainto_tsquery → 0 matches).
+        # If no specific coin, fall back to recent headlines (generic).
+        news_q = news_query(prompt, turn_ids) if turn_ids else None
+
+        if news_q or generic_news:
             try:
-                logger.info(f"📡 Fetching news context from DB...")
                 pool = await get_db_pool()
-                news_context = await get_news_summary_for_ai(prompt, pool, max_context=3)
-                
+                if news_q:
+                    logger.info(f"📡 News search keyword: {news_q!r}")
+                    news_context = await get_news_summary_for_ai(news_q, pool, max_context=3)
+                if not news_context and generic_news:
+                    # Fallback: latest headlines (last 48h)
+                    recent = await get_recent_news(pool, hours=48, limit=5)
+                    if recent:
+                        news_context = await format_news_for_chat(recent, max_articles=5)
                 if news_context:
                     logger.info(f"✅ RAG: Injected news context ({len(news_context)} chars)")
                 else:
-                    logger.warning(f"⚠️ RAG: No news found in DB")
-                    
+                    logger.warning("⚠️ RAG: No news found in DB")
             except Exception as e:
                 logger.error(f"❌ Could not fetch news context: {e}", exc_info=True)
     else:

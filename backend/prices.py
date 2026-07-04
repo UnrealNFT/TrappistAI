@@ -345,3 +345,28 @@ def resolve_context(text: str):
         if ctx:
             return ctx, []  # no CoinGecko id to remember
     return None, []
+
+
+# id -> best human search term (prefer longest single-word name, not the ticker)
+_ID_TO_NAME = {}
+for _k, _v in COIN_MAP.items():
+    if " " in _k:
+        continue  # avoid multi-word keys (bad for full-text AND queries)
+    if _v not in _ID_TO_NAME or len(_k) > len(_ID_TO_NAME[_v]):
+        _ID_TO_NAME[_v] = _k
+
+
+def coin_name(cid: str) -> str:
+    """Human-readable single-word name for a CoinGecko id (for news search)."""
+    return _ID_TO_NAME.get(cid, cid.split("-")[0])
+
+
+def news_query(text: str, ids: list = None) -> str:
+    """Build a clean keyword for full-text news search.
+    Uses the detected coin name (not the raw French/English sentence, which
+    poisons plainto_tsquery with non-stopwords). Returns None if nothing usable."""
+    if ids:
+        return coin_name(ids[0])
+    cands = _candidate_terms(text)
+    return cands[0] if cands else None
+
