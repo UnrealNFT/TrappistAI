@@ -881,13 +881,14 @@ async def on_style(update: Update, context) -> int:
     tags, label = STYLES.get(key, (key, key))
     context.user_data["beat"] = tags
     context.user_data["voice"] = "male"
+    context.user_data["instrumental"] = False
     await q.edit_message_text(
         f"✅ Genre: *{label}*\n\n"
-        "🎚 *Step 3/4 — Instrumental or with lyrics?*",
-        reply_markup=_kb_mode(),
+        "✍️ *Step 3/3 — What's the song about?*\n"
+        "_(ex: bitcoin going up, lost love, night in the city…)_",
         parse_mode=ParseMode.MARKDOWN,
     )
-    return S_CHOICE
+    return S_DESC
 
 async def on_beat(update: Update, context) -> int:
     """Free-text beat/style description (alternative to the genre buttons). Goes to theme."""
@@ -899,13 +900,14 @@ async def on_beat(update: Update, context) -> int:
         context.user_data["voice"] = "female"
     else:
         context.user_data["voice"] = "male"
+    context.user_data["instrumental"] = False
     await update.message.reply_text(
         f"✅ Beat: _{beat}_\n\n"
-        "🎚 *Step 3/4 — Instrumental or with lyrics?*",
-        reply_markup=_kb_mode(),
+        "✍️ *Step 3/3 — What's the song about?*\n"
+        "_(ex: bitcoin going up, lost love, night in the city…)_",
         parse_mode=ParseMode.MARKDOWN,
     )
-    return S_CHOICE
+    return S_DESC
 
 
 # ─── Step 3: Theme ───────────────────────────────────────────────────────────
@@ -2245,9 +2247,6 @@ def main():
                         CommandHandler("cancel", cmd_cancel)],
             S_DESC:    [MessageHandler(filters.TEXT & ~filters.COMMAND, on_desc),
                         CommandHandler("cancel", cmd_cancel)],
-            S_CHOICE:  [CallbackQueryHandler(on_choice_instrumental, pattern=r"^ms_choice:instrumental$"),
-                        CallbackQueryHandler(on_choice_lyrics, pattern=r"^ms_choice:lyrics$"),
-                        CallbackQueryHandler(on_cancel_cb,  pattern=r"^ms_cancel$")],
             S_LYRICS_CHOICE: [CallbackQueryHandler(on_lyrics_own, pattern=r"^ms_lyrics:own$"),
                         CallbackQueryHandler(on_lyrics_ai,  pattern=r"^ms_lyrics:ai$"),
                         CallbackQueryHandler(on_cancel_cb,  pattern=r"^ms_cancel$")],
