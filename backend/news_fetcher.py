@@ -57,14 +57,15 @@ NEWS_SOURCES = [
 CORS_PROXY = "https://api.allorigins.win/raw?url="
 
 
-def fetch_live_headlines(keyword: str = None, limit: int = 5) -> Optional[str]:
+def fetch_live_headlines(keyword: Optional[str] = None, limit: int = 5) -> Optional[str]:
     """On-demand RSS headlines (no DB, no LLM). Fast fallback when the news DB is empty.
     If keyword is given, Google News is queried for it (best relevance per coin) and
     generic feeds are filtered on it. Returns a context string for the LLM, or None."""
     # (name, url, pre_filtered) — pre_filtered feeds are already relevant to the keyword
     feeds = []
     if keyword:
-        q = requests.utils.quote(f"{keyword} crypto")
+        from urllib.parse import quote_plus
+        q = quote_plus(f"{keyword} crypto")
         feeds.append((
             "Google News",
             f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en",
