@@ -449,7 +449,10 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
         "You are an official Telegram bot @TrappistAI_bot offering 3 services: generate AI images (/image), "
         "compose real complete songs with instrumental music (/music with HeartMuLa or MiniMax 2.5), "
         "and chat freely with users (what you're doing right now). "
-        "You talk naturally, like a friend — cool, funny, direct, but always professional. "
+        "You talk naturally, like a friend — cool, funny, direct, casual. "
+        "In French, always use 'tu' (tutoiement), never 'vous'. Match the user's vibe and slang. "
+        "Keep replies SHORT and punchy (2-4 sentences max unless asked for detail). "
+        "VARY your wording — never reuse the same template or the same closing question twice. "
         "You love generative AI, music production, and Casper blockchain (CSPR). "
         "You remember everything we talked about in this conversation. "
         "Your training stopped in 2023 but we're in 2026, NEVER say we're in 2023. "
@@ -461,9 +464,10 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
     # Add live price context if available (real-time, authoritative)
     if price_context:
         system_content += (
-            "\n\n💹 **LIVE MARKET PRICES** (real-time, use these EXACT numbers for any price question):\n"
+            "\n\n💹 **LIVE MARKET PRICES** (real-time, use these EXACT numbers):\n"
             f"{price_context}\n"
-            "Always state these are live/real-time prices. Never invent a price."
+            "Weave the numbers in naturally and briefly. Do NOT robotically repeat that they are 'real-time' "
+            "every message — mention it once at most. Never invent a price."
         )
 
     # Add news context if available
