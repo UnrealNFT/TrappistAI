@@ -81,6 +81,22 @@ def detect_coins(text: str, limit: int = 3) -> list:
     return found
 
 
+# Words that signal the user is asking about price / market of the current coin
+_PRICE_INTENT = (
+    "price", "prix", "cours", "combien", "worth", "value", "valeur", "how much",
+    "pump", "dump", "chart", "graph", "graphique", "market cap", "marketcap",
+    "mcap", "volume", "ath", "bull", "bear", "up", "down", "moon",
+)
+
+
+def has_price_intent(text: str) -> bool:
+    low = text.lower()
+    for w in _PRICE_INTENT:
+        if re.search(rf"(?<![a-z]){re.escape(w)}(?![a-z])", low):
+            return True
+    return False
+
+
 def get_prices(ids: list) -> dict:
     """Fetch USD price + 24h change + market cap + volume for the given CoinGecko ids."""
     if not ids:
@@ -136,10 +152,8 @@ def _fmt_big(n) -> str:
     return f"${n:,.0f}"
 
 
-def format_price_context(text: str) -> str:
-    """Detect coins in the text, fetch live prices, and return a context string
-    ready to inject into the LLM system prompt. Returns None if nothing found."""
-    ids = detect_coins(text)
+def format_prices(ids: list) -> str:
+    """Fetch + format live prices for the given CoinGecko ids. Returns None if none."""
     if not ids:
         return None
     prices = get_prices(ids)
@@ -161,3 +175,9 @@ def format_price_context(text: str) -> str:
     if not lines:
         return None
     return "LIVE PRICES (CoinGecko, real-time):\n" + "\n".join(lines)
+
+
+def format_price_context(text: str) -> str:
+    """Detect coins in the text, fetch live prices, and return a context string
+    ready to inject into the LLM system prompt. Returns None if nothing found."""
+    return format_prices(detect_coins(text))
