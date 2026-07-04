@@ -47,6 +47,40 @@ COIN_MAP = {
     "stellar": "stellar", "xlm": "stellar",
     "hedera": "hedera-hashgraph", "hbar": "hedera-hashgraph",
     "filecoin": "filecoin", "fil": "filecoin",
+    "multiversx": "elrond-erd-2", "elrond": "elrond-erd-2", "egld": "elrond-erd-2",
+    "sei": "sei-network",
+    "injective": "injective-protocol", "inj": "injective-protocol",
+    "render": "render-token", "rndr": "render-token",
+    "fantom": "fantom", "ftm": "fantom", "sonic": "sonic-3",
+    "algorand": "algorand", "algo": "algorand",
+    "tezos": "tezos", "xtz": "tezos",
+    "vechain": "vechain", "vet": "vechain",
+    "theta": "theta-token",
+    "immutable": "immutable-x", "imx": "immutable-x",
+    "kaspa": "kaspa", "kas": "kaspa",
+    "ondo": "ondo-finance",
+    "jupiter": "jupiter-exchange-solana", "jup": "jupiter-exchange-solana",
+    "worldcoin": "worldcoin-wld", "wld": "worldcoin-wld",
+    "aave": "aave",
+    "maker": "maker", "mkr": "maker",
+    "fetch": "fetch-ai", "fet": "fetch-ai", "artificial superintelligence": "fetch-ai",
+    "bonk": "bonk",
+    "wif": "dogwifcoin", "dogwifhat": "dogwifcoin",
+    "floki": "floki",
+    "sandbox": "the-sandbox", "sand": "the-sandbox",
+    "decentraland": "decentraland", "mana": "decentraland",
+    "axie": "axie-infinity", "axs": "axie-infinity",
+    "gala": "gala",
+    "chiliz": "chiliz", "chz": "chiliz",
+    "eos": "eos",
+    "iota": "iota",
+    "neo": "neo",
+    "dydx": "dydx-chain",
+    "ethena": "ethena", "ena": "ethena",
+    "pyth": "pyth-network",
+    "jasmy": "jasmycoin",
+    "flow": "flow",
+    "quant": "quant-network", "qnt": "quant-network",
 }
 
 # Nice display symbols for the context string
@@ -59,7 +93,29 @@ _DISPLAY = {
     "optimism": "OP", "near": "NEAR", "cosmos": "ATOM", "uniswap": "UNI",
     "pepe": "PEPE", "monero": "XMR", "stellar": "XLM", "hedera-hashgraph": "HBAR",
     "filecoin": "FIL",
+    "elrond-erd-2": "EGLD", "sei-network": "SEI", "injective-protocol": "INJ",
+    "render-token": "RNDR", "fantom": "FTM", "sonic-3": "S", "algorand": "ALGO",
+    "tezos": "XTZ", "vechain": "VET", "theta-token": "THETA", "immutable-x": "IMX",
+    "kaspa": "KAS", "ondo-finance": "ONDO", "jupiter-exchange-solana": "JUP",
+    "worldcoin-wld": "WLD", "aave": "AAVE", "maker": "MKR", "fetch-ai": "FET",
+    "bonk": "BONK", "dogwifcoin": "WIF", "floki": "FLOKI", "the-sandbox": "SAND",
+    "decentraland": "MANA", "axie-infinity": "AXS", "gala": "GALA", "chiliz": "CHZ",
+    "eos": "EOS", "iota": "IOTA", "neo": "NEO", "dydx-chain": "DYDX",
+    "ethena": "ENA", "pyth-network": "PYTH", "jasmycoin": "JASMY", "flow": "FLOW",
+    "quant-network": "QNT",
 }
+
+
+def _display_symbol(cid: str) -> str:
+    """Clean display symbol for a CoinGecko id (map first, else strip suffixes)."""
+    if cid in _DISPLAY:
+        return _DISPLAY[cid]
+    s = cid
+    for suf in ("-network", "-token", "-protocol", "-finance", "-erd-2",
+                "-exchange-solana", "-2", "-3", "-coin"):
+        if s.endswith(suf):
+            s = s[: -len(suf)]
+    return s.upper()
 
 # Simple in-memory cache: {frozenset(ids): (timestamp, data)}
 _CACHE = {}
@@ -164,7 +220,7 @@ def format_prices(ids: list) -> str:
         p = prices.get(cid)
         if not p or p.get("usd") is None:
             continue
-        sym = _DISPLAY.get(cid, cid.upper())
+        sym = _display_symbol(cid)
         chg = p.get("change_24h")
         arrow = "🟢" if (chg or 0) >= 0 else "🔴"
         chg_str = f"{chg:+.2f}%" if chg is not None else "n/a"
@@ -181,3 +237,111 @@ def format_price_context(text: str) -> str:
     """Detect coins in the text, fetch live prices, and return a context string
     ready to inject into the LLM system prompt. Returns None if nothing found."""
     return format_prices(detect_coins(text))
+
+
+# ─── Dynamic resolution for coins NOT in COIN_MAP (any token) ─────────────────
+
+COINGECKO_SEARCH = "https://api.coingecko.com/api/v3/search"
+DEXSCREENER_SEARCH = "https://api.dexscreener.com/latest/dex/search"
+
+# Words to ignore when guessing which token the user asked about
+_STOPWORDS = {
+    "parle", "moi", "de", "du", "des", "le", "la", "les", "un", "une", "et",
+    "aujourd", "hui", "prix", "cours", "combien", "vaut", "sur", "the", "a",
+    "tell", "me", "about", "what", "is", "price", "of", "how", "much", "whats",
+    "give", "show", "quel", "est", "quoi", "penses", "tu", "info", "infos",
+    "actu", "news", "token", "coin", "crypto", "please", "stp", "dis",
+}
+
+
+def _coingecko_search(query: str) -> str:
+    """Resolve any coin name/ticker to a CoinGecko id via the search API."""
+    try:
+        r = requests.get(COINGECKO_SEARCH, params={"query": query}, timeout=10)
+        r.raise_for_status()
+        coins = r.json().get("coins", [])
+        if coins:
+            return coins[0].get("id")
+    except Exception as e:
+        logger.warning("CoinGecko search failed for %r: %s", query, e)
+    return None
+
+
+def _dexscreener_search(query: str) -> str:
+    """Last-resort price for DEX-only tokens. Returns a formatted line or None."""
+    try:
+        r = requests.get(DEXSCREENER_SEARCH, params={"q": query}, timeout=10)
+        r.raise_for_status()
+        pairs = r.json().get("pairs") or []
+        if not pairs:
+            return None
+        # Pick the most liquid pair
+        pairs.sort(key=lambda p: (p.get("liquidity") or {}).get("usd", 0), reverse=True)
+        p = pairs[0]
+        base = p.get("baseToken", {}).get("symbol", query.upper())
+        price = p.get("priceUsd")
+        if not price:
+            return None
+        chg = (p.get("priceChange") or {}).get("h24")
+        vol = (p.get("volume") or {}).get("h24")
+        liq = (p.get("liquidity") or {}).get("usd")
+        arrow = "🟢" if (chg or 0) >= 0 else "🔴"
+        chg_str = f"{chg:+.2f}%" if chg is not None else "n/a"
+        chain = p.get("chainId", "?")
+        return (
+            "LIVE PRICE (DexScreener, real-time DEX data):\n"
+            f"{arrow} {base}: {_fmt_usd(float(price))} ({chg_str} 24h) · "
+            f"Vol {_fmt_big(vol)} · Liq {_fmt_big(liq)} · chain: {chain}"
+        )
+    except Exception as e:
+        logger.warning("DexScreener search failed for %r: %s", query, e)
+    return None
+
+
+def _candidate_terms(text: str) -> list:
+    """Extract likely coin name/ticker candidates from a message."""
+    words = re.findall(r"[a-z0-9]{2,}", text.lower())
+    cands = [w for w in words if w not in _STOPWORDS]
+    # Longest first (more specific), keep a few
+    return sorted(set(cands), key=len, reverse=True)[:3]
+
+
+# Talk-about triggers: only run the (network) dynamic search when the user
+# clearly refers to a coin, to avoid searching on unrelated chit-chat.
+_ASK_TRIGGERS = (
+    "parle", "tell", "about", "info", "infos", "news", "actu", "penses",
+    "dis", "explique", "explain", "cest quoi", "what is",
+)
+
+
+def should_resolve(text: str) -> bool:
+    """True if we should attempt dynamic coin resolution (CoinGecko/DexScreener)."""
+    words = text.lower().split()
+    if len(words) == 1 and len(words[0]) >= 2:
+        return True
+    if has_price_intent(text):
+        return True
+    low = text.lower()
+    return any(t in low for t in _ASK_TRIGGERS)
+
+
+def resolve_context(text: str):
+    """Full market resolver. Returns (context_string_or_None, ids_list).
+    1) known coins (COIN_MAP)  2) CoinGecko search  3) DexScreener fallback."""
+    ids = detect_coins(text)
+    if ids:
+        return format_prices(ids), ids
+
+    # Try to resolve an unknown coin the user asked about
+    for cand in _candidate_terms(text):
+        cid = _coingecko_search(cand)
+        if cid:
+            ctx = format_prices([cid])
+            if ctx:
+                return ctx, [cid]
+    # DEX-only token fallback
+    for cand in _candidate_terms(text):
+        ctx = _dexscreener_search(cand)
+        if ctx:
+            return ctx, []  # no CoinGecko id to remember
+    return None, []
