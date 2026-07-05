@@ -37,3 +37,6 @@ gunicorn==21.2.0
 
 # Cloudflare R2 storage (S3-compatible)
 boto3==1.34.69
+
+# MP3 → MP4 converter (bundled static ffmpeg, no apt needed)
+imageio-ffmpeg==0.5.1

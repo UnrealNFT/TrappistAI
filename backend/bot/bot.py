@@ -1,12 +1,12 @@
 """
 TrappistAI Bot - Full Suno-like flow: Style -> Voice -> Theme -> Lyrics (AI or custom) -> Generate
 """
-import asyncio, logging, os, sqlite3, urllib.parse
+import asyncio, logging, os, sqlite3, tempfile, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import requests as req
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, ConversationHandler, ContextTypes, filters,
@@ -52,6 +52,14 @@ try:
 except ImportError as e:
     print(f"⚠️ Live headlines not available: {e}")
     LIVE_NEWS_AVAILABLE = False
+
+# MP3 → MP4 converter (bundled ffmpeg)
+try:
+    from mp4_convert import convert_to_mp4
+    MP4_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ MP4 converter not available: {e}")
+    MP4_AVAILABLE = False
 
 # Import real-time crypto prices (CoinGecko, no key needed)
 try:
@@ -226,7 +234,7 @@ STYLES = {
 }
 
 # Conversation states
-S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW, S_EDIT, S_3D_MENU, S_3D_IMAGE, S_3D_QUALITY = range(12)
+S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW, S_EDIT, S_3D_MENU, S_3D_IMAGE, S_3D_QUALITY, S_MP4_MENU, S_MP4_IMAGE, S_MP4_AUDIO = range(15)
 
 
 # ─── Keyboards ──────────────────────────────────────────────────────────────
@@ -1377,6 +1385,8 @@ async def cmd_start(update: Update, context) -> None:
         "🎨 *TrappistAI* — AI Images & Music\n\n"
         "🖼 */image* `prompt` → FLUX.1 image *(~5s)* — *1 token*\n"
         "🎵 */music* → Complete song *(2-3 min)* — *10 tokens*\n"
+        "🧊 */3d* → turn an image into a 3D model — *20 tokens*\n"
+        "🎬 */mp4c* → MP3 → MP4 converter *(free)*\n"
         "💬 */text* `question` → Llama 3.3 chat *(free)*\n"
         "💰 */balance* → Check your tokens\n"
         "🔋 */topup* → Buy more tokens"
@@ -1620,6 +1630,8 @@ async def cmd_help(update: Update, context) -> None:
         "📖 *TrappistAI Help*\n\n"
         "🖼 */image* `prompt` — FLUX.1 image **(1 token)**\n"
         "🎵 */music* — wizard style→voice→theme→lyrics **(10 tokens)**\n"
+        "🧊 */3d* — turn an image into a 3D model **(20 tokens)**\n"
+        "🎬 */mp4c* — MP3 → MP4 converter **(free)**\n"
         "💬 */text* `question` — Llama 3.3 AI chat **(free)**\n"
         "� */news* `[topic]` — latest crypto news **(free)**\n"
         "💰 */balance* — check your balance\n"
@@ -2286,6 +2298,155 @@ async def error_handler(update: object, context) -> None:
         except Exception:
             pass
 
+# ─── MP4 Converter (/mp4c) ───────────────────────────────────────────────────
+
+async def _post_init(app):
+    """Register the command suggestion menu shown when typing '/' in Telegram."""
+    await app.bot.set_my_commands([
+        BotCommand("start", "Welcome & menu"),
+        BotCommand("image", "Generate an AI image (FLUX.1)"),
+        BotCommand("music", "Compose a full song"),
+        BotCommand("3d", "Turn an image into a 3D model"),
+        BotCommand("mp4c", "Convert MP3 to MP4"),
+        BotCommand("text", "Chat with the AI"),
+        BotCommand("news", "Latest crypto news"),
+        BotCommand("balance", "Check your token balance"),
+        BotCommand("topup", "Buy more tokens"),
+        BotCommand("link", "Link the TrappistAI website"),
+        BotCommand("help", "Show help"),
+        BotCommand("cancel", "Cancel the current action"),
+    ])
+
+
+def _kb_mp4_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🖼 With image", callback_data="mp4:image")],
+        [InlineKeyboardButton("🎵 Audio only (black background)", callback_data="mp4:audio")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="mp4:cancel")],
+    ])
+
+
+async def cmd_mp4c(update: Update, context) -> int:
+    """Start the MP3 → MP4 converter flow."""
+    if not MP4_AVAILABLE:
+        await update.message.reply_text("❌ MP4 converter is temporarily unavailable.")
+        return ConversationHandler.END
+    context.user_data["mp4_image_path"] = None
+    await update.message.reply_text(
+        "🎬 *MP3 → MP4 Converter*\n\n"
+        "Do you want a cover image?",
+        reply_markup=_kb_mp4_menu(),
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_MP4_MENU
+
+
+async def on_mp4_menu(update: Update, context) -> int:
+    q = update.callback_query
+    await q.answer()
+    choice = q.data.split(":", 1)[1]
+    if choice == "cancel":
+        await q.edit_message_text("❌ Cancelled.")
+        context.user_data.clear()
+        return ConversationHandler.END
+    if choice == "image":
+        await q.edit_message_text(
+            "🖼 *Send me the cover image* (photo or image file)\n_(or /cancel)_",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return S_MP4_IMAGE
+    await q.edit_message_text(
+        "🎵 *Send me the MP3* (audio or file)\n_(or /cancel)_",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_MP4_AUDIO
+
+
+async def on_mp4_image(update: Update, context) -> int:
+    msg = update.message
+    file_id = None
+    if msg.photo:
+        file_id = msg.photo[-1].file_id
+    elif msg.document and (msg.document.mime_type or "").startswith("image"):
+        file_id = msg.document.file_id
+    if not file_id:
+        await msg.reply_text("❌ Send a valid image (photo or image file), or /cancel")
+        return S_MP4_IMAGE
+    f = await context.bot.get_file(file_id)
+    fd, path = tempfile.mkstemp(suffix=".jpg")
+    os.close(fd)
+    await f.download_to_drive(path)
+    context.user_data["mp4_image_path"] = path
+    await msg.reply_text(
+        "✅ Image received.\n\n🎵 *Now send me the MP3* (audio or file)\n_(or /cancel)_",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_MP4_AUDIO
+
+
+async def on_mp4_audio(update: Update, context) -> int:
+    msg = update.message
+    file_id = None
+    fname = "audio.mp3"
+    if msg.audio:
+        file_id = msg.audio.file_id
+        fname = msg.audio.file_name or fname
+    elif msg.voice:
+        file_id = msg.voice.file_id
+    elif msg.document and (
+        (msg.document.mime_type or "").startswith("audio")
+        or (msg.document.file_name or "").lower().endswith((".mp3", ".wav", ".m4a", ".ogg", ".flac"))
+    ):
+        file_id = msg.document.file_id
+        fname = msg.document.file_name or fname
+    if not file_id:
+        await msg.reply_text("❌ Send a valid audio file (MP3), or /cancel")
+        return S_MP4_AUDIO
+
+    status = await msg.reply_text("🎬 Converting to MP4… ⏳")
+    image_path = context.user_data.get("mp4_image_path")
+    audio_path = out_path = None
+    try:
+        f = await context.bot.get_file(file_id)
+        ext = os.path.splitext(fname)[1] or ".mp3"
+        fd, audio_path = tempfile.mkstemp(suffix=ext)
+        os.close(fd)
+        await f.download_to_drive(audio_path)
+
+        out_path = await asyncio.get_event_loop().run_in_executor(
+            None, convert_to_mp4, audio_path, image_path, None
+        )
+        with open(out_path, "rb") as vid:
+            await msg.reply_video(vid, caption="✅ Here is your MP4!", supports_streaming=True)
+        try:
+            await status.delete()
+        except Exception:
+            pass
+    except Exception as e:
+        await status.edit_text(f"❌ Conversion failed: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+    finally:
+        for p in (image_path, audio_path, out_path):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+        context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def on_mp4_cancel(update: Update, context) -> int:
+    p = context.user_data.get("mp4_image_path")
+    if p and os.path.exists(p):
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+    context.user_data.clear()
+    await update.message.reply_text("❌ Cancelled.")
+    return ConversationHandler.END
+
+
 def main():
     if not WAVESPEED_API_KEY:
         logger.error("WAVESPEED_API_KEY not set!")
@@ -2307,6 +2468,7 @@ def main():
         Application.builder()
         .token(BOT_TOKEN)
         .concurrent_updates(True)   # each user processed in parallel, no queue
+        .post_init(_post_init)      # register the "/" command suggestion menu
         .build()
     )
     
@@ -2342,7 +2504,8 @@ def main():
     app.add_handler(conv)
 
     conv_3d = ConversationHandler(
-        entry_points=[CommandHandler("trappist3d", cmd_trappist3d)],
+        entry_points=[CommandHandler("3d", cmd_trappist3d),
+                      CommandHandler("trappist3d", cmd_trappist3d)],
         states={
             S_3D_MENU: [CallbackQueryHandler(on_3d_menu, pattern=r"^3d:")],
             S_3D_IMAGE: [MessageHandler(filters.PHOTO, on_3d_image),
@@ -2354,6 +2517,23 @@ def main():
         per_chat=True,
     )
     app.add_handler(conv_3d)
+
+    conv_mp4 = ConversationHandler(
+        entry_points=[CommandHandler("mp4c", cmd_mp4c)],
+        states={
+            S_MP4_MENU: [CallbackQueryHandler(on_mp4_menu, pattern=r"^mp4:")],
+            S_MP4_IMAGE: [MessageHandler(filters.PHOTO | filters.Document.IMAGE, on_mp4_image),
+                          CommandHandler("cancel", on_mp4_cancel)],
+            S_MP4_AUDIO: [MessageHandler(
+                              filters.AUDIO | filters.VOICE | filters.Document.AUDIO | filters.Document.ALL,
+                              on_mp4_audio),
+                          CommandHandler("cancel", on_mp4_cancel)],
+        },
+        fallbacks=[CommandHandler("cancel", on_mp4_cancel)],
+        per_user=True,
+        per_chat=True,
+    )
+    app.add_handler(conv_mp4)
 
     # Save/Share gallery callbacks (must be before other handlers to avoid conflicts)
     app.add_handler(CallbackQueryHandler(on_save_asset, pattern=r"^save:"))
