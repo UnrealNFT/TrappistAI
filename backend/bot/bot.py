@@ -73,7 +73,7 @@ except Exception as e:
 
 # Web research: Jina Reader (any URL) + GitHub search/trending
 try:
-    from web_research import jina_fetch, github_search, github_trending
+    from web_research import jina_fetch, github_search, github_trending, web_news, has_info_intent
     WEB_RESEARCH_AVAILABLE = True
 except Exception as e:
     print(f"⚠️ Web research not available: {e}")
@@ -2302,6 +2302,31 @@ async def on_free_message(update: Update, context) -> None:
                     logger.info("🌐 Injected web page content (Jina)")
         except Exception as e:
             logger.error("❌ Web fetch failed: %s", e)
+
+        # General web news for ANY topic (people, teams, events) when it's an info
+        # question and we have NO crypto/github/web context yet → keeps the bot up to date.
+        try:
+            if (not price_context and has_info_intent(prompt)
+                    and "github" not in prompt_lower):
+                skip = {
+                    "parle", "moi", "de", "du", "des", "le", "la", "les", "que", "peux",
+                    "peut", "tu", "me", "dire", "sur", "penses", "quoi", "neuf", "info",
+                    "infos", "actu", "actualité", "actualite", "raconte", "dis", "un", "une",
+                    "cest", "est", "qui", "sont", "tell", "about", "who", "is", "what", "new",
+                    "news", "the", "a", "of", "on", "stp", "et",
+                }
+                words = [w for w in re.findall(r"[a-zA-Z0-9À-ÿ$]{2,}", prompt)
+                         if w.lower() not in skip]
+                topic = " ".join(words[:5]).strip()
+                if topic:
+                    wn = await asyncio.get_event_loop().run_in_executor(
+                        None, web_news, topic, 5, "en-US"
+                    )
+                    if wn:
+                        price_context = (price_context + "\n\n" + wn) if price_context else wn
+                        logger.info("🌍 Injected general web news for %r", topic)
+        except Exception as e:
+            logger.error("❌ Web news failed: %s", e)
     
     logger.info(f"📝 User {uid} message: {prompt[:50]}")
     logger.info(f"🔍 NEWS_AVAILABLE: {NEWS_AVAILABLE}")

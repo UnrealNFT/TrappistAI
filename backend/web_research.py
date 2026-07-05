@@ -13,8 +13,10 @@ import re
 import time
 import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote_plus
 
 import requests
+import feedparser
 
 logger = logging.getLogger(__name__)
 
@@ -109,4 +111,46 @@ def github_trending(topic: str = "", days: int = 14, limit: int = 6) -> str:
             return f"GITHUB TRENDING{label} — top new repos (last {days}d):\n" + body
     except Exception as e:
         logger.warning("GitHub trending failed: %s", e)
+    return None
+
+
+# ─── General web/news search (ANY topic, not just crypto) ────────────────────
+
+# Info-seeking intent triggers (FR/EN)
+_INFO_TRIGGERS = (
+    "parle moi de", "parle-moi de", "que peux tu", "que peut tu", "que penses tu de",
+    "c'est quoi", "cest quoi", "qui est", "qui sont", "quoi de neuf", "info sur",
+    "infos sur", "actu de", "actualité", "actualite", "raconte", "dis moi",
+    "tell me about", "what about", "who is", "what is", "what's new", "news about",
+)
+
+
+def has_info_intent(text: str) -> bool:
+    low = text.lower()
+    return any(t in low for t in _INFO_TRIGGERS)
+
+
+def web_news(query: str, limit: int = 5, lang: str = "en-US") -> str:
+    """Recent news about ANY topic via Google News RSS (people, teams, events...).
+    Returns a context block with sources, or None."""
+    if not query:
+        return None
+    q = quote_plus(query)
+    url = f"https://news.google.com/rss/search?q={q}&hl={lang}&gl=US&ceid=US:en"
+    try:
+        feed = feedparser.parse(url)
+        items = []
+        for e in feed.entries[:limit]:
+            title = str(getattr(e, "title", "")).strip()
+            if not title:
+                continue
+            link = str(getattr(e, "link", ""))
+            items.append(f"- {title} {link}".strip())
+        if items:
+            return (
+                f"WEB NEWS about '{query}' (Google News, recent — use for up-to-date facts):\n"
+                + "\n".join(items[:limit])
+            )
+    except Exception as e:
+        logger.warning("web_news failed for %r: %s", query, e)
     return None
