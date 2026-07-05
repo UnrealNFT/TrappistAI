@@ -564,4 +564,62 @@ def contract_context(text: str) -> str:
     return dexscreener_by_address(addr)
 
 
+# ─── Verified official links for named coins (CoinGecko /coins/{id}) ──────────
+
+COINGECKO_COIN = "https://api.coingecko.com/api/v3/coins/{id}"
+_SOCIAL_CACHE = {}  # cid -> (ts, context_str_or_None)
+
+
+def coin_socials(cid: str) -> str:
+    """Official verified links (website, X, Telegram, Reddit) for a CoinGecko id.
+    Cached 6h. Returns a context block or None."""
+    now = time.time()
+    c = _SOCIAL_CACHE.get(cid)
+    if c and now - c[0] < 21600:
+        return c[1]
+    ctx = None
+    try:
+        r = requests.get(
+            COINGECKO_COIN.format(id=cid),
+            params={
+                "localization": "false", "tickers": "false", "market_data": "false",
+                "community_data": "false", "developer_data": "false", "sparkline": "false",
+            },
+            timeout=12,
+        )
+        r.raise_for_status()
+        links = r.json().get("links", {}) or {}
+        sym = _display_symbol(cid)
+        lines = []
+        home = next((u for u in (links.get("homepage") or []) if u), None)
+        if home:
+            lines.append(f"Website: {home}")
+        tw = links.get("twitter_screen_name")
+        if tw:
+            lines.append(f"X/Twitter: https://x.com/{tw}")
+        tg = links.get("telegram_channel_identifier")
+        if tg:
+            lines.append(f"Telegram: https://t.me/{tg}")
+        reddit = links.get("subreddit_url")
+        if reddit and reddit != "https://www.reddit.com":
+            lines.append(f"Reddit: {reddit}")
+        if lines:
+            ctx = (
+                f"OFFICIAL LINKS for {sym} (CoinGecko, verified — use ONLY these, never invent):\n"
+                + "\n".join(lines)
+            )
+    except Exception as e:
+        logger.warning("CoinGecko socials failed for %s: %s", cid, e)
+    _SOCIAL_CACHE[cid] = (now, ctx)
+    return ctx
+
+
+def socials_context(ids: list) -> str:
+    """Official links block for the first coin id, or None."""
+    if not ids:
+        return None
+    return coin_socials(ids[0])
+
+
+
 

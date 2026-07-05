@@ -77,7 +77,7 @@ try:
         format_prices, detect_coins, has_price_intent,
         resolve_context, should_resolve, news_query,
         history_context, contract_context, find_contract_address,
-        coin_name,
+        coin_name, socials_context,
     )
     PRICES_AVAILABLE = True
 except ImportError as e:
@@ -526,7 +526,11 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
         "If asked who you are, answer 'I am TrappistAI' with pride. "
         "You CAN and SHOULD share links, URLs, website/Twitter(X)/Telegram links and sources whenever they "
         "are provided to you in the context below. NEVER refuse to share a link that is given to you — "
-        "quote it directly. Always cite your sources with their links."
+        "quote it directly. Always cite your sources with their links. "
+        "CRITICAL ANTI-HALLUCINATION RULE: ONLY share links that are EXPLICITLY present in the context below. "
+        "You must NEVER invent, guess or recall a website/X/Twitter/Telegram link from memory. "
+        "If a specific link (e.g. a project's Telegram) is NOT in the context, clearly say you don't have "
+        "the verified official link rather than inventing one — inventing a link could send users to a scam."
     )
 
     # Add live price context if available (real-time, authoritative)
@@ -2204,6 +2208,18 @@ async def on_free_message(update: Update, context) -> None:
                 logger.info("📈 Injected price history context")
         except Exception as e:
             logger.error("❌ Could not fetch price history: %s", e)
+
+    # Official verified links (website / X / Telegram) for a named coin
+    if PRICES_AVAILABLE and turn_ids:
+        try:
+            soc = await asyncio.get_event_loop().run_in_executor(
+                None, socials_context, turn_ids
+            )
+            if soc:
+                price_context = (price_context + "\n\n" + soc) if price_context else soc
+                logger.info("🔗 Injected official coin links")
+        except Exception as e:
+            logger.error("❌ Could not fetch coin socials: %s", e)
 
     # X / Twitter search (when the user asks to search X / twitter)
     if X_SEARCH_AVAILABLE:
