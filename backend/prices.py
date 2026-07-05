@@ -244,6 +244,9 @@ def format_price_context(text: str) -> str:
 COINGECKO_SEARCH = "https://api.coingecko.com/api/v3/search"
 DEXSCREENER_SEARCH = "https://api.dexscreener.com/latest/dex/search"
 
+# Cache CoinGecko search resolutions (query -> id or None) to avoid rate limits
+_SEARCH_CACHE = {}
+
 # Words to ignore when guessing which token the user asked about
 _STOPWORDS = {
     "parle", "moi", "de", "du", "des", "le", "la", "les", "un", "une", "et",
@@ -255,16 +258,22 @@ _STOPWORDS = {
 
 
 def _coingecko_search(query: str) -> str:
-    """Resolve any coin name/ticker to a CoinGecko id via the search API."""
+    """Resolve any coin name/ticker to a CoinGecko id via the search API (cached)."""
+    key = query.lower().strip()
+    if key in _SEARCH_CACHE:
+        return _SEARCH_CACHE[key]
+    result = None
     try:
         r = requests.get(COINGECKO_SEARCH, params={"query": query}, timeout=10)
         r.raise_for_status()
         coins = r.json().get("coins", [])
         if coins:
-            return coins[0].get("id")
+            result = coins[0].get("id")
     except Exception as e:
         logger.warning("CoinGecko search failed for %r: %s", query, e)
-    return None
+        return None  # don't cache transient errors (e.g. 429)
+    _SEARCH_CACHE[key] = result  # cache hits AND misses (None)
+    return result
 
 
 def _dexscreener_search(query: str) -> str:
@@ -315,14 +324,18 @@ _ASK_TRIGGERS = (
 
 
 def should_resolve(text: str) -> bool:
-    """True if we should attempt dynamic coin resolution (CoinGecko/DexScreener)."""
-    words = text.lower().split()
-    if len(words) == 1 and len(words[0]) >= 2:
-        return True
+    """True if we should attempt dynamic coin resolution (CoinGecko/DexScreener).
+    Requires an explicit crypto/price/ask signal to avoid hammering the API on
+    generic chit-chat ('alors', 'ok', 'incroyable' → no search)."""
     if has_price_intent(text):
         return True
     low = text.lower()
-    return any(t in low for t in _ASK_TRIGGERS)
+    if any(t in low for t in _ASK_TRIGGERS):
+        return True
+    # A bare '$TICKER' also counts as an explicit crypto reference
+    if re.search(r"\$[a-z0-9]{2,10}", low):
+        return True
+    return False
 
 
 def resolve_context(text: str):

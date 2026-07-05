@@ -45,11 +45,13 @@ except ImportError as e:
     print(f"⚠️ News search not available: {e}")
     NEWS_AVAILABLE = False
 
-# Live on-demand RSS headlines (fallback when the news DB is empty)
+# Live on-demand RSS headlines (fallback when the news DB is empty).
+# Uses the lightweight live_news module (feedparser only) so it works even if
+# the heavy news stack (deep_translator/asyncpg) fails to import.
 try:
-    from news_fetcher import fetch_live_headlines
+    from live_news import fetch_live_headlines
     LIVE_NEWS_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     print(f"⚠️ Live headlines not available: {e}")
     LIVE_NEWS_AVAILABLE = False
 
