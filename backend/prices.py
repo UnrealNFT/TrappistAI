@@ -383,3 +383,110 @@ def news_query(text: str, ids: list = None) -> str:
     cands = _candidate_terms(text)
     return cands[0] if cands else None
 
+
+# ─── Historical price research (CoinGecko market_chart) ──────────────────────
+
+COINGECKO_CHART = "https://api.coingecko.com/api/v3/coins/{id}/market_chart"
+
+# History-question intent in FR/EN
+_HISTORY_TRIGGERS = (
+    "last time", "dernière fois", "derniere fois", "était à", "etait a",
+    "when was", "il y a", "ago", "history", "historique", "y a combien",
+    "atteint", "reached", "back then", "depuis quand", "since when",
+    "il etait", "il était",
+)
+
+_HIST_CACHE = {}  # (id, days) -> (ts, [[ms, price], ...])
+
+
+def has_history_intent(text: str) -> bool:
+    low = text.lower()
+    return any(t in low for t in _HISTORY_TRIGGERS)
+
+
+def _parse_target_price(text: str):
+    """Extract a target USD price from text like '62000', '62k', '$1.2', '0.5$'."""
+    low = text.lower().replace(",", "")
+    # 62k / 1.5k
+    m = re.search(r"(\d+(?:\.\d+)?)\s*k\b", low)
+    if m:
+        return float(m.group(1)) * 1000
+    # plain numbers (>= 0.0001), prefer ones near a $ or the largest
+    nums = re.findall(r"\$?\s*(\d+(?:\.\d+)?)", low)
+    vals = [float(x) for x in nums if x]
+    vals = [v for v in vals if v >= 0.0001]
+    return max(vals) if vals else None
+
+
+def price_history(cid: str, days: int = 365):
+    """CoinGecko daily price history: list of [timestamp_ms, price]. Cached 1h."""
+    key = (cid, days)
+    now = time.time()
+    c = _HIST_CACHE.get(key)
+    if c and now - c[0] < 3600:
+        return c[1]
+    try:
+        r = requests.get(
+            COINGECKO_CHART.format(id=cid),
+            params={"vs_currency": "usd", "days": days, "interval": "daily"},
+            timeout=15,
+        )
+        r.raise_for_status()
+        prices = r.json().get("prices", [])
+        _HIST_CACHE[key] = (now, prices)
+        return prices
+    except Exception as e:
+        logger.warning("CoinGecko history failed for %s: %s", cid, e)
+        return []
+
+
+def last_time_near(cid: str, target: float, tol_pct: float = 3.0, days: int = 365):
+    """Most recent date the coin traded within tol_pct% of `target`. Returns dict or None."""
+    prices = price_history(cid, days)
+    if not prices:
+        return None
+    tol = abs(target) * tol_pct / 100.0
+    from datetime import datetime, timezone
+    for ts, p in reversed(prices):  # most recent first
+        if abs(p - target) <= tol:
+            d = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+            return {"date": d.strftime("%Y-%m-%d"), "price": p, "target": target}
+    # Not found in window → report min/max reached instead
+    lows = min(prices, key=lambda x: x[1])
+    highs = max(prices, key=lambda x: x[1])
+    return {
+        "not_found": True, "target": target, "days": days,
+        "low": lows[1], "high": highs[1],
+    }
+
+
+def history_context(text: str, ids: list = None) -> str:
+    """If the user asks a historical price question with a target value, return a
+    context block from CoinGecko history. Returns None if not applicable."""
+    if not has_history_intent(text):
+        return None
+    if not ids:
+        ids = detect_coins(text)
+    if not ids:
+        return None
+    cid = ids[0]
+    sym = _display_symbol(cid)
+    target = _parse_target_price(text)
+    if target is None:
+        return None
+    res = last_time_near(cid, target, tol_pct=3.0, days=365)
+    if not res:
+        return None
+    if res.get("not_found"):
+        return (
+            f"PRICE HISTORY ({sym}, CoinGecko, last 365 days): {sym} did NOT trade near "
+            f"{_fmt_usd(target)} in the last year. 1y range: low {_fmt_usd(res['low'])}, "
+            f"high {_fmt_usd(res['high'])}."
+        )
+    return (
+        f"PRICE HISTORY ({sym}, CoinGecko): the most recent time {sym} was near "
+        f"{_fmt_usd(target)} was on {res['date']} (actual {_fmt_usd(res['price'])}). "
+        f"State this date and note it's based on daily historical data."
+    )
+
+

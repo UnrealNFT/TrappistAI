@@ -68,6 +68,7 @@ try:
     from prices import (
         format_prices, detect_coins, has_price_intent,
         resolve_context, should_resolve, news_query,
+        history_context,
     )
     PRICES_AVAILABLE = True
 except ImportError as e:
@@ -2171,6 +2172,18 @@ async def on_free_message(update: Update, context) -> None:
                 logger.info("💰 Injected live price context")
         except Exception as e:
             logger.error("❌ Could not fetch price context: %s", e)
+
+    # Historical price research (e.g. "when was BTC last at 62k?")
+    if PRICES_AVAILABLE:
+        try:
+            hist = await asyncio.get_event_loop().run_in_executor(
+                None, history_context, prompt, turn_ids or None
+            )
+            if hist:
+                price_context = (price_context + "\n\n" + hist) if price_context else hist
+                logger.info("📈 Injected price history context")
+        except Exception as e:
+            logger.error("❌ Could not fetch price history: %s", e)
     
     logger.info(f"📝 User {uid} message: {prompt[:50]}")
     logger.info(f"🔍 NEWS_AVAILABLE: {NEWS_AVAILABLE}")
