@@ -652,7 +652,13 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
         "CRITICAL ANTI-HALLUCINATION RULE: ONLY share links that are EXPLICITLY present in the context below. "
         "You must NEVER invent, guess or recall a website/X/Twitter/Telegram link from memory. "
         "If a specific link (e.g. a project's Telegram) is NOT in the context, clearly say you don't have "
-        "the verified official link rather than inventing one — inventing a link could send users to a scam."
+        "the verified official link rather than inventing one — inventing a link could send users to a scam. "
+        "NEVER invent NUMBERS or FACTS either: do NOT state a crypto price, market cap, percentage, date, "
+        "all-time high, 'new record', partnership, integration or announcement unless it is EXPLICITLY written "
+        "in the LIVE context below. You do NOT know current prices from memory (e.g. CSPR, BTC) — if no live "
+        "price/news is provided, say you don't have the live figure right now and point them to CoinGecko or "
+        "the /news command. Inventing a price or fake news is strictly forbidden — better to admit you don't "
+        "have it than to make something up."
     )
 
     # Add live price context if available (real-time, authoritative)
@@ -2276,8 +2282,9 @@ async def on_free_message(update: Update, context) -> None:
     prompt_lower = prompt.lower()
     # Generic "latest news" style request (no specific coin needed)
     generic_news = any(k in prompt_lower for k in (
-        "news", "actu", "nouvelles", "quoi de neuf", "latest", "headlines",
-        "derniere", "dernière", "actus",
+        "news", "actu", "nouvelle", "nouvelles", "quoi de neuf", "latest", "headlines",
+        "dernier", "derniere", "dernière", "actus", "resume", "résumé", "recap",
+        "récap", "summary", "update", "what's happening", "whats happening",
     ))
 
     # Automatic news context injection for crypto-related questions
