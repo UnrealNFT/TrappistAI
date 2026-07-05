@@ -1,7 +1,7 @@
 """
 TrappistAI Bot - Full Suno-like flow: Style -> Voice -> Theme -> Lyrics (AI or custom) -> Generate
 """
-import asyncio, logging, os, sqlite3, tempfile, urllib.parse
+import asyncio, logging, os, re, sqlite3, tempfile, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import requests as req
@@ -63,12 +63,21 @@ except ImportError as e:
     print(f"⚠️ MP4 converter not available: {e}")
     MP4_AVAILABLE = False
 
+# X / Twitter search (via Nitter, no API key)
+try:
+    from x_search import search_x
+    X_SEARCH_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ X search not available: {e}")
+    X_SEARCH_AVAILABLE = False
+
 # Import real-time crypto prices (CoinGecko, no key needed)
 try:
     from prices import (
         format_prices, detect_coins, has_price_intent,
         resolve_context, should_resolve, news_query,
         history_context, contract_context, find_contract_address,
+        coin_name,
     )
     PRICES_AVAILABLE = True
 except ImportError as e:
@@ -514,7 +523,10 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
         "Your training stopped in 2023 but we're in 2026, NEVER say we're in 2023. "
         "Detect the user's language and always respond in that same language. "
         "If the language is unclear or the message is very short (a single word, a number, or a code), DEFAULT TO ENGLISH. "
-        "If asked who you are, answer 'I am TrappistAI' with pride."
+        "If asked who you are, answer 'I am TrappistAI' with pride. "
+        "You CAN and SHOULD share links, URLs, website/Twitter(X)/Telegram links and sources whenever they "
+        "are provided to you in the context below. NEVER refuse to share a link that is given to you — "
+        "quote it directly. Always cite your sources with their links."
     )
 
     # Add live price context if available (real-time, authoritative)
@@ -2192,6 +2204,33 @@ async def on_free_message(update: Update, context) -> None:
                 logger.info("📈 Injected price history context")
         except Exception as e:
             logger.error("❌ Could not fetch price history: %s", e)
+
+    # X / Twitter search (when the user asks to search X / twitter)
+    if X_SEARCH_AVAILABLE:
+        x_intent = any(k in prompt_lower for k in (
+            "sur x", "sur twitter", "on x", "on twitter", "twitter", "tweet",
+            "cherche x", "recherche x", "search x", "check x", "scan x",
+        ))
+        if x_intent:
+            # term = last coin discussed, else the longest word that isn't an X-intent word
+            term = None
+            if turn_ids:
+                term = coin_name(turn_ids[0])
+            if not term:
+                skip = {"sur", "x", "twitter", "on", "cherche", "recherche", "search",
+                        "check", "scan", "tweet", "le", "la", "de", "du", "moi", "stp"}
+                words = [w for w in re.findall(r"[a-zA-Z0-9$]{2,}", prompt) if w.lower() not in skip]
+                term = words[0] if words else None
+            if term:
+                try:
+                    xres = await asyncio.get_event_loop().run_in_executor(
+                        None, search_x, term.lstrip("$"), 5
+                    )
+                    if xres:
+                        price_context = (price_context + "\n\n" + xres) if price_context else xres
+                        logger.info("🐦 Injected X search context")
+                except Exception as e:
+                    logger.error("❌ X search failed: %s", e)
     
     logger.info(f"📝 User {uid} message: {prompt[:50]}")
     logger.info(f"🔍 NEWS_AVAILABLE: {NEWS_AVAILABLE}")
