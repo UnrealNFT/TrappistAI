@@ -142,6 +142,12 @@ _CHITCHAT_FILLER = {
     "tchao", "ciao", "bye", "au", "revoir", "quoi", "de", "the", "and", "et",
     "un", "une", "le", "la", "les", "des", "du", "on", "of", "to", "in", "is",
     "beaucoup", "bcp", "trop", "vraiment", "much", "very", "so", "ptn", "putain",
+    # slang / interjections that must NOT trigger a web search
+    "bro", "frero", "frère", "frere", "mec", "gg", "bg", "ded", "dead", "rip",
+    "wtf", "omg", "oki", "okok", "dac", "daccord", "ouais", "ouai", "nan", "si",
+    "hmm", "hein", "bah", "ben", "euh", "tkt", "tqt", "jpp", "jsp", "osef", "mgl",
+    "wallah", "zbi", "bref", "grave", "carrément", "carrement", "ptdr", "xd", "mdrr",
+    "yep", "nope", "yup", "nah", "kk", "kékou", "kikou", "slt", "cava",
 }
 # Words stripped when extracting the topic from a question.
 _TOPIC_STRIP = {
@@ -216,7 +222,9 @@ def _should_web_search(prompt: str) -> bool:
     if has_proper:
         return True
     # Short standalone topic phrase (e.g. "coupe du monde", "bitcoin halving").
-    return 1 <= len(meaningful) <= 4
+    # Require at least one "real" word (≥4 chars) so slang like "bro"/"ded"/"gg"
+    # doesn't waste a search.
+    return (1 <= len(meaningful) <= 4) and any(len(w) >= 4 for w in meaningful)
 
 
 # ─── Tokenization data storage (avoid callback_data length limit) ────────────
@@ -2413,7 +2421,7 @@ async def on_free_message(update: Update, context) -> None:
                 topic = _extract_topic(prompt)
                 if topic:
                     wn = await asyncio.get_event_loop().run_in_executor(
-                        None, web_news, topic, 5, "en-US"
+                        None, web_news, topic, 5, _detect_lang(prompt)
                     )
                     if wn:
                         price_context = (price_context + "\n\n" + wn) if price_context else wn

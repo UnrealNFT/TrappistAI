@@ -130,13 +130,26 @@ def has_info_intent(text: str) -> bool:
     return any(t in low for t in _INFO_TRIGGERS)
 
 
-def web_news(query: str, limit: int = 5, lang: str = "en-US") -> str:
+# Google News locale params per UI language → returns local-language results.
+_NEWS_LOCALES = {
+    "fr": ("fr", "FR", "FR:fr"),
+    "en": ("en-US", "US", "US:en"),
+    "es": ("es", "ES", "ES:es"),
+    "de": ("de", "DE", "DE:de"),
+    "it": ("it", "IT", "IT:it"),
+    "pt": ("pt-BR", "BR", "BR:pt-419"),
+}
+
+
+def web_news(query: str, limit: int = 5, lang: str = "en") -> str:
     """Recent news about ANY topic via Google News RSS (people, teams, events...).
+    `lang` (e.g. 'fr', 'en') selects the locale so a French user gets French sources.
     Returns a context block with sources, or None."""
     if not query:
         return None
     q = quote_plus(query)
-    url = f"https://news.google.com/rss/search?q={q}&hl={lang}&gl=US&ceid=US:en"
+    hl, gl, ceid = _NEWS_LOCALES.get((lang or "en")[:2].lower(), _NEWS_LOCALES["en"])
+    url = f"https://news.google.com/rss/search?q={q}&hl={hl}&gl={gl}&ceid={ceid}"
     try:
         feed = feedparser.parse(url)
         items = []
