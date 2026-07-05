@@ -152,6 +152,11 @@ _TOPIC_STRIP = {
     "on", "stp", "svp", "et", "et", "connais", "sais", "donne", "montre", "cherche",
     "recherche", "trouve", "give", "show", "find", "search", "know", "explique",
     "explain", "comment", "pourquoi", "why", "how",
+    # question words / time words / connectors so the real subject stays clean
+    "quel", "quelle", "quels", "quelles", "combien", "quand", "ou", "où", "when",
+    "where", "which", "resultat", "résultat", "result", "score", "hier", "aujourd",
+    "aujourdhui", "today", "yesterday", "match", "contre", "vs", "mais", "ce", "cette",
+    "entre", "pour", "avec", "was", "were", "did", "does", "do",
 }
 
 
@@ -162,9 +167,37 @@ def _extract_topic(prompt: str) -> str:
     return " ".join(words[:5]).strip()
 
 
+# Explicit crypto signals — only then do we run the speculative token search
+# (CoinGecko/DexScreener). Without this gate it matches ANY word to a junk token
+# (e.g. "psg" → PARIS-SAINT-GERMAIN-FAN, "mondial" → BUTTCOIN2026) and hijacks the reply.
+_CRYPTO_HINT = re.compile(
+    r"\$[a-zA-Z]{2,}"
+    r"|\b(crypto|cryptos|token|tokens|coin|coins|blockchain|defi|nft|price|prix|"
+    r"market\s?cap|mcap|chart|charts|pump|dump|hodl|altcoin|memecoin|meme\s?coin|"
+    r"listing|contract|address|wallet|onchain|on-chain|dex|liquidity|ticker|"
+    r"bullish|bearish|ath|market|trading|trade|buy|sell|achat|vente|cours)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_crypto(prompt: str) -> bool:
+    """True only when the message has a real crypto signal."""
+    return bool(_CRYPTO_HINT.search(prompt))
+
+
+# A message is a question (wants an answer we may not know) → always search.
+_QUESTION_RE = re.compile(
+    r"\?"
+    r"|\b(quel|quelle|quels|quelles|qui|quoi|comment|pourquoi|combien|quand|"
+    r"ou|où|est-?ce|resultat|résultat|score|gagne|gagné|remporte|remporté|"
+    r"what|whats|who|whom|when|where|why|how|which|result|won|winner|beat)\b",
+    re.IGNORECASE,
+)
+
+
 def _should_web_search(prompt: str) -> bool:
-    """Search-before-answer for ANY real topic. Fires on info-intent, proper nouns,
-    or short topic phrases; skips greetings/chit-chat. RSS is ~free (no Groq tokens)."""
+    """Search-before-answer for ANY real topic. Fires on info-intent, questions,
+    proper nouns, or short topic phrases; skips greetings/chit-chat. RSS is ~free."""
     words = re.findall(r"[a-zA-ZÀ-ÿ0-9$]{2,}", prompt)
     if not words:
         return False
@@ -173,6 +206,10 @@ def _should_web_search(prompt: str) -> bool:
     if not meaningful:
         return False
     if has_info_intent(prompt):
+        return True
+    # Any real question (even a long lowercase one like "quel est le resultat de
+    # france paraguay hier") → search. This is the common case that was missed.
+    if _QUESTION_RE.search(prompt):
         return True
     # Proper noun (capitalized mid-sentence or ALL-CAPS acronym like PSG) → a real subject.
     has_proper = any((w[0].isupper() or w.isupper()) for w in words)
@@ -582,6 +619,11 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
         "You love generative AI, music production, and Casper blockchain (CSPR). "
         "You remember everything we talked about in this conversation. "
         "Your training stopped in 2023 but we're in 2026, NEVER say we're in 2023. "
+        "You DO have live web access: a system searches the web/news for you before each reply "
+        "and injects the results below when relevant. So NEVER tell the user you 'can't access "
+        "real-time info' or that your 'knowledge stops in 2023'. If no live context is provided "
+        "for a current-events question, just say you couldn't pull it up right now and point them "
+        "to a reliable source — do NOT claim a hard knowledge cutoff. "
         "Detect the user's language and always respond in that same language. "
         "If the language is unclear or the message is very short (a single word, a number, or a code), DEFAULT TO ENGLISH. "
         "If asked who you are, answer 'I am TrappistAI' with pride. "
@@ -597,10 +639,15 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
     # Add live price context if available (real-time, authoritative)
     if price_context:
         system_content += (
-            "\n\n💹 **LIVE MARKET PRICES** (real-time, use these EXACT numbers):\n"
+            "\n\n�️ **LIVE REAL-TIME CONTEXT** (fetched just now from the web — this is CURRENT, "
+            "authoritative truth, more recent than your training):\n"
             f"{price_context}\n"
-            "Weave the numbers in naturally and briefly. Do NOT robotically repeat that they are 'real-time' "
-            "every message — mention it once at most. Never invent a price."
+            "RULES: Use this information to answer — it overrides your training. When it contains market "
+            "prices, use the EXACT numbers and never invent a price. When it contains WEB NEWS headlines "
+            "(sports, world events, people, any topic), answer directly from them and CITE the source link. "
+            "NEVER say you 'don't have real-time information', that you 'can't access recent news', or that "
+            "your 'data stops in 2023' when this context is present — you literally have it right here. "
+            "Do NOT robotically repeat 'real-time' every message — mention it once at most."
         )
 
     # Add news context if available
@@ -2244,9 +2291,10 @@ async def on_free_message(update: Update, context) -> None:
                     price_context = await asyncio.get_event_loop().run_in_executor(
                         None, format_prices, turn_ids
                     )
-                elif should_resolve(prompt) and not generic_news:
-                    # Unknown coin (e.g. EGLD) → dynamic search CoinGecko + DexScreener.
-                    # Skipped for generic news questions to avoid resolving junk tokens.
+                elif should_resolve(prompt) and not generic_news and _looks_crypto(prompt):
+                    # Unknown coin (e.g. $EGLD) → dynamic search CoinGecko + DexScreener.
+                    # Gated on a real crypto signal so we never resolve junk tokens for
+                    # general topics ("psg", "france paraguay", "mondial 2026"...).
                     price_context, ids = await asyncio.get_event_loop().run_in_executor(
                         None, resolve_context, prompt
                     )
@@ -2381,7 +2429,12 @@ async def on_free_message(update: Update, context) -> None:
         # NEVER pass the raw sentence (French words poison plainto_tsquery → 0 matches).
         news_q = news_query(prompt, turn_ids) if turn_ids else None
 
-        if news_q or generic_news:
+        # Only pull CRYPTO headlines when the question is actually crypto-related.
+        # ("France Paraguay news" must NOT get crypto news — the web search handled it.)
+        crypto_news_wanted = bool(news_q) or (
+            generic_news and (_looks_crypto(prompt) or bool(turn_ids))
+        )
+        if crypto_news_wanted:
             # 1) Try the news DB (populated by the fetcher worker)
             if NEWS_AVAILABLE:
                 try:
