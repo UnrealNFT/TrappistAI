@@ -393,18 +393,24 @@ def _ollama_chat(user_id: int, prompt: str) -> str:
 
 def _groq_complete(messages: list, max_tokens: int = 1000) -> str:
     import time
-    for attempt in range(2):
+    last = None
+    for attempt in range(3):
         r = req.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
             json={"model": GROQ_MODEL, "messages": messages, "temperature": 0.85, "max_tokens": max_tokens},
             timeout=30,
         )
-        if r.status_code == 429 and attempt == 0:
-            time.sleep(12)
+        if r.status_code == 429:
+            last = r
+            time.sleep(4 * (attempt + 1))  # 4s, 8s backoff
             continue
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
+    # Retries exhausted on rate limit
+    if last is not None:
+        last.raise_for_status()
+    raise RuntimeError("Groq request failed")
 
 
 def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None) -> str:
@@ -2066,7 +2072,10 @@ async def cmd_text(update: Update, context) -> None:
         answer = await asyncio.get_event_loop().run_in_executor(None, _groq_chat, update.effective_user.id, prompt)
         await msg.edit_text(f"🤖 {answer[:4000]}")
     except Exception as e:
-        await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        if "429" in str(e):
+            await msg.edit_text("⏳ I'm getting a lot of requests right now — try again in a few seconds 🙏")
+        else:
+            await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
 
 
 async def on_free_message(update: Update, context) -> None:
@@ -2182,7 +2191,10 @@ async def on_free_message(update: Update, context) -> None:
         )
         await msg.edit_text(f"🤖 {answer[:4000]}")
     except Exception as e:
-        await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
+        if "429" in str(e):
+            await msg.edit_text("⏳ I'm getting a lot of requests right now — try again in a few seconds 🙏")
+        else:
+            await msg.edit_text(f"❌ Error: `{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
 
 
 async def cmd_myid(update: Update, context) -> None:
