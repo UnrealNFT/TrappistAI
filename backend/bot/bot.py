@@ -104,6 +104,10 @@ OLLAMA_URL        = os.getenv("OLLAMA_URL",   "http://localhost:11434")
 OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL", "llama3.2")
 GROQ_KEY          = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL        = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
+# Lighter model with MUCH higher free-tier rate limits (30k TPM vs ~12k for 70B).
+# Used as an automatic fallback when the primary model is rate-limited (429),
+# so the bot always answers instead of showing a "too many requests" error.
+GROQ_FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant")
 # Multi-key rotation: GROQ_API_KEYS="key1,key2,key3" (falls back to GROQ_API_KEY)
 GROQ_KEYS = [k.strip() for k in os.getenv("GROQ_API_KEYS", "").split(",") if k.strip()]
 if not GROQ_KEYS and GROQ_KEY:
@@ -534,24 +538,31 @@ def _groq_complete(messages: list, max_tokens: int = 1000, service: bool = False
     else:
         start = _groq_key_idx
         _groq_key_idx = (_groq_key_idx + 1) % n
+    # Try the primary (quality) model first; if every key is rate-limited, fall
+    # back to the lighter high-throughput model so the user still gets an answer.
+    models = [GROQ_MODEL]
+    if GROQ_FALLBACK_MODEL and GROQ_FALLBACK_MODEL != GROQ_MODEL:
+        models.append(GROQ_FALLBACK_MODEL)
     last = None
-    for cycle in range(2):  # try all keys, then one more pass after a short pause
-        for i in range(n):
-            key = keys[(start + i) % n]
-            r = req.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json={"model": GROQ_MODEL, "messages": messages, "temperature": 0.85, "max_tokens": max_tokens},
-                timeout=30,
-            )
-            if r.status_code == 429:
-                last = r
-                continue  # this key is rate-limited → try the next one
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip()
-        # every key returned 429 this cycle → brief backoff then retry once
-        if last is not None and cycle == 0:
-            time.sleep(5)
+    for model in models:
+        for cycle in range(2):  # try all keys, then one more pass after a short pause
+            for i in range(n):
+                key = keys[(start + i) % n]
+                r = req.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    json={"model": model, "messages": messages, "temperature": 0.85, "max_tokens": max_tokens},
+                    timeout=30,
+                )
+                if r.status_code == 429:
+                    last = r
+                    continue  # this key is rate-limited → try the next one
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"].strip()
+            # every key returned 429 this cycle → brief backoff then retry once
+            if last is not None and cycle == 0:
+                time.sleep(3)
+        # primary model fully rate-limited → loop moves to the fallback model
     if last is not None:
         last.raise_for_status()
     raise RuntimeError("Groq request failed")
