@@ -129,6 +129,59 @@ _conv_history: dict[int, list] = {}  # user_id → derniers messages
 _last_msg: dict[int, float] = {}     # user_id → timestamp dernière requête chat
 _last_coins: dict[int, list] = {}    # user_id → dernières cryptos évoquées (pour "prix ?" en suivi)
 
+# ─── General web-search gating (search-before-answer for ANY topic) ──────────
+# Pure conversational words: if nothing but these remain, it's chit-chat → no search.
+_CHITCHAT_FILLER = {
+    "salut", "bonjour", "bonsoir", "coucou", "yo", "hello", "hi", "hey", "cc",
+    "merci", "thanks", "thx", "stp", "svp", "please", "ok", "okay", "oui", "non",
+    "yes", "no", "yep", "nope", "lol", "mdr", "ptdr", "haha", "hahaha", "bref",
+    "cool", "super", "genial", "génial", "nice", "great", "bien", "vas", "va",
+    "ça", "ca", "comment", "tu", "toi", "moi", "je", "es", "est", "suis", "être",
+    "etre", "ça va", "how", "are", "you", "u", "good", "fine", "wsh", "wesh",
+    "bonne", "journée", "journee", "nuit", "soir", "matin", "à", "a", "plus",
+    "tchao", "ciao", "bye", "au", "revoir", "quoi", "de", "the", "and", "et",
+    "un", "une", "le", "la", "les", "des", "du", "on", "of", "to", "in", "is",
+    "beaucoup", "bcp", "trop", "vraiment", "much", "very", "so", "ptn", "putain",
+}
+# Words stripped when extracting the topic from a question.
+_TOPIC_STRIP = {
+    "parle", "moi", "de", "du", "des", "le", "la", "les", "que", "peux", "peut",
+    "tu", "me", "dire", "sur", "penses", "quoi", "neuf", "info", "infos", "actu",
+    "actualité", "actualite", "raconte", "dis", "un", "une", "cest", "est", "qui",
+    "sont", "tell", "about", "who", "is", "what", "new", "news", "the", "a", "of",
+    "on", "stp", "svp", "et", "et", "connais", "sais", "donne", "montre", "cherche",
+    "recherche", "trouve", "give", "show", "find", "search", "know", "explique",
+    "explain", "comment", "pourquoi", "why", "how",
+}
+
+
+def _extract_topic(prompt: str) -> str:
+    """Pull the meaningful subject out of a message (strip question/filler words)."""
+    words = [w for w in re.findall(r"[a-zA-Z0-9À-ÿ$]{2,}", prompt)
+             if w.lower() not in _TOPIC_STRIP]
+    return " ".join(words[:5]).strip()
+
+
+def _should_web_search(prompt: str) -> bool:
+    """Search-before-answer for ANY real topic. Fires on info-intent, proper nouns,
+    or short topic phrases; skips greetings/chit-chat. RSS is ~free (no Groq tokens)."""
+    words = re.findall(r"[a-zA-ZÀ-ÿ0-9$]{2,}", prompt)
+    if not words:
+        return False
+    # Chit-chat: nothing meaningful once conversational filler is removed.
+    meaningful = [w for w in words if w.lower() not in _CHITCHAT_FILLER]
+    if not meaningful:
+        return False
+    if has_info_intent(prompt):
+        return True
+    # Proper noun (capitalized mid-sentence or ALL-CAPS acronym like PSG) → a real subject.
+    has_proper = any((w[0].isupper() or w.isupper()) for w in words)
+    if has_proper:
+        return True
+    # Short standalone topic phrase (e.g. "coupe du monde", "bitcoin halving").
+    return 1 <= len(meaningful) <= 4
+
+
 # ─── Tokenization data storage (avoid callback_data length limit) ────────────
 _tokenize_data: dict[str, dict] = {}  # short_id → {type, url, prompt}
 _tokenize_counter = 0
@@ -2303,21 +2356,13 @@ async def on_free_message(update: Update, context) -> None:
         except Exception as e:
             logger.error("❌ Web fetch failed: %s", e)
 
-        # General web news for ANY topic (people, teams, events) when it's an info
-        # question and we have NO crypto/github/web context yet → keeps the bot up to date.
+        # General web news for ANY topic (people, teams, events, subjects) —
+        # search-before-answer so the bot is always real-time, not stuck on stale
+        # training data. RSS is ~free (no Groq tokens), so we search broadly.
         try:
-            if (not price_context and has_info_intent(prompt)
-                    and "github" not in prompt_lower):
-                skip = {
-                    "parle", "moi", "de", "du", "des", "le", "la", "les", "que", "peux",
-                    "peut", "tu", "me", "dire", "sur", "penses", "quoi", "neuf", "info",
-                    "infos", "actu", "actualité", "actualite", "raconte", "dis", "un", "une",
-                    "cest", "est", "qui", "sont", "tell", "about", "who", "is", "what", "new",
-                    "news", "the", "a", "of", "on", "stp", "et",
-                }
-                words = [w for w in re.findall(r"[a-zA-Z0-9À-ÿ$]{2,}", prompt)
-                         if w.lower() not in skip]
-                topic = " ".join(words[:5]).strip()
+            if (WEB_RESEARCH_AVAILABLE and not price_context
+                    and "github" not in prompt_lower and _should_web_search(prompt)):
+                topic = _extract_topic(prompt)
                 if topic:
                     wn = await asyncio.get_event_loop().run_in_executor(
                         None, web_news, topic, 5, "en-US"
