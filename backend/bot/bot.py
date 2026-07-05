@@ -71,6 +71,14 @@ except Exception as e:
     print(f"⚠️ X search not available: {e}")
     X_SEARCH_AVAILABLE = False
 
+# Web research: Jina Reader (any URL) + GitHub search/trending
+try:
+    from web_research import jina_fetch, github_search, github_trending
+    WEB_RESEARCH_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Web research not available: {e}")
+    WEB_RESEARCH_AVAILABLE = False
+
 # Import real-time crypto prices (CoinGecko, no key needed)
 try:
     from prices import (
@@ -2247,6 +2255,53 @@ async def on_free_message(update: Update, context) -> None:
                         logger.info("🐦 Injected X search context")
                 except Exception as e:
                     logger.error("❌ X search failed: %s", e)
+
+    # GitHub search / trending (dev focus) + generic web fetch via Jina Reader
+    if WEB_RESEARCH_AVAILABLE:
+        gh_intent = any(k in prompt_lower for k in (
+            "github", "repo ", "repos", "open source", "open-source",
+            "projet open source", "librairie", "library", "sdk",
+        ))
+        gh_trend = any(k in prompt_lower for k in (
+            "tendance", "trending", "trend", "populaire sur github", "dernières tendance",
+        ))
+        try:
+            if gh_intent or (gh_trend and "github" in prompt_lower):
+                if gh_trend:
+                    topic = "crypto" if any(k in prompt_lower for k in ("crypto", "blockchain", "web3")) else ""
+                    ghres = await asyncio.get_event_loop().run_in_executor(
+                        None, github_trending, topic, 14, 6
+                    )
+                else:
+                    # strip filler words to get the search query
+                    skip = {"cherche", "sur", "github", "un", "une", "projet", "projets",
+                            "open", "source", "recent", "récent", "moi", "donne", "le", "la",
+                            "de", "des", "du", "qui", "pour", "avec", "trouve", "repo", "repos"}
+                    words = [w for w in re.findall(r"[a-zA-Z0-9+.#-]{2,}", prompt) if w.lower() not in skip]
+                    ghq = " ".join(words[:6]).strip()
+                    ghres = await asyncio.get_event_loop().run_in_executor(
+                        None, github_search, ghq or prompt, 5,
+                        60 if ("recent" in prompt_lower or "récent" in prompt_lower) else 0,
+                    )
+                if ghres:
+                    price_context = (price_context + "\n\n" + ghres) if price_context else ghres
+                    logger.info("🐙 Injected GitHub results")
+        except Exception as e:
+            logger.error("❌ GitHub search failed: %s", e)
+
+        # Generic URL in the message (not a contract) → read it via Jina Reader
+        try:
+            m = re.search(r"https?://[^\s]+", prompt)
+            if m and not find_contract_address(prompt):
+                page = await asyncio.get_event_loop().run_in_executor(
+                    None, jina_fetch, m.group(0), 2200
+                )
+                if page:
+                    block = f"WEB PAGE CONTENT (source: {m.group(0)}):\n{page}"
+                    price_context = (price_context + "\n\n" + block) if price_context else block
+                    logger.info("🌐 Injected web page content (Jina)")
+        except Exception as e:
+            logger.error("❌ Web fetch failed: %s", e)
     
     logger.info(f"📝 User {uid} message: {prompt[:50]}")
     logger.info(f"🔍 NEWS_AVAILABLE: {NEWS_AVAILABLE}")

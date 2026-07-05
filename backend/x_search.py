@@ -23,8 +23,8 @@ def _clean(t: str) -> str:
 
 
 def search_x(query: str, limit: int = 5) -> Optional[str]:
-    """Search recent tweets for `query`. Returns a context string, or None if
-    every Nitter instance is unreachable."""
+    """Search recent tweets for `query`. Tries Nitter first, then falls back to
+    Jina Reader on x.com search (more reliable). Returns a context string or None."""
     if not query:
         return None
     q = quote_plus(query)
@@ -48,6 +48,17 @@ def search_x(query: str, limit: int = 5) -> Optional[str]:
                 )
         except Exception:
             continue
+    # Fallback: Jina Reader reads the live x.com search page (JS rendered)
+    try:
+        from web_research import jina_fetch
+        txt = jina_fetch(f"https://x.com/search?q={q}&f=live", max_chars=1800)
+        if txt and len(txt) > 100:
+            return (
+                f"X/TWITTER SEARCH for '{query}' (via web reader, recent):\n"
+                + txt.strip()[:1800]
+            )
+    except Exception:
+        pass
     return None
 
 
