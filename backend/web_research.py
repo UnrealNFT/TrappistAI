@@ -158,10 +158,21 @@ def web_news(query: str, limit: int = 5, lang: str = "en") -> str:
             if not title:
                 continue
             link = str(getattr(e, "link", ""))
-            items.append(f"- {title} {link}".strip())
+            # Include the article description so the LLM grounds on real content
+            # instead of inventing facts (scores, line-ups, winners...).
+            raw = str(getattr(e, "summary", getattr(e, "description", "")))
+            desc = re.sub(r"<[^>]*>", "", raw)
+            desc = re.sub(r"\s+", " ", desc).strip()
+            block = f"- {title}"
+            if desc:
+                block += f"\n  {desc[:220]}"
+            block += f"\n  {link}"
+            items.append(block)
         if items:
             return (
-                f"WEB NEWS about '{query}' (Google News, recent — use for up-to-date facts):\n"
+                f"WEB NEWS about '{query}' (Google News, recent — ground your answer ONLY "
+                f"on these titles/descriptions; if a specific fact/result is not written "
+                f"here, say you don't have it — do NOT invent):\n"
                 + "\n".join(items[:limit])
             )
     except Exception as e:

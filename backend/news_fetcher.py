@@ -100,12 +100,17 @@ def fetch_live_headlines(keyword: Optional[str] = None, limit: int = 5) -> Optio
                 title = str(getattr(e, "title", "")).strip()
                 if not title:
                     continue
+                desc = clean_content(str(getattr(e, "summary", getattr(e, "description", ""))))
                 if kw and not pre_filtered:
-                    summary = clean_content(str(getattr(e, "summary", getattr(e, "description", ""))))
-                    if kw not in title.lower() and kw not in summary.lower():
+                    if kw not in title.lower() and kw not in desc.lower():
                         continue
                 link = str(getattr(e, "link", ""))
-                got.append(f"- {title} (Source: {name}) {link}".strip())
+                snippet = (desc[:220] + "…") if len(desc) > 220 else desc
+                block = f"- {title} (Source: {name})"
+                if snippet:
+                    block += f"\n  {snippet}"
+                block += f"\n  {link}"
+                got.append(block)
                 if len(got) >= 3:  # keep a few per source for the round-robin
                     break
         except Exception as exc:

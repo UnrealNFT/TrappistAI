@@ -678,15 +678,20 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
     # Add news context if available
     if news_context:
         system_content += (
-            "\n\n📰 **LATEST CRYPTO NEWS** (Use this to answer crypto-related questions):\n"
+            "\n\n📰 **LATEST NEWS** (real article titles + descriptions — ground your answer ONLY on this):\n"
             f"{news_context}\n\n"
             "IMPORTANT RULES when using news:\n"
-            "1. ALWAYS cite the SOURCE NAME (e.g., 'Selon CoinTelegraph', 'D'après The Block', 'According to Decrypt')\n"
-            "2. ALWAYS mention it's RECENT news (e.g., 'récemment', 'dernières actualités', 'recently')\n"
-            "3. If possible, mention the LINK at the end: 'Source: [link]'\n"
-            "4. Use the EXACT information from the articles - don't make up details\n"
-            "5. If articles have dates, mention them (e.g., 'le 20 juin', 'published today')\n"
-            "Example: 'Selon CoinTelegraph, Bitcoin a récemment franchi les $70K... [summary]. Source: https://...'"
+            "1. ALWAYS cite the SOURCE NAME (e.g., 'Selon CoinTelegraph', 'D'après Decrypt')\n"
+            "2. Base every fact ONLY on the titles/descriptions above. If a specific detail "
+            "(name, number, result, winner) is NOT written above, say you don't have it — NEVER invent it.\n"
+            "3. Mention the LINK at the end: 'Source: [link]'\n"
+            "4. If articles have dates, mention them.\n"
+            "5. When the user asks for a SUMMARY / recap / 'résume' / 'quoi de neuf', answer in this "
+            "structured format (like a market brief):\n"
+            "   📝 A 3-4 sentence narrative summary connecting the main developments (no bullet spam)\n"
+            "   📊 SENTIMENT: bullish / bearish / neutral, with a one-line reason grounded in the articles\n"
+            "   🎯 À RETENIR: one line on what matters / what to watch\n"
+            "   Then list 2-3 source links. Keep it tight and only from the articles above."
         )
     
     messages = [{"role": "system", "content": system_content}] + _conv_history[user_id]

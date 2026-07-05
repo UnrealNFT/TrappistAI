@@ -44,6 +44,8 @@ def fetch_live_headlines(keyword: Optional[str] = None, limit: int = 5) -> Optio
     kw = keyword.lower().strip() if keyword else None
     # Collect matching items PER feed, then round-robin so the final list is
     # DIVERSE across sources (previously the first feed filled every slot).
+    # Each item includes the article DESCRIPTION (not just the title) so the LLM
+    # has real content to ground on and doesn't invent facts (nibicat approach).
     per_feed = []
     for name, url, pre_filtered in feeds:
         got = []
@@ -53,12 +55,17 @@ def fetch_live_headlines(keyword: Optional[str] = None, limit: int = 5) -> Optio
                 title = str(getattr(e, "title", "")).strip()
                 if not title:
                     continue
+                desc = _clean(str(getattr(e, "summary", getattr(e, "description", ""))))
                 if kw and not pre_filtered:
-                    summary = _clean(str(getattr(e, "summary", getattr(e, "description", ""))))
-                    if kw not in title.lower() and kw not in summary.lower():
+                    if kw not in title.lower() and kw not in desc.lower():
                         continue
                 link = str(getattr(e, "link", ""))
-                got.append(f"- {title} (Source: {name}) {link}".strip())
+                snippet = (desc[:220] + "…") if len(desc) > 220 else desc
+                block = f"- {title} (Source: {name})"
+                if snippet:
+                    block += f"\n  {snippet}"
+                block += f"\n  {link}"
+                got.append(block)
                 if len(got) >= 3:
                     break
         except Exception as exc:
