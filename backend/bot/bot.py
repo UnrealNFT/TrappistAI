@@ -1662,11 +1662,19 @@ async def cmd_news(update: Update, context) -> None:
             # Search specific topic
             articles = await search_news_fulltext(query, pool, limit=3)
             if not articles:
-                await update.message.reply_text(
-                    f"🔍 No news found for: *{query}*\n\n"
-                    "Try: `/news Bitcoin`, `/news Ethereum`, `/news DeFi`",
-                    parse_mode=ParseMode.MARKDOWN
-                )
+                live = None
+                if LIVE_NEWS_AVAILABLE:
+                    live = await asyncio.get_event_loop().run_in_executor(
+                        None, fetch_live_headlines, query, 5)
+                if live:
+                    await update.message.reply_text(
+                        f"🔍 *{query}* — latest headlines:\n\n{live}",
+                        parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+                else:
+                    await update.message.reply_text(
+                        f"🔍 No news found for: *{query}*\n\n"
+                        "Try: `/news Bitcoin`, `/news Ethereum`, `/news DeFi`",
+                        parse_mode=ParseMode.MARKDOWN)
                 return
             response = f"🔍 *Search results for:* {query}\n\n"
             response += await format_news_for_chat(articles, max_articles=3)
@@ -1674,10 +1682,18 @@ async def cmd_news(update: Update, context) -> None:
             # Get recent news (last 24 hours)
             articles = await get_recent_news(pool, hours=24, limit=5)
             if not articles:
-                await update.message.reply_text(
-                    "📰 No recent news available yet.\n"
-                    "The news fetcher is still collecting articles."
-                )
+                live = None
+                if LIVE_NEWS_AVAILABLE:
+                    live = await asyncio.get_event_loop().run_in_executor(
+                        None, fetch_live_headlines, None, 5)
+                if live:
+                    await update.message.reply_text(
+                        f"📰 *Latest Crypto Headlines*\n\n{live}",
+                        parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+                else:
+                    await update.message.reply_text(
+                        "📰 No recent news available yet.\n"
+                        "The news fetcher is still collecting articles.")
                 return
             response = "📰 *Latest Crypto News (24h)*\n\n"
             response += await format_news_for_chat(articles, max_articles=5)
