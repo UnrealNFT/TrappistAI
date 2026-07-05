@@ -86,6 +86,11 @@ OLLAMA_URL        = os.getenv("OLLAMA_URL",   "http://localhost:11434")
 OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL", "llama3.2")
 GROQ_KEY          = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL        = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
+# Multi-key rotation: GROQ_API_KEYS="key1,key2,key3" (falls back to GROQ_API_KEY)
+GROQ_KEYS = [k.strip() for k in os.getenv("GROQ_API_KEYS", "").split(",") if k.strip()]
+if not GROQ_KEYS and GROQ_KEY:
+    GROQ_KEYS = [GROQ_KEY]
+_groq_key_idx = 0  # round-robin pointer for load balancing
 DB_PATH           = os.getenv("DB_PATH",      "trappistai.db")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")  # PostgreSQL connection
 BACKEND_API_URL   = os.getenv("BACKEND_API_URL", "https://trappistai-backend.onrender.com")
@@ -392,22 +397,34 @@ def _ollama_chat(user_id: int, prompt: str) -> str:
 # ─── Groq (primary AI, fast + free) ────────────────────────────────────────────────────────
 
 def _groq_complete(messages: list, max_tokens: int = 1000) -> str:
+    """Call Groq, rotating across GROQ_KEYS. On 429, switch to the next key.
+    Round-robin start point balances load across keys."""
     import time
+    global _groq_key_idx
+    keys = GROQ_KEYS
+    if not keys:
+        raise RuntimeError("No Groq API key configured")
+    n = len(keys)
+    start = _groq_key_idx
+    _groq_key_idx = (_groq_key_idx + 1) % n  # advance for next call
     last = None
-    for attempt in range(3):
-        r = req.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
-            json={"model": GROQ_MODEL, "messages": messages, "temperature": 0.85, "max_tokens": max_tokens},
-            timeout=30,
-        )
-        if r.status_code == 429:
-            last = r
-            time.sleep(4 * (attempt + 1))  # 4s, 8s backoff
-            continue
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"].strip()
-    # Retries exhausted on rate limit
+    for cycle in range(2):  # try all keys, then one more pass after a short pause
+        for i in range(n):
+            key = keys[(start + i) % n]
+            r = req.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"model": GROQ_MODEL, "messages": messages, "temperature": 0.85, "max_tokens": max_tokens},
+                timeout=30,
+            )
+            if r.status_code == 429:
+                last = r
+                continue  # this key is rate-limited → try the next one
+            r.raise_for_status()
+            return r.json()["choices"][0]["message"]["content"].strip()
+        # every key returned 429 this cycle → brief backoff then retry once
+        if last is not None and cycle == 0:
+            time.sleep(5)
     if last is not None:
         last.raise_for_status()
     raise RuntimeError("Groq request failed")
@@ -519,7 +536,7 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
 
 def _ai_lyrics(style_label: str, voice: str, theme: str, artists: list = None) -> str:
     """Try Groq first (fast + free), fallback to Ollama. Strips any style leak from the result."""
-    if GROQ_KEY:
+    if GROQ_KEYS:
         raw = _groq_lyrics(style_label, voice, theme, artists)
     else:
         raw = _ollama_lyrics(style_label, voice, theme)
@@ -606,7 +623,7 @@ def _groq_enrich_tags(lyrics: str, base_tags: str) -> str:
     _add(_genre_texture_pack(base_tags))
 
     # 2) Mood words from Groq (emotion only — cannot change the genre)
-    if GROQ_KEY:
+    if GROQ_KEYS:
         try:
             genre = base_tags.split(",")[0].strip()
             system = (
