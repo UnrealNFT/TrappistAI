@@ -68,7 +68,7 @@ try:
     from prices import (
         format_prices, detect_coins, has_price_intent,
         resolve_context, should_resolve, news_query,
-        history_context,
+        history_context, contract_context, find_contract_address,
     )
     PRICES_AVAILABLE = True
 except ImportError as e:
@@ -2145,31 +2145,39 @@ async def on_free_message(update: Update, context) -> None:
     turn_ids = []  # coin ids referenced this turn (shared with news search)
     if PRICES_AVAILABLE:
         try:
-            coins = detect_coins(prompt)
-            if coins:
-                # Known coin(s) named directly
-                turn_ids = coins
-                _last_coins[uid] = coins
+            # Priority: a pasted contract address → full DexScreener token lookup
+            if find_contract_address(prompt):
                 price_context = await asyncio.get_event_loop().run_in_executor(
-                    None, format_prices, coins
+                    None, contract_context, prompt
                 )
-            elif has_price_intent(prompt) and _last_coins.get(uid):
-                # Follow-up like "prix ?" → reuse the last coin discussed
-                turn_ids = _last_coins[uid]
-                price_context = await asyncio.get_event_loop().run_in_executor(
-                    None, format_prices, turn_ids
-                )
-            elif should_resolve(prompt) and not generic_news:
-                # Unknown coin (e.g. EGLD) → dynamic search CoinGecko + DexScreener.
-                # Skipped for generic news questions to avoid resolving junk tokens.
-                price_context, ids = await asyncio.get_event_loop().run_in_executor(
-                    None, resolve_context, prompt
-                )
-                if ids:
-                    turn_ids = ids
-                    _last_coins[uid] = ids
-            if price_context:
-                logger.info("💰 Injected live price context")
+                if price_context:
+                    logger.info("🔗 Injected DexScreener contract lookup")
+            if not price_context:
+                coins = detect_coins(prompt)
+                if coins:
+                    # Known coin(s) named directly
+                    turn_ids = coins
+                    _last_coins[uid] = coins
+                    price_context = await asyncio.get_event_loop().run_in_executor(
+                        None, format_prices, coins
+                    )
+                elif has_price_intent(prompt) and _last_coins.get(uid):
+                    # Follow-up like "prix ?" → reuse the last coin discussed
+                    turn_ids = _last_coins[uid]
+                    price_context = await asyncio.get_event_loop().run_in_executor(
+                        None, format_prices, turn_ids
+                    )
+                elif should_resolve(prompt) and not generic_news:
+                    # Unknown coin (e.g. EGLD) → dynamic search CoinGecko + DexScreener.
+                    # Skipped for generic news questions to avoid resolving junk tokens.
+                    price_context, ids = await asyncio.get_event_loop().run_in_executor(
+                        None, resolve_context, prompt
+                    )
+                    if ids:
+                        turn_ids = ids
+                        _last_coins[uid] = ids
+                if price_context:
+                    logger.info("💰 Injected live price context")
         except Exception as e:
             logger.error("❌ Could not fetch price context: %s", e)
 

@@ -490,3 +490,78 @@ def history_context(text: str, ids: list = None) -> str:
     )
 
 
+# ─── Contract-address lookup via DexScreener (price + socials with sources) ───
+
+DEXSCREENER_TOKENS = "https://api.dexscreener.com/latest/dex/tokens/{address}"
+# EVM 0x + 40 hex, or Solana/base58 32-44 chars
+_CONTRACT_RE = re.compile(r"\b(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b")
+
+
+def find_contract_address(text: str):
+    """Return the first contract-like address in the text, or None."""
+    for m in _CONTRACT_RE.finditer(text):
+        addr = m.group(1)
+        if addr.startswith("0x") or len(addr) >= 32:
+            return addr
+    return None
+
+
+def dexscreener_by_address(address: str) -> str:
+    """Look up a token by contract address on DexScreener. Returns a rich context
+    block with price/liquidity/FDV + official website & socials (with sources)."""
+    try:
+        r = requests.get(DEXSCREENER_TOKENS.format(address=address), timeout=12)
+        r.raise_for_status()
+        pairs = r.json().get("pairs") or []
+        if not pairs:
+            return None
+        pairs.sort(key=lambda p: (p.get("liquidity") or {}).get("usd", 0) or 0, reverse=True)
+        p = pairs[0]
+        base = p.get("baseToken", {})
+        name = base.get("name", "?")
+        sym = base.get("symbol", "?")
+        price = p.get("priceUsd")
+        if not price:
+            return None
+        chg = (p.get("priceChange") or {}).get("h24")
+        liq = (p.get("liquidity") or {}).get("usd")
+        vol = (p.get("volume") or {}).get("h24")
+        fdv = p.get("fdv")
+        chain = p.get("chainId", "?")
+        dex = p.get("dexId", "?")
+        url = p.get("url", "")
+        info = p.get("info") or {}
+        websites = [w.get("url") for w in info.get("websites", []) if w.get("url")]
+        socials = [(s.get("type"), s.get("url")) for s in info.get("socials", []) if s.get("url")]
+
+        arrow = "🟢" if (chg or 0) >= 0 else "🔴"
+        chg_str = f"{chg:+.2f}%" if chg is not None else "n/a"
+        lines = [
+            f"TOKEN LOOKUP (DexScreener, real-time) — sources included:",
+            f"{arrow} {name} ({sym}) on {chain}/{dex}",
+            f"Price: {_fmt_usd(float(price))} ({chg_str} 24h) · "
+            f"Liq {_fmt_big(liq)} · FDV {_fmt_big(fdv)} · Vol {_fmt_big(vol)}",
+            f"Contract: {address}",
+        ]
+        if websites:
+            lines.append("Website: " + ", ".join(websites))
+        for typ, u in socials:
+            lines.append(f"{(typ or 'social').capitalize()}: {u}")
+        if url:
+            lines.append(f"DexScreener: {url}")
+        lines.append("Cite these links as the sources.")
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning("DexScreener token lookup failed for %s: %s", address, e)
+        return None
+
+
+def contract_context(text: str) -> str:
+    """If the message contains a contract address, return a DexScreener context block."""
+    addr = find_contract_address(text)
+    if not addr:
+        return None
+    return dexscreener_by_address(addr)
+
+
+
