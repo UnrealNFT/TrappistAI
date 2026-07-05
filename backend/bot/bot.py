@@ -2785,11 +2785,70 @@ async def on_mp4_cancel(update: Update, context) -> int:
     return ConversationHandler.END
 
 
+def _start_news_fetcher_daemon():
+    """Background thread that fetches all RSS sources and STORES new articles in the
+    DB every ~10 min. Without this the crypto_news table stays empty and a news that
+    dropped at 00:01 is gone from the live RSS feed by the evening. Runs in its OWN
+    event loop + OWN asyncpg pool (the shared get_db_pool is bound to the bot's loop).
+    Already-stored articles are skipped BEFORE summarizing so Groq isn't wasted."""
+    if not USE_POSTGRES:
+        logger.info("📰 News fetcher daemon skipped (no PostgreSQL configured)")
+        return
+    import threading
+
+    def _run():
+        try:
+            import asyncpg
+            import news_fetcher as nf
+        except Exception as e:
+            logger.error("📰 News daemon: import failed: %s", e)
+            return
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def _cycle_forever():
+            pool = await asyncpg.create_pool(
+                DATABASE_URL, min_size=1, max_size=3, command_timeout=60
+            )
+            logger.info("📰 News fetcher daemon started (every 10 min)")
+            while True:
+                try:
+                    # 1) Fetch every RSS source (sync, fast)
+                    articles = []
+                    for source in nf.NEWS_SOURCES:
+                        articles.extend(nf.fetch_rss_source(source))
+                    # 2) Store only NEW articles (skip duplicates before summarizing)
+                    stored = 0
+                    for a in articles:
+                        try:
+                            async with pool.acquire() as conn:
+                                exists = await conn.fetchval(
+                                    "SELECT 1 FROM crypto_news WHERE article_id=$1", a["id"]
+                                )
+                            if exists:
+                                continue
+                            if await nf.store_article_in_db(a, pool):
+                                stored += 1
+                                await asyncio.sleep(0.5)  # gentle on Groq service pool
+                        except Exception as e:
+                            logger.warning("📰 store failed: %s", e)
+                    logger.info("📰 News cycle: %d new stored / %d fetched", stored, len(articles))
+                except Exception as e:
+                    logger.error("📰 News cycle failed: %s", e)
+                await asyncio.sleep(600)  # 10 minutes
+
+        try:
+            loop.run_until_complete(_cycle_forever())
+        except Exception as e:
+            logger.error("📰 News daemon crashed: %s", e)
+
+    threading.Thread(target=_run, name="news-fetcher", daemon=True).start()
+
+
 def main():
     if not WAVESPEED_API_KEY:
         logger.error("WAVESPEED_API_KEY not set!")
         return
-
     # Thread pool : 1 thread par génération audio simultanée possible (50 = 50 users en parallèle)
     executor = ThreadPoolExecutor(max_workers=50, thread_name_prefix="trappistai")
     
@@ -2895,6 +2954,9 @@ def main():
     app.add_handler(CommandHandler("gift",    cmd_gift))
     # Handler texte libre — doit être en DERNIER (priorité basse, le wizard /music passe avant)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_free_message))
+
+    # Background news fetcher: continuously store articles so none are lost from the feed
+    _start_news_fetcher_daemon()
 
     logger.info("TrappistAI Bot started")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
