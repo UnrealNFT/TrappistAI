@@ -2101,8 +2101,8 @@ async def on_free_message(update: Update, context) -> None:
         return
     uid = update.effective_user.id
     now = asyncio.get_event_loop().time()
-    if now - _last_msg.get(uid, 0) < 4:
-        return  # anti-spam: ignore si < 4s depuis dernier message
+    if now - _last_msg.get(uid, 0) < 1.5:
+        return  # anti-spam: ignore si < 1.5s depuis dernier message
     _last_msg[uid] = now
     prompt = update.message.text.strip()
 
