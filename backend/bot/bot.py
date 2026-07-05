@@ -1598,6 +1598,14 @@ async def cmd_verify(update: Update, context) -> None:
         finally:
             conn.close()
             
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        await update.message.reply_text(
+            "❌ *Missing module*\n\n"
+            f"Error: `{str(e)}`\n\n"
+            "Contact @djaf77 - psycopg not installed.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
     except psycopg.Error as e:
         print(f"❌ PostgreSQL error: {e}")
         import traceback
@@ -1606,14 +1614,6 @@ async def cmd_verify(update: Update, context) -> None:
             "❌ *Database error*\n\n"
             f"Error: `{str(e)[:100]}`\n\n"
             "Contact @djaf77 if the problem persists.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-    except ImportError as e:
-        print(f"❌ Import error: {e}")
-        await update.message.reply_text(
-            "❌ *Missing module*\n\n"
-            f"Error: `{str(e)}`\n\n"
-            "Contact @djaf77 - psycopg not installed.",
             parse_mode=ParseMode.MARKDOWN,
         )
     except Exception as e:
