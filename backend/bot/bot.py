@@ -91,6 +91,12 @@ GROQ_KEYS = [k.strip() for k in os.getenv("GROQ_API_KEYS", "").split(",") if k.s
 if not GROQ_KEYS and GROQ_KEY:
     GROQ_KEYS = [GROQ_KEY]
 _groq_key_idx = 0  # round-robin pointer for load balancing
+# Separate key pool for background SERVICES (news summaries, tag/lyrics enrichment,
+# research) so they never eat the chat's rate limit. Falls back to the chat keys.
+GROQ_SERVICE_KEYS = [k.strip() for k in os.getenv("GROQ_SERVICE_KEYS", "").split(",") if k.strip()]
+if not GROQ_SERVICE_KEYS:
+    GROQ_SERVICE_KEYS = GROQ_KEYS
+_groq_svc_idx = 0  # round-robin pointer for the service pool
 DB_PATH           = os.getenv("DB_PATH",      "trappistai.db")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")  # PostgreSQL connection
 BACKEND_API_URL   = os.getenv("BACKEND_API_URL", "https://trappistai-backend.onrender.com")
@@ -396,17 +402,22 @@ def _ollama_chat(user_id: int, prompt: str) -> str:
 
 # ─── Groq (primary AI, fast + free) ────────────────────────────────────────────────────────
 
-def _groq_complete(messages: list, max_tokens: int = 1000) -> str:
-    """Call Groq, rotating across GROQ_KEYS. On 429, switch to the next key.
-    Round-robin start point balances load across keys."""
+def _groq_complete(messages: list, max_tokens: int = 1000, service: bool = False) -> str:
+    """Call Groq, rotating across a key pool. On 429, switch to the next key.
+    service=True uses the SERVICE key pool (news/tags/lyrics) so it never
+    competes with the user chat's rate limit. Round-robin balances load."""
     import time
-    global _groq_key_idx
-    keys = GROQ_KEYS
+    global _groq_key_idx, _groq_svc_idx
+    keys = GROQ_SERVICE_KEYS if service else GROQ_KEYS
     if not keys:
         raise RuntimeError("No Groq API key configured")
     n = len(keys)
-    start = _groq_key_idx
-    _groq_key_idx = (_groq_key_idx + 1) % n  # advance for next call
+    if service:
+        start = _groq_svc_idx
+        _groq_svc_idx = (_groq_svc_idx + 1) % n
+    else:
+        start = _groq_key_idx
+        _groq_key_idx = (_groq_key_idx + 1) % n
     last = None
     for cycle in range(2):  # try all keys, then one more pass after a short pause
         for i in range(n):
@@ -478,7 +489,7 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
         "\nNOW WRITE:\n"
     )
     
-    return _groq_complete([{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}], max_tokens=1200)
+    return _groq_complete([{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}], max_tokens=1200, service=True)
 
 
 def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_context: str = None) -> str:
@@ -639,7 +650,7 @@ def _groq_enrich_tags(lyrics: str, base_tags: str) -> str:
             )
             out = _groq_complete(
                 [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                max_tokens=40,
+                max_tokens=40, service=True,
             )
             out = out.strip().split("\n")[0].strip().strip('"').strip()
             moods = [m.strip() for m in out.split(",") if m.strip() and len(m.strip()) < 20][:3]

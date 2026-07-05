@@ -27,6 +27,13 @@ load_dotenv()
 
 GROQ_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+# Service key pool for background summarization (falls back to chat keys / single key)
+GROQ_SERVICE_KEYS = [k.strip() for k in os.getenv("GROQ_SERVICE_KEYS", "").split(",") if k.strip()]
+if not GROQ_SERVICE_KEYS:
+    GROQ_SERVICE_KEYS = [k.strip() for k in os.getenv("GROQ_API_KEYS", "").split(",") if k.strip()]
+if not GROQ_SERVICE_KEYS and GROQ_KEY:
+    GROQ_SERVICE_KEYS = [GROQ_KEY]
+_svc_idx = 0
 
 
 # === 20 CRYPTO RSS SOURCES ===
@@ -246,8 +253,10 @@ Respond ONLY with JSON:"""
 
 
 def summarize_with_groq(article: Dict) -> Optional[Dict]:
-    """Summarize article with Groq (available in production, unlike Ollama)."""
-    if not GROQ_KEY:
+    """Summarize article with Groq (SERVICE key pool, rotates on 429)."""
+    global _svc_idx
+    keys = GROQ_SERVICE_KEYS
+    if not keys:
         return None
     prompt = (
         "You are a crypto journalist. Analyze this article and return ONLY JSON.\n\n"
@@ -258,27 +267,35 @@ def summarize_with_groq(article: Dict) -> Optional[Dict]:
         '"summary": "2 sentence summary", "hashtags": ["#Tag1", "#Tag2", "#Tag3"]}\n'
         "Write original content, never mention the source. Respond ONLY with JSON."
     )
-    try:
-        r = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": GROQ_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.6,
-                "max_tokens": 400,
-                "response_format": {"type": "json_object"},
-            },
-            timeout=30,
-        )
-        if r.status_code != 200:
+    n = len(keys)
+    start = _svc_idx
+    _svc_idx = (_svc_idx + 1) % n
+    for i in range(n):
+        key = keys[(start + i) % n]
+        try:
+            r = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.6,
+                    "max_tokens": 400,
+                    "response_format": {"type": "json_object"},
+                },
+                timeout=30,
+            )
+            if r.status_code == 429:
+                continue  # rate-limited → next key
+            if r.status_code != 200:
+                return None
+            content = r.json()["choices"][0]["message"]["content"].strip()
+            data = json.loads(content)
+            if data.get("title_en") and data.get("summary"):
+                return data
             return None
-        content = r.json()["choices"][0]["message"]["content"].strip()
-        data = json.loads(content)
-        if data.get("title_en") and data.get("summary"):
-            return data
-    except Exception as e:
-        print(f"⚠️ Groq summary failed: {e}")
+        except Exception as e:
+            print(f"⚠️ Groq summary failed: {e}")
     return None
 
 
