@@ -89,8 +89,11 @@ def fetch_live_headlines(keyword: Optional[str] = None, limit: int = 5) -> Optio
         ("CryptoPotato", "https://cryptopotato.com/feed/", False),
     ]
     kw = keyword.lower().strip() if keyword else None
-    items = []
+    # Collect matching items PER feed, then round-robin so the final list is
+    # DIVERSE across sources (previously the first feed filled every slot).
+    per_feed: list[list[str]] = []
     for name, url, pre_filtered in feeds:
+        got = []
         try:
             feed = feedparser.parse(url)
             for e in feed.entries[:20]:
@@ -102,11 +105,25 @@ def fetch_live_headlines(keyword: Optional[str] = None, limit: int = 5) -> Optio
                     if kw not in title.lower() and kw not in summary.lower():
                         continue
                 link = str(getattr(e, "link", ""))
-                items.append(f"- {title} (Source: {name}) {link}".strip())
-                if len(items) >= limit:
+                got.append(f"- {title} (Source: {name}) {link}".strip())
+                if len(got) >= 3:  # keep a few per source for the round-robin
                     break
         except Exception as exc:
             print(f"⚠️ live headlines {name} failed: {exc}")
+        if got:
+            per_feed.append(got)
+    # Round-robin: one from each source per pass → maximum source diversity.
+    items = []
+    seen = set()
+    for depth in range(3):
+        for feed_items in per_feed:
+            if depth < len(feed_items):
+                it = feed_items[depth]
+                if it not in seen:
+                    seen.add(it)
+                    items.append(it)
+                    if len(items) >= limit:
+                        break
         if len(items) >= limit:
             break
     if not items:
