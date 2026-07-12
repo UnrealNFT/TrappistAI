@@ -367,7 +367,7 @@ STYLES = {
 }
 
 # Conversation states
-S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW, S_EDIT, S_3D_MENU, S_3D_IMAGE, S_3D_QUALITY, S_MP4_MENU, S_MP4_IMAGE, S_MP4_AUDIO, S_VID_MODEL, S_VID_MODE, S_VID_PROMPT, S_VID_IMAGE, S_VID_IMG_PROMPT, S_VID_END_IMAGE, S_VID_DURATION, S_VID_FORMAT = range(23)
+S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW, S_EDIT, S_3D_MENU, S_3D_IMAGE, S_3D_QUALITY, S_MP4_MENU, S_MP4_IMAGE, S_MP4_AUDIO, S_VID_MODEL, S_VID_MODE, S_VID_PROMPT, S_VID_IMAGE, S_VID_IMG_PROMPT, S_VID_END_IMAGE, S_VID_DURATION, S_VID_FORMAT, S_VID_AUDIO = range(24)
 
 
 # ─── Keyboards ──────────────────────────────────────────────────────────────
@@ -2875,6 +2875,14 @@ def _kb_vid_format():
     ])
 
 
+def _kb_vid_audio():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔊 With audio", callback_data="vidaud:on"),
+         InlineKeyboardButton("🔇 No audio", callback_data="vidaud:off")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="vidaud:cancel")],
+    ])
+
+
 async def cmd_video(update: Update, context) -> int:
     """Start the /video flow (Seedance 1.5)."""
     context.user_data.clear()
@@ -3017,9 +3025,27 @@ async def on_vid_format(update: Update, context) -> int:
         await q.edit_message_text("❌ Cancelled.")
         context.user_data.clear()
         return ConversationHandler.END
+    context.user_data["vid_aspect"] = choice  # e.g. "16:9"
+    await q.edit_message_text(
+        "🔊 *Audio?*\n\nSame price for you — choose to include a soundtrack or not.",
+        reply_markup=_kb_vid_audio(),
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_AUDIO
+
+
+async def on_vid_audio(update: Update, context) -> int:
+    q = update.callback_query
+    await q.answer()
+    choice = q.data.split(":", 1)[1]
+    if choice == "cancel":
+        await q.edit_message_text("❌ Cancelled.")
+        context.user_data.clear()
+        return ConversationHandler.END
 
     uid = update.effective_user.id
-    aspect = choice  # e.g. "16:9"
+    with_audio = (choice == "on")
+    aspect = context.user_data.get("vid_aspect", "16:9")
     mode = context.user_data.get("vid_mode", "t2v")
     prompt = context.user_data.get("vid_prompt", "")
     duration = int(context.user_data.get("vid_duration", 5))
@@ -3028,11 +3054,11 @@ async def on_vid_format(update: Update, context) -> int:
     if not consume_tokens(uid, cost, update.effective_user.username or ""):
         bal = get_tokens(uid)
         await q.answer(f"❌ {cost} tokens required (balance: {bal})", show_alert=True)
-        return S_VID_FORMAT
+        return S_VID_AUDIO
 
     await q.edit_message_text(
-        f"🎬 *Generating your video…*\n_Seedance 1.5 · {duration}s · {aspect}_\n"
-        "⏳ This can take a few minutes.",
+        f"🎬 *Generating your video…*\n_Seedance 1.5 · {duration}s · {aspect} · "
+        f"{'audio' if with_audio else 'no audio'}_\n⏳ This can take a few minutes.",
         parse_mode=ParseMode.MARKDOWN,
     )
     loop = asyncio.get_event_loop()
@@ -3048,13 +3074,15 @@ async def on_vid_format(update: Update, context) -> int:
             url = await loop.run_in_executor(
                 None,
                 lambda: wavespeed.generate_video_seedance_i2v(
-                    img, prompt, duration, aspect, False, end, True
+                    img, prompt, duration, aspect, False, end, True, with_audio
                 ),
             )
         else:
             url = await loop.run_in_executor(
                 None,
-                lambda: wavespeed.generate_video_seedance_t2v(prompt, duration, aspect, True),
+                lambda: wavespeed.generate_video_seedance_t2v(
+                    prompt, duration, aspect, True, with_audio
+                ),
             )
         await q.message.reply_video(url, caption="✅ Here is your video!", supports_streaming=True)
     except wavespeed.TaskTimeout:
@@ -3246,6 +3274,7 @@ def main():
                               CommandHandler("cancel", on_vid_cancel)],
             S_VID_DURATION: [CallbackQueryHandler(on_vid_duration, pattern=r"^viddur:")],
             S_VID_FORMAT: [CallbackQueryHandler(on_vid_format, pattern=r"^vidfmt:")],
+            S_VID_AUDIO: [CallbackQueryHandler(on_vid_audio, pattern=r"^vidaud:")],
         },
         fallbacks=[CommandHandler("cancel", on_vid_cancel)],
         per_user=True,

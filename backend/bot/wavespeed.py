@@ -128,16 +128,19 @@ def generate_video_seedance_t2v(
     duration: int = 5,
     aspect_ratio: str = "16:9",
     fast: bool = True,
+    generate_audio: bool = True,
 ) -> str:
     """Text-to-video with ByteDance Seedance v1.5 Pro (WaveSpeed). Returns MP4 URL.
 
     fast=True uses the cheaper/quicker '-fast' variant. duration in seconds (5/10...).
+    generate_audio=False is cheaper (no soundtrack generation).
     """
     slug = "text-to-video-fast" if fast else "text-to-video"
     task_id = _submit(f"bytedance/seedance-v1.5-pro/{slug}", {
         "prompt": prompt,
         "duration": duration,
         "aspect_ratio": aspect_ratio,
+        "generate_audio": generate_audio,
         "seed": -1,
     })
     return _poll(task_id, max_wait=900)
@@ -151,11 +154,13 @@ def generate_video_seedance_i2v(
     camera_fixed: bool = False,
     last_image: str = None,
     fast: bool = True,
+    generate_audio: bool = True,
 ) -> str:
     """Image-to-video with ByteDance Seedance v1.5 Pro (WaveSpeed). Returns MP4 URL.
 
     Animates a starting image with a motion-focused prompt. last_image optionally
     guides the ending frame. camera_fixed locks the camera for stable framing.
+    generate_audio=False is cheaper (no soundtrack generation).
     """
     slug = "image-to-video-fast" if fast else "image-to-video"
     payload = {
@@ -164,6 +169,7 @@ def generate_video_seedance_i2v(
         "duration": duration,
         "aspect_ratio": aspect_ratio,
         "camera_fixed": camera_fixed,
+        "generate_audio": generate_audio,
         "seed": -1,
     }
     if last_image:
