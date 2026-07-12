@@ -121,3 +121,53 @@ def generate_3d_with_texture(image_url: str) -> str:
         "image": image_url,
     })
     return _poll(task_id, max_wait=300)
+
+
+def generate_video_seedance_t2v(
+    prompt: str,
+    duration: int = 5,
+    aspect_ratio: str = "16:9",
+    fast: bool = True,
+) -> str:
+    """Text-to-video with ByteDance Seedance v1.5 Pro (WaveSpeed). Returns MP4 URL.
+
+    fast=True uses the cheaper/quicker '-fast' variant. duration in seconds (5/10...).
+    """
+    slug = "text-to-video-fast" if fast else "text-to-video"
+    task_id = _submit(f"bytedance/seedance-v1.5-pro/{slug}", {
+        "prompt": prompt,
+        "duration": duration,
+        "aspect_ratio": aspect_ratio,
+        "seed": -1,
+    })
+    return _poll(task_id, max_wait=900)
+
+
+def generate_video_seedance_i2v(
+    image_url: str,
+    prompt: str = "",
+    duration: int = 5,
+    aspect_ratio: str = "16:9",
+    camera_fixed: bool = False,
+    last_image: str = None,
+    fast: bool = True,
+) -> str:
+    """Image-to-video with ByteDance Seedance v1.5 Pro (WaveSpeed). Returns MP4 URL.
+
+    Animates a starting image with a motion-focused prompt. last_image optionally
+    guides the ending frame. camera_fixed locks the camera for stable framing.
+    """
+    slug = "image-to-video-fast" if fast else "image-to-video"
+    payload = {
+        "image": image_url,
+        "prompt": prompt,
+        "duration": duration,
+        "aspect_ratio": aspect_ratio,
+        "camera_fixed": camera_fixed,
+        "seed": -1,
+    }
+    if last_image:
+        payload["last_image"] = last_image
+    task_id = _submit(f"bytedance/seedance-v1.5-pro/{slug}", payload)
+    return _poll(task_id, max_wait=900)
+

@@ -367,7 +367,7 @@ STYLES = {
 }
 
 # Conversation states
-S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW, S_EDIT, S_3D_MENU, S_3D_IMAGE, S_3D_QUALITY, S_MP4_MENU, S_MP4_IMAGE, S_MP4_AUDIO = range(15)
+S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW, S_EDIT, S_3D_MENU, S_3D_IMAGE, S_3D_QUALITY, S_MP4_MENU, S_MP4_IMAGE, S_MP4_AUDIO, S_VID_MODEL, S_VID_MODE, S_VID_PROMPT, S_VID_IMAGE, S_VID_IMG_PROMPT, S_VID_END_IMAGE, S_VID_DURATION, S_VID_FORMAT = range(23)
 
 
 # ─── Keyboards ──────────────────────────────────────────────────────────────
@@ -2649,6 +2649,7 @@ async def _post_init(app):
         BotCommand("start", "Welcome & menu"),
         BotCommand("image", "Generate an AI image (FLUX.1)"),
         BotCommand("music", "Compose a full song"),
+        BotCommand("video", "Generate a video (Seedance 1.5)"),
         BotCommand("3d", "Turn an image into a 3D model"),
         BotCommand("mp4c", "Convert MP3 to MP4"),
         BotCommand("text", "Chat with the AI"),
@@ -2785,6 +2786,246 @@ async def on_mp4_cancel(update: Update, context) -> int:
             os.remove(p)
         except Exception:
             pass
+    context.user_data.clear()
+    await update.message.reply_text("❌ Cancelled.")
+    return ConversationHandler.END
+
+
+# ─── /video — Seedance 1.5 video generation (text→video or image→video) ──────
+def _vid_cost(duration: int) -> int:
+    return 15 if int(duration) <= 5 else 30
+
+
+def _kb_vid_model():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎬 Seedance 1.5", callback_data="vid:seedance")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="vid:cancel")],
+    ])
+
+
+def _kb_vid_mode():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Text → Video", callback_data="vidmode:t2v")],
+        [InlineKeyboardButton("🖼 Image → Video", callback_data="vidmode:i2v")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="vidmode:cancel")],
+    ])
+
+
+def _kb_vid_duration():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏱ 5 sec (15 tokens)", callback_data="viddur:5"),
+         InlineKeyboardButton("⏱ 10 sec (30 tokens)", callback_data="viddur:10")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="viddur:cancel")],
+    ])
+
+
+def _kb_vid_format():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🖥 16:9", callback_data="vidfmt:16:9"),
+         InlineKeyboardButton("📱 9:16", callback_data="vidfmt:9:16"),
+         InlineKeyboardButton("⬛ 1:1", callback_data="vidfmt:1:1")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="vidfmt:cancel")],
+    ])
+
+
+async def cmd_video(update: Update, context) -> int:
+    """Start the /video flow (Seedance 1.5)."""
+    context.user_data.clear()
+    await update.message.reply_text(
+        "🎬 *TrappistAI Video Generator*\n\nChoose a model:",
+        reply_markup=_kb_vid_model(),
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_MODEL
+
+
+async def on_vid_model(update: Update, context) -> int:
+    q = update.callback_query
+    await q.answer()
+    choice = q.data.split(":", 1)[1]
+    if choice == "cancel":
+        await q.edit_message_text("❌ Cancelled.")
+        context.user_data.clear()
+        return ConversationHandler.END
+    context.user_data["vid_model"] = "seedance"
+    await q.edit_message_text(
+        "🎬 *Seedance 1.5*\n\nHow do you want to create the video?",
+        reply_markup=_kb_vid_mode(),
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_MODE
+
+
+async def on_vid_mode(update: Update, context) -> int:
+    q = update.callback_query
+    await q.answer()
+    choice = q.data.split(":", 1)[1]
+    if choice == "cancel":
+        await q.edit_message_text("❌ Cancelled.")
+        context.user_data.clear()
+        return ConversationHandler.END
+    context.user_data["vid_mode"] = choice
+    if choice == "t2v":
+        await q.edit_message_text(
+            "📝 *Send me your prompt* — describe the video you want.\n_(or /cancel)_",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return S_VID_PROMPT
+    await q.edit_message_text(
+        "🖼 *Send me the START image* (photo or image file).\n_(or /cancel)_",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_IMAGE
+
+
+async def on_vid_prompt(update: Update, context) -> int:
+    txt = (update.message.text or "").strip()
+    if not txt:
+        await update.message.reply_text("❌ Send a text prompt, or /cancel")
+        return S_VID_PROMPT
+    context.user_data["vid_prompt"] = txt
+    await update.message.reply_text(
+        "⏱ *Choose the duration:*", reply_markup=_kb_vid_duration(), parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_DURATION
+
+
+def _photo_file_id(msg) -> str:
+    if msg.photo:
+        return msg.photo[-1].file_id
+    if msg.document and (msg.document.mime_type or "").startswith("image"):
+        return msg.document.file_id
+    return None
+
+
+async def on_vid_image(update: Update, context) -> int:
+    file_id = _photo_file_id(update.message)
+    if not file_id:
+        await update.message.reply_text("❌ Send a valid image (photo or image file), or /cancel")
+        return S_VID_IMAGE
+    f = await context.bot.get_file(file_id)
+    context.user_data["vid_image_url"] = f.file_path
+    await update.message.reply_text(
+        "✍️ *Now send a motion prompt* — how should the image move/animate?\n_(or /cancel)_",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_IMG_PROMPT
+
+
+async def on_vid_img_prompt(update: Update, context) -> int:
+    txt = (update.message.text or "").strip()
+    if not txt:
+        await update.message.reply_text("❌ Send a motion prompt, or /cancel")
+        return S_VID_IMG_PROMPT
+    context.user_data["vid_prompt"] = txt
+    await update.message.reply_text(
+        "🖼 *Optional:* send an END image (final frame) to guide the ending — "
+        "or /skip to continue.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_END_IMAGE
+
+
+async def on_vid_end_image(update: Update, context) -> int:
+    file_id = _photo_file_id(update.message)
+    if not file_id:
+        await update.message.reply_text("❌ Send an image, or /skip")
+        return S_VID_END_IMAGE
+    f = await context.bot.get_file(file_id)
+    context.user_data["vid_end_image_url"] = f.file_path
+    await update.message.reply_text(
+        "⏱ *Choose the duration:*", reply_markup=_kb_vid_duration(), parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_DURATION
+
+
+async def on_vid_skip(update: Update, context) -> int:
+    context.user_data["vid_end_image_url"] = None
+    await update.message.reply_text(
+        "⏱ *Choose the duration:*", reply_markup=_kb_vid_duration(), parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_DURATION
+
+
+async def on_vid_duration(update: Update, context) -> int:
+    q = update.callback_query
+    await q.answer()
+    choice = q.data.split(":", 1)[1]
+    if choice == "cancel":
+        await q.edit_message_text("❌ Cancelled.")
+        context.user_data.clear()
+        return ConversationHandler.END
+    context.user_data["vid_duration"] = int(choice)
+    await q.edit_message_text(
+        "📐 *Choose the format:*", reply_markup=_kb_vid_format(), parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_VID_FORMAT
+
+
+async def on_vid_format(update: Update, context) -> int:
+    q = update.callback_query
+    await q.answer()
+    choice = q.data.split(":", 1)[1]
+    if choice == "cancel":
+        await q.edit_message_text("❌ Cancelled.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    uid = update.effective_user.id
+    aspect = choice  # e.g. "16:9"
+    mode = context.user_data.get("vid_mode", "t2v")
+    prompt = context.user_data.get("vid_prompt", "")
+    duration = int(context.user_data.get("vid_duration", 5))
+    cost = _vid_cost(duration)
+
+    if not consume_tokens(uid, cost, update.effective_user.username or ""):
+        bal = get_tokens(uid)
+        await q.answer(f"❌ {cost} tokens required (balance: {bal})", show_alert=True)
+        return S_VID_FORMAT
+
+    await q.edit_message_text(
+        f"🎬 *Generating your video…*\n_Seedance 1.5 · {duration}s · {aspect}_\n"
+        "⏳ This can take a few minutes.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    loop = asyncio.get_event_loop()
+    try:
+        if mode == "i2v":
+            img = context.user_data.get("vid_image_url")
+            end = context.user_data.get("vid_end_image_url")
+            url = await loop.run_in_executor(
+                None,
+                lambda: wavespeed.generate_video_seedance_i2v(
+                    img, prompt, duration, aspect, False, end, True
+                ),
+            )
+        else:
+            url = await loop.run_in_executor(
+                None,
+                lambda: wavespeed.generate_video_seedance_t2v(prompt, duration, aspect, True),
+            )
+        await q.message.reply_video(url, caption="✅ Here is your video!", supports_streaming=True)
+    except wavespeed.TaskTimeout:
+        try:
+            add_tokens_pg(uid, cost) if USE_POSTGRES else None
+        except Exception:
+            pass
+        await q.message.reply_text(
+            "⏳ The video is taking longer than expected. Your tokens were refunded — try again."
+        )
+    except Exception as e:
+        try:
+            add_tokens_pg(uid, cost) if USE_POSTGRES else None
+        except Exception:
+            pass
+        await q.message.reply_text(f"❌ Video generation failed: `{str(e)[:200]}`\n(tokens refunded)",
+                                   parse_mode=ParseMode.MARKDOWN)
+    finally:
+        context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def on_vid_cancel(update: Update, context) -> int:
     context.user_data.clear()
     await update.message.reply_text("❌ Cancelled.")
     return ConversationHandler.END
@@ -2936,6 +3177,29 @@ def main():
         per_chat=True,
     )
     app.add_handler(conv_mp4)
+
+    conv_video = ConversationHandler(
+        entry_points=[CommandHandler("video", cmd_video)],
+        states={
+            S_VID_MODEL: [CallbackQueryHandler(on_vid_model, pattern=r"^vid:")],
+            S_VID_MODE: [CallbackQueryHandler(on_vid_mode, pattern=r"^vidmode:")],
+            S_VID_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_vid_prompt),
+                           CommandHandler("cancel", on_vid_cancel)],
+            S_VID_IMAGE: [MessageHandler(filters.PHOTO | filters.Document.IMAGE, on_vid_image),
+                          CommandHandler("cancel", on_vid_cancel)],
+            S_VID_IMG_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_vid_img_prompt),
+                               CommandHandler("cancel", on_vid_cancel)],
+            S_VID_END_IMAGE: [MessageHandler(filters.PHOTO | filters.Document.IMAGE, on_vid_end_image),
+                              CommandHandler("skip", on_vid_skip),
+                              CommandHandler("cancel", on_vid_cancel)],
+            S_VID_DURATION: [CallbackQueryHandler(on_vid_duration, pattern=r"^viddur:")],
+            S_VID_FORMAT: [CallbackQueryHandler(on_vid_format, pattern=r"^vidfmt:")],
+        },
+        fallbacks=[CommandHandler("cancel", on_vid_cancel)],
+        per_user=True,
+        per_chat=True,
+    )
+    app.add_handler(conv_video)
 
     # Save/Share gallery callbacks (must be before other handlers to avoid conflicts)
     app.add_handler(CallbackQueryHandler(on_save_asset, pattern=r"^save:"))
