@@ -2796,6 +2796,53 @@ def _vid_cost(duration: int) -> int:
     return 15 if int(duration) <= 5 else 30
 
 
+def _crop_to_ratio_bytes(raw: bytes, ratio_str: str) -> bytes:
+    """Center-crop image bytes to the target aspect ratio (e.g. '16:9'). JPEG out."""
+    import io
+    from PIL import Image
+    img = Image.open(io.BytesIO(raw)).convert("RGB")
+    w, h = img.size
+    rw, rh = (int(x) for x in ratio_str.split(":"))
+    target = rw / rh
+    cur = w / h
+    if abs(cur - target) > 0.01:
+        if cur > target:  # too wide → trim sides
+            new_w = int(round(h * target))
+            x = (w - new_w) // 2
+            img = img.crop((x, 0, x + new_w, h))
+        else:  # too tall → trim top/bottom
+            new_h = int(round(w / target))
+            y = (h - new_h) // 2
+            img = img.crop((0, y, w, y + new_h))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=92)
+    return out.getvalue()
+
+
+async def _reframe_tg_image(context, chat_id: int, image_url: str, ratio_str: str) -> str:
+    """Download a Telegram image URL, center-crop it to ratio_str, re-upload via
+    Telegram and return a fresh file URL (so Seedance i2v outputs the chosen ratio).
+    Falls back to the original URL on any error."""
+    try:
+        raw = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: req.get(image_url, timeout=30).content
+        )
+        cropped = await asyncio.get_event_loop().run_in_executor(
+            None, _crop_to_ratio_bytes, raw, ratio_str
+        )
+        import io
+        m = await context.bot.send_photo(chat_id, photo=io.BytesIO(cropped))
+        f = await context.bot.get_file(m.photo[-1].file_id)
+        try:
+            await m.delete()
+        except Exception:
+            pass
+        return f.file_path
+    except Exception as e:
+        logger.warning("reframe image failed (%s) — using original", e)
+        return image_url
+
+
 def _kb_vid_model():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🎬 Seedance 1.5", callback_data="vid:seedance")],
@@ -2993,6 +3040,11 @@ async def on_vid_format(update: Update, context) -> int:
         if mode == "i2v":
             img = context.user_data.get("vid_image_url")
             end = context.user_data.get("vid_end_image_url")
+            # Seedance i2v follows the source image shape → crop it to the chosen
+            # ratio first so the output actually respects the format (e.g. 16:9).
+            img = await _reframe_tg_image(context, uid, img, aspect)
+            if end:
+                end = await _reframe_tg_image(context, uid, end, aspect)
             url = await loop.run_in_executor(
                 None,
                 lambda: wavespeed.generate_video_seedance_i2v(
