@@ -50,3 +50,21 @@ htmlcov/
 # Production
 *.pem
 *.key
+
+# binaries / local junk
+*.exe
+ngrok*
+temp_check.css
+*.zip
+
+# secrets & local
+.env
+.env.*
+!.env.example
+
+# python / node
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.DS_Store
