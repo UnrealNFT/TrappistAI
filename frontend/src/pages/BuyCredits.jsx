@@ -1,23 +1,19 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle, Zap } from 'lucide-react'
+import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 import { CLPublicKey, DeployUtil } from 'casper-js-sdk'
 
 const PACKAGES = [
-  { name: 'Starter', tokens: 100, cspr: 1000, popular: true }  // PRODUCTION: 1000 CSPR
+  { name: 'Starter', tokens: 100, cspr: 1000, popular: true } // PRODUCTION: 1000 CSPR
 ]
 
-// 🔥 CONFIGURATION CASPER (à configurer avec ta vraie adresse)
 const CASPER_CONFIG = {
   receiverWallet: '0202e5a88e2baf0306484eced583f8642902752668b4b91070dc2abd01d6304d2cd8',
-  chainName: 'casper',  // 'casper' pour mainnet, 'casper-test' pour testnet
-  paymentAmount: '100000000'  // 0.1 CSPR en motes pour les frais de gas
+  chainName: 'casper', // 'casper' mainnet, 'casper-test' testnet
+  paymentAmount: '100000000' // 0.1 CSPR gas
 }
 
 export default function BuyCredits({ wallet, balance, provider, onPurchaseComplete }) {
-  const navigate = useNavigate()
   const [selected, setSelected] = useState(null)
-  const [paymentMode, setPaymentMode] = useState('manual') // 'manual' or 'x402'
   const [paying, setPaying] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
@@ -35,41 +31,38 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
       return
     }
 
+    if (!selected) {
+      setError('Please select a package')
+      return
+    }
+
     setPaying(true)
     setError('')
     setSuccess(false)
 
     try {
       console.log('🚀 Initiating payment:', selected.cspr, 'CSPR')
-      
-      // Montant en motes (1 CSPR = 1,000,000,000 motes)
+
       const amountMotes = (selected.cspr * 1_000_000_000).toString()
-      
-      // RÉUTILISER le provider déjà connecté au lieu d'en créer un nouveau
       console.log('✅ Using existing provider')
 
-      // Vérifier la connexion
       const isConnected = await provider.isConnected()
-      
       if (!isConnected) {
         throw new Error('Wallet not connected. Please reconnect.')
       }
 
       console.log('✅ Wallet connected, creating deploy...')
 
-      // Créer les clés publiques
       const senderPublicKey = CLPublicKey.fromHex(wallet)
       const receiverPublicKey = CLPublicKey.fromHex(CASPER_CONFIG.receiverWallet)
 
-      // Créer les paramètres du deploy
       const deployParams = new DeployUtil.DeployParams(
         senderPublicKey,
         CASPER_CONFIG.chainName,
-        1,  // gas price
-        1800000  // ttl (30 minutes)
+        1,
+        1800000
       )
 
-      // Créer le transfert avec un ID unique
       const transferId = Date.now()
       const transferArgs = DeployUtil.ExecutableDeployItem.newTransfer(
         amountMotes,
@@ -78,54 +71,44 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
         transferId
       )
 
-      // Payment standard pour les frais de gas
       const payment = DeployUtil.standardPayment(CASPER_CONFIG.paymentAmount)
-
-      // Créer le deploy
       const deploy = DeployUtil.makeDeploy(deployParams, transferArgs, payment)
       const deployJSON = DeployUtil.deployToJson(deploy)
 
       console.log('📝 Deploy created, requesting signature...')
 
-      // Demander la signature au wallet
       const signedResult = await provider.sign(JSON.stringify(deployJSON), wallet)
-
       if (!signedResult || signedResult.cancelled) {
         throw new Error('Payment cancelled')
       }
 
       console.log('✅ Deploy signed!')
 
-      // Calculer le hash du deploy
       const deployHash = Array.from(deploy.hash)
-        .map(b => b.toString(16).padStart(2, '0'))
+        .map((b) => b.toString(16).padStart(2, '0'))
         .join('')
 
       setTxHash(deployHash)
 
-      // Convertir la signature en hex
       const signatureHex = Array.from(signedResult.signature)
-        .map(b => b.toString(16).padStart(2, '0'))
+        .map((b) => b.toString(16).padStart(2, '0'))
         .join('')
 
-      // Construire le deploy signé complet
       const deployJson = DeployUtil.deployToJson(deploy)
       deployJson.deploy.header.account = deployJson.deploy.header.account.toLowerCase()
 
-      // Déterminer l'algorithme de signature (01 = ED25519, 02 = SECP256K1)
       const keyPrefix = wallet.substring(0, 2)
-
-      // Ajouter l'approbation avec la signature
-      deployJson.deploy.approvals = [{
-        signer: senderPublicKey.toHex().toLowerCase(),
-        signature: keyPrefix + signatureHex
-      }]
+      deployJson.deploy.approvals = [
+        {
+          signer: senderPublicKey.toHex().toLowerCase(),
+          signature: keyPrefix + signatureHex
+        }
+      ]
 
       console.log('📡 Sending deploy to backend (Step 1)...')
       setPaying(false)
       setVerifying(true)
 
-      // STEP 1: Send deploy to RPC via backend (like ScreenerLand)
       const sendResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/casper/send-deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -143,7 +126,6 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
       console.log('✅ Deploy sent to blockchain:', confirmedHash)
       console.log('🔐 Verifying payment on blockchain (Step 2)...')
 
-      // STEP 2: Verify payment and credit tokens (like ScreenerLand)
       const verifyResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -162,7 +144,6 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
         setSuccess(true)
         setVerifying(false)
 
-        // Refresh balance and reset after success
         setTimeout(() => {
           onPurchaseComplete()
           setSelected(null)
@@ -171,15 +152,14 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
         }, 3000)
       } else if (verifyData.pending) {
         console.warn('⏳ Payment still pending - starting auto-verification')
-        
-        // AUTO-VERIFICATION : continue de vérifier automatiquement toutes les 10s
+
         let attempts = 0
-        const maxAttempts = 20 // 20 × 10s = 3 minutes max
-        
+        const maxAttempts = 20
+
         const pollInterval = setInterval(async () => {
           attempts++
           console.log(`🔄 Auto-verification attempt ${attempts}/${maxAttempts}...`)
-          
+
           try {
             const retryResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify`, {
               method: 'POST',
@@ -191,17 +171,16 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                 tokens: selected.tokens
               })
             })
-            
+
             const retryData = await retryResponse.json()
-            
+
             if (retryResponse.ok && retryData.success) {
               console.log('✅ AUTO-VERIFIED! Tokens credited!')
               clearInterval(pollInterval)
               setSuccess(true)
               setVerifying(false)
               setError('')
-              
-              // Refresh balance
+
               setTimeout(() => {
                 onPurchaseComplete()
                 setSelected(null)
@@ -209,14 +188,13 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                 setSuccess(false)
               }, 3000)
             } else if (attempts >= maxAttempts) {
-              // Timeout après 3 minutes
               console.warn('❌ Auto-verification timeout after 3 minutes')
               clearInterval(pollInterval)
               setVerifying(false)
-              setError('⏳ Blockchain confirmation is taking longer than usual. Your payment has been sent successfully - please check your balance in 5-10 minutes. Refresh this page to see your updated balance.')
+              setError(
+                '⏳ Blockchain confirmation is taking longer than usual. Your payment has been sent successfully - please check your balance in 5-10 minutes. Refresh this page to see your updated balance.'
+              )
             }
-            // Sinon continue de poll
-            
           } catch (pollError) {
             console.error('Poll error:', pollError)
             if (attempts >= maxAttempts) {
@@ -225,238 +203,17 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
               setError('Unable to verify payment. Please check your balance in a few minutes.')
             }
           }
-        }, 10000) // Toutes les 10 secondes
-        
-        // Message pendant qu'on poll
-        setError('⏳ Waiting for blockchain confirmation... Checking automatically every 10 seconds. Please wait, do not close this page.')
+        }, 10000)
 
-        
+        setError(
+          '⏳ Waiting for blockchain confirmation... Checking automatically every 10 seconds. Please wait, do not close this page.'
+        )
       } else {
         throw new Error(verifyData.error || 'Payment verification failed')
       }
-
     } catch (err) {
       console.error('❌ Payment error:', err)
       setError(err.message || 'Payment failed. Please try again.')
-      setPaying(false)
-      setVerifying(false)
-    }
-  }
-
-  const handlePayWithX402 = async () => {
-    if (!wallet) {
-      setError('Please connect your wallet first')
-      return
-    }
-
-    if (!provider) {
-      setError('Wallet provider not available. Please reconnect your wallet.')
-      return
-    }
-
-    setPaying(true)
-    setError('')
-    setSuccess(false)
-
-    try {
-      console.log('🚀 x402 REAL Payment: 10 CSPR on blockchain')
-      
-      // Amount: 10 CSPR (not 1000) for x402 pricing
-      const amountMotes = (10 * 1_000_000_000).toString()
-      
-      // Use existing provider
-      console.log('✅ Using existing provider')
-
-      // Check connection
-      const isConnected = await provider.isConnected()
-      
-      if (!isConnected) {
-        throw new Error('Wallet not connected. Please reconnect.')
-      }
-
-      console.log('✅ Wallet connected, creating deploy...')
-
-      // Create public keys
-      const senderPublicKey = CLPublicKey.fromHex(wallet)
-      const receiverPublicKey = CLPublicKey.fromHex(CASPER_CONFIG.receiverWallet)
-
-      // Create deploy parameters
-      const deployParams = new DeployUtil.DeployParams(
-        senderPublicKey,
-        CASPER_CONFIG.chainName,
-        1,  // gas price
-        1800000  // ttl (30 minutes)
-      )
-
-      // Create transfer with unique ID
-      const transferId = Date.now()
-      const transferArgs = DeployUtil.ExecutableDeployItem.newTransfer(
-        amountMotes,
-        receiverPublicKey,
-        null,
-        transferId
-      )
-
-      // Standard payment for gas fees
-      const payment = DeployUtil.standardPayment(CASPER_CONFIG.paymentAmount)
-
-      // Create deploy
-      const deploy = DeployUtil.makeDeploy(deployParams, transferArgs, payment)
-      const deployJSON = DeployUtil.deployToJson(deploy)
-
-      console.log('📝 Deploy created, requesting signature...')
-
-      // Request wallet signature
-      const signedResult = await provider.sign(JSON.stringify(deployJSON), wallet)
-
-      if (!signedResult || signedResult.cancelled) {
-        throw new Error('Payment cancelled')
-      }
-
-      console.log('✅ Deploy signed!')
-
-      // Calculate deploy hash
-      const deployHash = Array.from(deploy.hash)
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
-
-      console.log('📤 Deploying to blockchain...')
-      console.log('Deploy hash:', deployHash)
-      
-      setTxHash(deployHash)
-
-      // Convert signature to hex
-      const signatureHex = Array.from(signedResult.signature)
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
-
-      // Update deploy JSON with signature (deployJSON already created above)
-      deployJSON.deploy.header.account = deployJSON.deploy.header.account.toLowerCase()
-
-      // Determine signature algorithm (01 = ED25519, 02 = SECP256K1)
-      const keyPrefix = wallet.substring(0, 2)
-
-      // Add approval with signature
-      deployJSON.deploy.approvals = [{
-        signer: senderPublicKey.toHex().toLowerCase(),
-        signature: keyPrefix + signatureHex
-      }]
-
-      console.log('📡 Sending deploy to blockchain via backend...')
-      setPaying(false)
-      setVerifying(true)
-
-      // Send deploy to RPC via backend
-      const sendResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/casper/send-deploy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deployJson: deployJSON })
-      })
-
-      if (!sendResponse.ok) {
-        const errorData = await sendResponse.json()
-        throw new Error(errorData.detail || 'Failed to send deploy')
-      }
-
-      const sendData = await sendResponse.json()
-      const confirmedHash = sendData.deployHash
-
-      console.log('✅ Deploy sent to blockchain:', confirmedHash)
-      console.log('🔐 Verifying payment on blockchain...')
-
-      // Verify payment and credit tokens
-      const verifyResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          wallet,
-          deployHash: confirmedHash,
-          amount: 10,  // 10 CSPR for x402
-          tokens: 100  // Backend expects "tokens" not "credits"
-        })
-      })
-
-      if (!verifyResponse.ok) {
-        throw new Error('Failed to verify payment')
-      }
-
-      const verifyData = await verifyResponse.json()
-
-      if (verifyResponse.ok && verifyData.success) {
-        console.log('✅ Payment verified and tokens credited!')
-        setSuccess(true)
-        setVerifying(false)
-        setError('')
-
-        setTimeout(() => {
-          onPurchaseComplete()
-          setSelected(null)
-          setTxHash('')
-          setSuccess(false)
-        }, 3000)
-      } else if (verifyData.pending) {
-        console.log('🔄 Payment pending - starting auto-verification (polling every 10s)...')
-        
-        let attempts = 0
-        const maxAttempts = 20  // 20 × 10s = 3 minutes max
-        
-        const pollInterval = setInterval(async () => {
-          attempts++
-          console.log(`⏳ Auto-verification attempt ${attempts}/${maxAttempts}...`)
-          
-          try {
-            const retryResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/verify`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                wallet,
-                deployHash: confirmedHash,
-                amount: 10,  // 10 CSPR for x402
-                tokens: 100
-              })
-            })
-            
-            const retryData = await retryResponse.json()
-            
-            if (retryResponse.ok && retryData.success) {
-              console.log('✅ AUTO-VERIFIED! Tokens credited!')
-              clearInterval(pollInterval)
-              setSuccess(true)
-              setVerifying(false)
-              setError('')
-              
-              setTimeout(() => {
-                onPurchaseComplete()
-                setSelected(null)
-                setTxHash('')
-                setSuccess(false)
-              }, 3000)
-            } else if (attempts >= maxAttempts) {
-              console.warn('❌ Auto-verification timeout after 3 minutes')
-              clearInterval(pollInterval)
-              setVerifying(false)
-              setError('⏳ Blockchain confirmation is taking longer than usual. Your payment has been sent successfully - please check your balance in 5-10 minutes. Refresh this page to see your updated balance.')
-            }
-            
-          } catch (pollError) {
-            console.error('Poll error:', pollError)
-            if (attempts >= maxAttempts) {
-              clearInterval(pollInterval)
-              setVerifying(false)
-              setError('Unable to verify payment. Please check your balance in a few minutes.')
-            }
-          }
-        }, 10000) // Every 10 seconds
-        
-        setError('⏳ Waiting for blockchain confirmation... Checking automatically every 10 seconds. Please wait, do not close this page.')
-        
-      } else {
-        throw new Error(verifyData.error || 'Payment verification failed')
-      }
-
-    } catch (err) {
-      console.error('❌ x402 error:', err)
-      setError(err.message || 'x402 payment failed. Please try again.')
       setPaying(false)
       setVerifying(false)
     }
@@ -470,7 +227,6 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
           Pay with Casper Wallet - Instant & Secure
         </p>
 
-        {/* Package */}
         <div className="flex justify-center mb-12">
           {PACKAGES.map((pkg, i) => (
             <div
@@ -497,7 +253,6 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
           ))}
         </div>
 
-        {/* Payment Section */}
         {selected && (
           <div className="glass p-8 rounded-2xl border border-green-500/30 shadow-2xl shadow-green-500/20">
             <h2 className="text-3xl font-bold text-green-400 mb-6">
@@ -507,9 +262,11 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
             {!wallet ? (
               <div className="text-center py-12 glass rounded-xl border border-green-500/30">
                 <AlertCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
-                <p className="text-green-300 text-lg mb-6">Please connect your Casper Wallet to continue</p>
+                <p className="text-green-300 text-lg mb-6">
+                  Please connect your Casper Wallet to continue
+                </p>
                 <button
-                  onClick={() => window.location.href = '/'}
+                  onClick={() => (window.location.href = '/')}
                   className="bg-green-500 text-black font-bold px-8 py-4 rounded-lg hover:shadow-lg hover:shadow-green-500/50 transition-all hover:bg-green-400"
                 >
                   Connect Wallet
@@ -517,19 +274,11 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
               </div>
             ) : (
               <>
-                {/* Payment Info */}
                 <div className="mb-8 glass p-6 rounded-xl border border-green-500/30">
                   <div className="flex justify-between items-center mb-4">
                     <span className="text-green-300/80 text-lg">Amount to pay:</span>
-                    <span className="text-4xl font-bold text-green-400">
-                      {paymentMode === 'x402' ? '10' : selected.cspr} CSPR
-                    </span>
+                    <span className="text-4xl font-bold text-green-400">{selected.cspr} CSPR</span>
                   </div>
-                  {paymentMode === 'x402' && (
-                    <div className="mb-4 p-3 bg-purple-500/20 border border-purple-500/50 rounded-lg">
-                      <p className="text-purple-300 text-sm">⚡ x402 Discounted Price: 10 CSPR (90% off!)</p>
-                    </div>
-                  )}
                   <div className="flex justify-between items-center mb-4">
                     <span className="text-green-300/80 text-lg">You will receive:</span>
                     <span className="text-3xl font-bold text-green-400">{selected.tokens} tokens</span>
@@ -542,23 +291,24 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                   </div>
                 </div>
 
-                {/* Status Messages */}
                 {error && (
                   <div className="mb-6 p-4 bg-red-500/20 border-2 border-red-500/50 rounded-xl flex items-start gap-3">
                     <XCircle className="w-6 h-6 text-red-300 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-red-300 font-semibold mb-1">Error</p>
+                      <p className="text-red-300 font-semibold mb-1">Status</p>
                       <p className="text-red-200 text-sm">{error}</p>
                     </div>
                   </div>
                 )}
-                
+
                 {success && (
                   <div className="mb-6 p-4 bg-green-500/20 border-2 border-green-500/50 rounded-xl flex items-start gap-3">
                     <CheckCircle className="w-6 h-6 text-green-300 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="text-green-300 font-bold text-lg">Payment Successful! 🎉</p>
-                      <p className="text-green-200 text-sm mt-1">✅ {selected.tokens} tokens have been credited to your account</p>
+                      <p className="text-green-200 text-sm mt-1">
+                        ✅ {selected.tokens} tokens have been credited to your account
+                      </p>
                     </div>
                   </div>
                 )}
@@ -567,7 +317,9 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                   <div className="mb-6 p-4 glass border-2 border-green-500/50 rounded-xl">
                     <p className="text-green-400 font-semibold mb-2">Transaction Submitted</p>
                     <p className="text-green-300 text-xs mb-2">Deploy Hash:</p>
-                    <code className="text-green-400 text-xs break-all block bg-black/30 p-2 rounded">{txHash}</code>
+                    <code className="text-green-400 text-xs break-all block bg-black/30 p-2 rounded">
+                      {txHash}
+                    </code>
                     <a
                       href={`https://cspr.live/deploy/${txHash}`}
                       target="_blank"
@@ -579,107 +331,42 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
                   </div>
                 )}
 
-                {/* Payment Mode Selector */}
-                <div className="mb-6">
-                  <p className="text-green-300 text-sm mb-3 font-semibold">Choose Payment Method:</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => setPaymentMode('manual')}
-                      className={`p-4 rounded-lg border-2 transition ${
-                        paymentMode === 'manual'
-                          ? 'border-green-500 bg-green-500/20'
-                          : 'border-gray-700 bg-gray-900/50 hover:border-green-500/50'
-                      }`}
-                    >
-                      <Wallet className="w-6 h-6 mx-auto mb-2 text-green-400" />
-                      <p className="text-white font-semibold text-sm">Manual Transfer</p>
-                      <p className="text-gray-400 text-xs mt-1">Sign with wallet</p>
-                    </button>
-                    
-                    <button
-                      onClick={() => navigate('/buy-credits-x402')}
-                      className="p-4 rounded-lg border-2 border-purple-500/50 bg-purple-500/10 hover:border-purple-500 hover:bg-purple-500/20 transition"
-                    >
-                      <Zap className="w-6 h-6 mx-auto mb-2 text-purple-400" />
-                      <p className="text-white font-semibold text-sm">x402 (Testnet)</p>
-                      <p className="text-purple-300 text-xs mt-1 font-bold">Try it now →</p>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Pay Button */}
-                {paymentMode === 'manual' ? (
-                  <button
-                    onClick={handlePayWithWallet}
-                    disabled={paying || verifying || success}
-                    className="w-full bg-green-500 text-black font-bold py-5 rounded-xl text-lg hover:shadow-2xl hover:shadow-green-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-6 hover:bg-green-400"
-                  >
-                    {paying ? (
-                      <>
-                        <Loader2 className="w-6 h-6 animate-spin" />
-                        <span>Waiting for wallet approval...</span>
-                      </>
-                    ) : verifying ? (
-                      <>
-                        <Loader2 className="w-6 h-6 animate-spin" />
-                        <span>Verifying payment on blockchain...</span>
-                      </>
-                    ) : success ? (
-                      <>
-                        <CheckCircle className="w-6 h-6" />
-                        <span>Payment Complete!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Wallet className="w-6 h-6" />
-                        <span>Pay {selected.cspr} CSPR with Casper Wallet</span>
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <button
-                    onClick={handlePayWithX402}
-                    disabled={paying || verifying || success}
-                    className="w-full bg-purple-500 text-white font-bold py-5 rounded-xl text-lg hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-6 hover:bg-purple-400"
-                  >
-                    {paying ? (
-                      <>
-                        <Loader2 className="w-6 h-6 animate-spin" />
-                        <span>Waiting for wallet approval...</span>
-                      </>
-                    ) : verifying ? (
-                      <>
-                        <Loader2 className="w-6 h-6 animate-spin" />
-                        <span>Verifying payment on blockchain...</span>
-                      </>
-                    ) : success ? (
-                      <>
-                        <CheckCircle className="w-6 h-6" />
-                        <span>Payment Complete!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-6 h-6" />
-                        <span>Pay 10 CSPR with x402 Discount</span>
-                      </>
-                    )}
-                  </button>
-                )}
-
-                {/* Info Box */}
-                <div className="p-4 glass border border-green-500/30 rounded-xl">
-                  {paymentMode === 'x402' ? (
-                    <p className="text-green-300 text-sm leading-relaxed">
-                      💡 <strong>x402 Discount:</strong> Get 100 tokens for only 10 CSPR (90% off)! This special price uses the x402 protocol for fast, automated payments. Just sign with your Casper Wallet and we'll handle the rest.
-                    </p>
+                <button
+                  onClick={handlePayWithWallet}
+                  disabled={paying || verifying || success}
+                  className="w-full bg-green-500 text-black font-bold py-5 rounded-xl text-lg hover:shadow-2xl hover:shadow-green-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-6 hover:bg-green-400"
+                >
+                  {paying ? (
+                    <>
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                      <span>Waiting for wallet approval...</span>
+                    </>
+                  ) : verifying ? (
+                    <>
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                      <span>Verifying payment on blockchain...</span>
+                    </>
+                  ) : success ? (
+                    <>
+                      <CheckCircle className="w-6 h-6" />
+                      <span>Payment Complete!</span>
+                    </>
                   ) : (
-                    <p className="text-green-300 text-sm leading-relaxed">
-                      💡 <strong>How it works:</strong> Click the button above to sign the transaction with your Casper Wallet. We'll verify the payment on the blockchain and credit your tokens automatically!
-                    </p>
+                    <>
+                      <Wallet className="w-6 h-6" />
+                      <span>Pay {selected.cspr} CSPR with Casper Wallet</span>
+                    </>
                   )}
+                </button>
+
+                <div className="p-4 glass border border-green-500/30 rounded-xl">
+                  <p className="text-green-300 text-sm leading-relaxed">
+                    💡 <strong>How it works:</strong> Click the button above to sign the
+                    transaction with your Casper Wallet. We'll verify the payment on the
+                    blockchain and credit your tokens automatically!
+                  </p>
                 </div>
 
-                {/* Help Link */}
                 <div className="mt-6 text-center">
                   <p className="text-green-300/60 text-sm">
                     Need help?{' '}
@@ -698,10 +385,9 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
           </div>
         )}
 
-        {/* Info Notice */}
         <div className="mt-8 text-center">
           <p className="text-green-300/50 text-sm">
-            💡 Your tokens will be credited instantly after blockchain confirmation.
+            💡 Your tokens will be credited after blockchain confirmation.
           </p>
         </div>
       </div>

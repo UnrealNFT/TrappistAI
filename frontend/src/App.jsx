@@ -6,7 +6,6 @@ import Home from './pages/Home'
 import Generate from './pages/Generate'
 import Profile from './pages/Profile'
 import BuyCredits from './pages/BuyCredits'
-import BuyCreditsX402 from './pages/BuyCreditsX402'
 import Community from './pages/Community'
 import Admin from './pages/Admin'
 import Navbar from './components/Navbar'
@@ -16,19 +15,17 @@ import { getBalance } from './services/api'
 // Component to restart scan animation on route change
 function ScanlineAnimationTrigger() {
   const location = useLocation()
-  
+
   useEffect(() => {
-    // Remove class
     document.body.classList.remove('scan-active')
-    
-    // Add it back after a tiny delay to retrigger animation
+
     const timer = setTimeout(() => {
       document.body.classList.add('scan-active')
     }, 50)
-    
+
     return () => clearTimeout(timer)
   }, [location.pathname])
-  
+
   return null
 }
 
@@ -38,27 +35,24 @@ function App() {
   const [provider, setProvider] = useState(null)
   const [isMobile, setIsMobile] = useState(false)
 
-  // Check if Casper Wallet is installed
   const isCasperWalletAvailable = () => {
     return typeof window !== 'undefined' && typeof window.CasperWalletProvider === 'function'
   }
-  
-  // Detect mobile
+
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768)
     }
-    
+
     checkMobile()
     window.addEventListener('resize', checkMobile)
-    
+
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Connect wallet function
   const connectWallet = async () => {
     console.log('🔗 Connecting to Casper Wallet...')
-    
+
     if (!isCasperWalletAvailable()) {
       alert('Casper Wallet not found! Please install Casper Wallet extension.')
       window.open('https://www.casperwallet.io/', '_blank')
@@ -66,28 +60,24 @@ function App() {
     }
 
     try {
-      // Create provider instance
       const walletProvider = window.CasperWalletProvider()
       setProvider(walletProvider)
       console.log('✅ Provider created')
 
-      // Request connection
       const isConnected = await walletProvider.requestConnection()
-      
+
       if (!isConnected) {
         alert('Connection rejected by user')
         return
       }
 
-      // Get active public key
       const publicKey = await walletProvider.getActivePublicKey()
       const normalizedKey = publicKey.toLowerCase().trim()
       setWallet(normalizedKey)
       localStorage.setItem('wallet', normalizedKey)
-      
+
       console.log('✅ Wallet connected:', normalizedKey)
 
-      // Fetch balance
       try {
         const bal = await getBalance(normalizedKey)
         setBalance(bal)
@@ -100,7 +90,6 @@ function App() {
     }
   }
 
-  // Disconnect wallet
   const disconnectWallet = () => {
     setWallet(null)
     setBalance(0)
@@ -109,19 +98,15 @@ function App() {
     console.log('🔌 Wallet disconnected')
   }
 
-  // Auto-connect on mount if previously connected
   useEffect(() => {
     const savedWallet = localStorage.getItem('wallet')
     if (savedWallet && isCasperWalletAvailable()) {
-      // Try to reconnect
       connectWallet().catch(() => {
-        // Silently fail, user can reconnect manually
         localStorage.removeItem('wallet')
       })
     }
   }, [])
 
-  // Refresh balance
   const refreshBalance = async () => {
     if (wallet) {
       try {
@@ -138,61 +123,54 @@ function App() {
       <ScanlineAnimationTrigger />
       <AnimatePresence mode="wait">
         <div className="min-h-screen bg-dark-bg">
-          <Navbar 
+          <Navbar
             wallet={wallet}
             balance={balance}
             onConnect={connectWallet}
             onDisconnect={disconnectWallet}
             onRefreshBalance={refreshBalance}
           />
-          
+
           <main className={`${isMobile ? 'pb-36' : 'pb-8'}`}>
             <Routes>
               <Route path="/" element={<Home />} />
-              <Route path="/generate" element={
-                <Generate 
-                  wallet={wallet} 
-                  balance={balance}
-                  onBalanceUpdate={refreshBalance}
-                />
-              } />
-              <Route path="/profile" element={
-                <Profile 
-                  wallet={wallet}
-                />
-              } />
-              <Route path="/buy-credits" element={
-                <BuyCredits 
-                  wallet={wallet}
-                  balance={balance}
-                  provider={provider}
-                  onPurchaseComplete={refreshBalance}
-                />
-              } />
-              <Route path="/buy-credits-x402" element={
-                <BuyCreditsX402 
-                  wallet={wallet}
-                  balance={balance}
-                  provider={provider}
-                  onPurchaseComplete={refreshBalance}
-                />
-              } />
+              <Route
+                path="/generate"
+                element={
+                  <Generate
+                    wallet={wallet}
+                    balance={balance}
+                    onBalanceUpdate={refreshBalance}
+                  />
+                }
+              />
+              <Route
+                path="/profile"
+                element={<Profile wallet={wallet} />}
+              />
+              <Route
+                path="/buy-credits"
+                element={
+                  <BuyCredits
+                    wallet={wallet}
+                    balance={balance}
+                    provider={provider}
+                    onPurchaseComplete={refreshBalance}
+                  />
+                }
+              />
               <Route path="/my-rwa" element={<Navigate to="/profile" replace />} />
-              <Route path="/explore" element={
-                <Community 
-                  wallet={wallet}
-                />
-              } />
-              {/* Legacy route redirect */}
+              <Route
+                path="/explore"
+                element={<Community wallet={wallet} />}
+              />
               <Route path="/marketplace" element={<Navigate to="/explore" replace />} />
               <Route path="/admin" element={<Admin />} />
             </Routes>
           </main>
-          
-          {/* Bottom navigation - mobile only */}
+
           {isMobile && <BottomNav wallet={wallet} balance={balance} />}
-          
-          {/* Toast notifications */}
+
           <Toaster
             position="top-right"
             toastOptions={{
