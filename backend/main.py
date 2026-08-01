@@ -25,6 +25,7 @@ from sqlalchemy import text
 
 from cspr_listener import listen_payments
 from db import get_db_session, get_user_balance, consume_user_tokens, get_payment_history
+from casper_rpc import rpc_call
 import wavespeed
 import r2_storage
 
@@ -676,77 +677,33 @@ class VerifyPaymentRequest(BaseModel):
 async def send_deploy(request: Request, data: SendDeployRequest):
     """Send signed deploy to Casper RPC (Step 1 of payment flow - like ScreenerLand)"""
     try:
-        import httpx
-        
         if not data.deployJson:
             raise HTTPException(status_code=400, detail="Missing deployJson")
-        
+
         # Extract the actual deploy (frontend sends { deploy: {...} })
         actual_deploy = data.deployJson.get("deploy", data.deployJson)
-        
+
         print("📤 Submitting signed deploy to blockchain...")
         print(f"Deploy hash: {actual_deploy.get('hash', 'N/A')}")
         print(f"Deploy chain_name: {actual_deploy.get('header', {}).get('chain_name', 'N/A')}")
         print(f"Deploy approvals count: {len(actual_deploy.get('approvals', []))}")
-        
-        # RPC node (mainnet) - ONLY working endpoint
-        rpc_nodes = [
-            "https://node.mainnet.casper.network/rpc"
-        ]
-        
-        result = None
-        last_error = None
-        
-        for rpc_url in rpc_nodes:
-            try:
-                print(f"🔄 Trying MAINNET RPC node: {rpc_url}")
-                
-                async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-                    response = await client.post(
-                        rpc_url,
-                        json={
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "account_put_deploy",
-                            "params": {
-                                "deploy": actual_deploy
-                            }
-                        }
-                    )
-                    
-                    # Check response validity
-                    if response.status_code != 200:
-                        raise Exception(f"RPC returned status {response.status_code}")
-                    
-                    if not response.content:
-                        raise Exception("RPC returned empty response")
-                    
-                    try:
-                        rpc_data = response.json()
-                    except Exception as json_err:
-                        raise Exception(f"Invalid JSON: {str(json_err)}")
-                    
-                    print(f"📥 RPC Response from {rpc_url}: {rpc_data}")
-                    
-                    if "error" in rpc_data:
-                        raise Exception(rpc_data["error"].get("message", str(rpc_data["error"])))
-                    
-                    result = rpc_data["result"]
-                    print(f"✅ Deploy sent via {rpc_url}: {result.get('deploy_hash')}")
-                    break  # Success!
-                    
-            except Exception as node_error:
-                print(f"⚠️ Failed {rpc_url}: {str(node_error)}")
-                last_error = node_error
-        
-        if not result:
-            raise Exception(f"All MAINNET RPC nodes failed: {str(last_error)}")
-        
+
+        try:
+            result = await rpc_call(
+                "account_put_deploy",
+                {"deploy": actual_deploy},
+                network="mainnet",
+            )
+        except Exception as e:
+            raise Exception(f"All MAINNET RPC nodes failed: {e}")
+
+        print(f"✅ Deploy sent: {result.get('deploy_hash')}")
+
         return {
             "success": True,
             "deployHash": result["deploy_hash"]
         }
-        
+
     except Exception as e:
         print(f"❌ Error sending deploy: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -756,88 +713,46 @@ async def send_deploy(request: Request, data: SendDeployRequest):
 async def verify_payment(request: Request, data: VerifyPaymentRequest):
     """Verify payment on blockchain and credit tokens (Step 2 - like ScreenerLand)"""
     try:
-        import httpx
-        
         if not data.wallet or not data.deployHash:
             raise HTTPException(status_code=400, detail="Missing wallet or deployHash")
-        
+
         # Normalize wallet address to lowercase
         normalized_wallet = data.wallet.lower().strip()
         print(f"🔐 Verifying payment: wallet={normalized_wallet[:20]}..., deploy={data.deployHash[:20]}...")
-        
+
         # Clean hashes
         clean_deploy = data.deployHash.lower().replace("hash-", "").replace("deploy-", "")
-        
-        # RPC node - ONLY working endpoint
-        rpc_nodes = [
-            "https://node.mainnet.casper.network/rpc"
-        ]
-        
+
         # Wait for deploy to be executed (max 30 attempts * 3s = 90s - same as ScreenerLand)
         deploy_info = None
         max_attempts = 30
         delay_ms = 3000
-        
+
         for attempt in range(1, max_attempts + 1):
             print(f"🔍 Attempt {attempt}/{max_attempts} to fetch deploy info...")
-            
-            for rpc_url in rpc_nodes:
-                try:
-                    print(f"📡 Trying RPC node: {rpc_url}")
-                    
-                    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-                        response = await client.post(
-                            rpc_url,
-                            json={
-                                "jsonrpc": "2.0",
-                                "id": 1,
-                                "method": "info_get_deploy",
-                                "params": {
-                                    "deploy_hash": clean_deploy
-                                }
-                            }
-                        )
-                        
-                        # Check response validity
-                        if response.status_code != 200:
-                            print(f"⚠️ RPC returned status {response.status_code}")
-                            continue
-                        
-                        if not response.content:
-                            print(f"⚠️ RPC returned empty response")
-                            continue
-                        
-                        try:
-                            rpc_data = response.json()
-                        except Exception as json_err:
-                            print(f"⚠️ Invalid JSON from {rpc_url}: {str(json_err)}")
-                            continue
-                        
-                        if "error" in rpc_data:
-                            print(f"⏳ RPC returned error: {rpc_data['error'].get('message', 'Unknown')}")
-                            continue
-                        
-                        # Check BOTH formats like ScreenerLand (execution_results AND execution_info)
-                        result = rpc_data.get("result")
-                        if result and (result.get("execution_results") or result.get("execution_info")):
-                            deploy_info = result
-                            print(f"✅ Deploy found with execution result from {rpc_url}")
-                            break
-                        elif result:
-                            print("⏳ Deploy found but not executed yet, waiting...")
-                        else:
-                            print("⏳ No result yet, waiting...")
-                    
-                except Exception as fetch_error:
-                    print(f"⚠️ Fetch error on {rpc_url}: {str(fetch_error)}")
-            
-            # Check both formats like ScreenerLand
-            if deploy_info and (deploy_info.get("execution_results") or deploy_info.get("execution_info")):
-                break
-            
+
+            try:
+                result = await rpc_call(
+                    "info_get_deploy",
+                    {"deploy_hash": clean_deploy},
+                    network="mainnet",
+                )
+
+                if result and (result.get("execution_results") or result.get("execution_info")):
+                    deploy_info = result
+                    print("✅ Deploy found with execution result")
+                    break
+                elif result:
+                    print("⏳ Deploy found but not executed yet, waiting...")
+                else:
+                    print("⏳ No result yet, waiting...")
+
+            except Exception as fetch_error:
+                print(f"⚠️ Fetch error: {fetch_error}")
+
             if attempt < max_attempts:
                 await asyncio.sleep(delay_ms / 1000)
-        
+
         # Check both old and new API formats (like ScreenerLand)
         has_execution = deploy_info and (deploy_info.get("execution_results") or deploy_info.get("execution_info"))
         
@@ -927,7 +842,6 @@ import base64 as _x402_b64
 import json as _x402_json
 
 X402_NETWORK = "casper:casper-test"
-X402_TESTNET_RPC = os.getenv("X402_TESTNET_RPC", "https://node.testnet.casper.network/rpc")
 X402_TREASURY = os.getenv(
     "X402_TREASURY_WALLET",
     "0202e5a88e2baf0306484eced583f8642902752668b4b91070dc2abd01d6304d2cd8",
@@ -1002,26 +916,17 @@ async def _x402_finalize(deploy_hash: str, wallet: str):
     whose confirmation was slow can be recovered later with just its hash.
     Crediting is idempotent (process_payment_manual dedupes on tx hash).
     """
-    import httpx
-
     # Poll until the deploy has ACTUALLY executed. The key fix: we only stop
     # when execution_result is a real dict — `execution_info` can be present
     # while execution_result is still null (deploy not yet processed).
     exec_result = None
     for attempt in range(1, 26):  # up to ~75s
         try:
-            async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-                r = await client.post(
-                    X402_TESTNET_RPC,
-                    json={
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "info_get_deploy",
-                        "params": {"deploy_hash": deploy_hash},
-                    },
-                )
-                rd = r.json()
-            result = rd.get("result") or {}
+            result = await rpc_call(
+                "info_get_deploy",
+                {"deploy_hash": deploy_hash},
+                network="testnet",
+            )
             er = None
             if isinstance(result.get("execution_info"), dict):
                 er = result["execution_info"].get("execution_result")
@@ -1151,8 +1056,6 @@ async def buy_credits_x402_settle(
     (this is the cryptographic x402 proof), credits tokens, and returns an
     x402 receipt in the PAYMENT-RESPONSE header.
     """
-    import httpx
-
     if not payment_signature:
         # No payment attached yet → re-issue the challenge.
         return _x402_challenge_response()
@@ -1189,23 +1092,12 @@ async def buy_credits_x402_settle(
 
     # 1) Submit signed deploy to TESTNET RPC
     try:
-        async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-            send = await client.post(
-                X402_TESTNET_RPC,
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "account_put_deploy",
-                    "params": {"deploy": actual_deploy},
-                },
-            )
-            send_data = send.json()
-        if "error" in send_data:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Testnet RPC error: {send_data['error'].get('message', send_data['error'])}",
-            )
-        deploy_hash = send_data["result"]["deploy_hash"]
+        send_result = await rpc_call(
+            "account_put_deploy",
+            {"deploy": actual_deploy},
+            network="testnet",
+        )
+        deploy_hash = send_result["deploy_hash"]
         print(f"✅ x402: testnet deploy submitted: {deploy_hash}")
     except HTTPException:
         raise
@@ -1221,26 +1113,16 @@ async def buy_credits_x402_settle(
 async def verify_payment_legacy(request: Request, data: VerifyPaymentRequestLegacy):
     """Manual payment verification (fallback if WebSocket missed it)"""
     try:
-        import httpx
-        
-        # Fetch deploy from RPC
-        rpc_url = "https://node.mainnet.casper.network/rpc"
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                rpc_url,
-                json={
-                    "jsonrpc": "2.0",
-                    "method": "info_get_deploy",
-                    "params": {"deploy_hash": data.txHash},
-                    "id": 1
-                }
-            )
-            rpc_data = response.json()
-        
-        if "error" in rpc_data:
+        # Fetch deploy from RPC with fallback endpoints
+        rpc_result = await rpc_call(
+            "info_get_deploy",
+            {"deploy_hash": data.txHash},
+            network="mainnet",
+        )
+
+        deploy = rpc_result.get("deploy")
+        if not deploy:
             raise HTTPException(status_code=404, detail="Transaction not found")
-        
-        deploy = rpc_data["result"]["deploy"]
         sender = deploy["header"]["account"]
         
         # Extract amount
@@ -1282,51 +1164,27 @@ async def verify_payment_legacy(request: Request, data: VerifyPaymentRequestLega
 async def recover_payment(request: Request, deployHash: str, wallet: str, amount: float, tokens: int):
     """Recover lost payment by verifying on blockchain (for payments that timed out)"""
     try:
-        import httpx
         from db import process_payment_manual
-        
+
         print(f"🔍 Recovering payment: deploy={deployHash[:20]}..., wallet={wallet[:20]}...")
-        
+
         # Clean hash
         clean_deploy = deployHash.lower().replace("hash-", "").replace("deploy-", "")
-        
-        # RPC node - ONLY working endpoint
-        rpc_nodes = [
-            "https://node.mainnet.casper.network/rpc"
-        ]
-        
+
         # Fetch deploy info from blockchain
         deploy_info = None
-        for rpc_url in rpc_nodes:
-            try:
-                print(f"📡 Checking blockchain via {rpc_url}")
-                
-                async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-                    response = await client.post(
-                        rpc_url,
-                        json={
-                            "jsonrpc": "2.0",
-                            "method": "info_get_deploy",
-                            "params": {"deploy_hash": clean_deploy},
-                            "id": 1
-                        }
-                    )
-                    
-                    if response.status_code == 200 and response.content:
-                        try:
-                            result = response.json()
-                            if result.get("result") and result["result"].get("deploy"):
-                                deploy_info = result["result"]["deploy"]
-                                print("✅ Deploy found on blockchain!")
-                                break
-                        except Exception as json_err:
-                            print(f"⚠️ Invalid JSON from {rpc_url}: {str(json_err)}")
-                            continue
-                            
-            except Exception as e:
-                print(f"⚠️ RPC node {rpc_url} failed: {e}")
-                continue
-        
+        try:
+            result = await rpc_call(
+                "info_get_deploy",
+                {"deploy_hash": clean_deploy},
+                network="mainnet",
+            )
+            if result and result.get("deploy"):
+                deploy_info = result["deploy"]
+                print("✅ Deploy found on blockchain!")
+        except Exception as e:
+            print(f"⚠️ RPC call failed: {e}")
+
         if not deploy_info:
             raise HTTPException(status_code=404, detail="Deploy not found on blockchain. Wait a few minutes and try again.")
         
@@ -1389,17 +1247,11 @@ async def recover_batch_payments(
 ):
     """Recover multiple payments at once - for when multiple payments timed out"""
     try:
-        import httpx
         from db import process_payment_manual
-        
+
         print(f"🔍 Batch recovery for wallet: {wallet[:20]}...")
         print(f"📦 {len(deployHashes)} deploys to check")
-        
-        # RPC node - ONLY working endpoint
-        rpc_nodes = [
-            "https://node.mainnet.casper.network/rpc"
-        ]
-        
+
         results = {
             "credited": [],
             "already_credited": [],
@@ -1412,31 +1264,17 @@ async def recover_batch_payments(
                 clean_deploy = deployHash.lower().replace("hash-", "").replace("deploy-", "")
                 print(f"\n🔍 Checking deploy: {clean_deploy[:20]}...")
                 
-                # Fetch from blockchain
+                # Fetch from blockchain with fallback endpoints
                 deploy_info = None
-                for rpc_url in rpc_nodes:
-                    try:
-                        async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-                            response = await client.post(
-                                rpc_url,
-                                json={
-                                    "jsonrpc": "2.0",
-                                    "method": "info_get_deploy",
-                                    "params": {"deploy_hash": clean_deploy},
-                                    "id": 1
-                                }
-                            )
-                            
-                            if response.status_code == 200 and response.content:
-                                try:
-                                    result = response.json()
-                                    if result.get("result") and result["result"].get("deploy"):
-                                        deploy_info = result["result"]["deploy"]
-                                        break
-                                except:
-                                    continue
-                    except:
-                        continue
+                try:
+                    result = await rpc_call(
+                        "info_get_deploy",
+                        {"deploy_hash": clean_deploy},
+                        network="mainnet",
+                    )
+                    deploy_info = result.get("deploy")
+                except Exception as rpc_err:
+                    print(f"⚠️ Batch recovery RPC failed for {clean_deploy[:20]}: {rpc_err}")
                 
                 if not deploy_info:
                     results["failed"].append({

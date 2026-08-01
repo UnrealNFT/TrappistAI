@@ -7,10 +7,10 @@ import json
 import os
 from datetime import datetime
 import websockets
-import httpx
 from dotenv import load_dotenv
 
 from db import process_payment
+from casper_rpc import rpc_call
 
 load_dotenv()
 
@@ -19,7 +19,6 @@ RECEIVER_WALLET = os.getenv("RECEIVER_WALLET", "")
 RECEIVER_ACCOUNT_HASH = os.getenv("RECEIVER_ACCOUNT_HASH", "")
 CSPR_CLOUD_KEY = os.getenv("CSPR_CLOUD_KEY", "")
 CSPR_CLOUD_WS = "wss://streaming.mainnet.cspr.cloud/transfers"
-RPC_URL = "https://node.mainnet.casper.network/rpc"
 
 # Package unique
 PACKAGES = {
@@ -39,20 +38,10 @@ def normalize_hash(hash_str):
 
 
 async def fetch_deploy_sender(deploy_hash: str) -> str:
-    """Fetch sender public key from RPC"""
+    """Fetch sender public key from RPC with fallback endpoints."""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                RPC_URL,
-                json={
-                    "jsonrpc": "2.0",
-                    "method": "info_get_deploy",
-                    "params": {"deploy_hash": deploy_hash},
-                    "id": 1
-                }
-            )
-            data = response.json()
-            return data["result"]["deploy"]["header"]["account"]
+        result = await rpc_call("info_get_deploy", {"deploy_hash": deploy_hash})
+        return result["deploy"]["header"]["account"]
     except Exception as e:
         print(f"[CSPR] Error fetching deploy: {e}")
         return None
