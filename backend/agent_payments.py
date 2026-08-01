@@ -96,12 +96,11 @@ AGENT_CHAIN_NAME = os.getenv("AGENT_CHAIN_NAME", "casper")
 CASPER_RPC_URL = os.getenv("CASPER_RPC_URL", "https://node.mainnet.casper.network/rpc")
 
 # Fallback endpoints tried in order if the primary RPC fails to resolve.
-# The last entry is the current IP of node.mainnet.casper.network for
-# environments where DNS resolution is broken (e.g. some Render instances).
+# The IP entries are hard-coded current A-records for node.mainnet.casper.network
+# so the backend can still verify payments when Render DNS is broken.
 CASPER_RPC_FALLBACKS = [
-    "https://api.mainnet.casper.network/rpc",
-    "https://cspr.live/rpc",
-    "https://rpc.mainnet.casper.network/rpc",
+    "https://node.mainnet.casper.network/rpc",
+    "https://52.44.180.130/rpc",
     "https://98.86.11.64/rpc",
 ]
 
