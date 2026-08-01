@@ -4,6 +4,7 @@ Supports: Image (FLUX), Music (HeartMuLa/MiniMax), 3D (Hunyuan/Tripo), Chat (Gro
 Payment: CSPR (Casper blockchain)
 """
 import os
+import json
 import asyncio
 import random
 import secrets
