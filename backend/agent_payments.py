@@ -26,61 +26,12 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional, Dict, Any
 
-import httpx
 from sqlalchemy import text
-from urllib.parse import urlparse
 
 from prices import get_cspr_usd_rate
 from db import get_db_session
+from casper_rpc import rpc_call, get_rpc_urls
 
-
-# ---------------------------------------------------------------------------
-# DNS-over-HTTPS resolver (for environments with broken UDP DNS, e.g. Render)
-# ---------------------------------------------------------------------------
-_DOH_PROVIDERS = [
-    "https://dns.google/resolve",
-    "https://cloudflare-dns.com/dns-query",
-]
-
-
-def _resolve_via_doh(hostname: str) -> Optional[str]:
-    """Resolve a hostname A record using DNS-over-HTTPS over plain HTTP."""
-    for provider in _DOH_PROVIDERS:
-        try:
-            r = httpx.get(
-                provider,
-                params={"name": hostname, "type": "A"},
-                headers={"Accept": "application/dns-json"},
-                timeout=15.0,
-                follow_redirects=True,
-            )
-            r.raise_for_status()
-            data = r.json()
-            if data.get("Status") != 0:
-                continue
-            answers = data.get("Answer", [])
-            for answer in answers:
-                if answer.get("type") == 1:
-                    return answer["data"]
-            # If no direct A record, follow the CNAME chain.
-            for answer in answers:
-                if answer.get("type") == 5:
-                    ip = _resolve_via_doh(answer["data"].rstrip("."))
-                    if ip:
-                        return ip
-        except Exception as e:
-            print(f"⏳ DoH resolver {provider} failed for {hostname}: {e}")
-    return None
-
-
-def _resolve_hostname(hostname: str) -> Optional[str]:
-    """Try system DNS, then DoH."""
-    try:
-        import socket
-        socket.getaddrinfo(hostname, None)
-        return None  # System DNS works, no IP override needed.
-    except OSError:
-        return _resolve_via_doh(hostname)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -93,16 +44,9 @@ TREASURY_WALLET = os.getenv(
 # Must be mainnet for real money.
 AGENT_CHAIN_NAME = os.getenv("AGENT_CHAIN_NAME", "casper")
 
+# Default primary RPC; the fallback list lives in casper_rpc.py so it can be
+# reused by cspr_listener and the human payment paths in main.py.
 CASPER_RPC_URL = os.getenv("CASPER_RPC_URL", "https://node.mainnet.casper.network/rpc")
-
-# Fallback endpoints tried in order if the primary RPC fails to resolve.
-# The IP entries are hard-coded current A-records for node.mainnet.casper.network
-# so the backend can still verify payments when Render DNS is broken.
-CASPER_RPC_FALLBACKS = [
-    "https://node.mainnet.casper.network/rpc",
-    "https://52.44.180.130/rpc",
-    "https://98.86.11.64/rpc",
-]
 
 # Prices in USD.  They are converted to CSPR at request time using CoinGecko.
 AGENT_PRICING_USD: Dict[str, float] = {
@@ -206,65 +150,6 @@ def create_payment_response(deploy_hash: str, url: str, cost_cspr: float, cost_u
 # ---------------------------------------------------------------------------
 # On-chain verification helpers
 # ---------------------------------------------------------------------------
-def _build_rpc_url(url: str) -> tuple[str, Optional[str]]:
-    """
-    Return the URL to use for the RPC call and an optional Host header override.
-    If the system DNS cannot resolve the hostname, we resolve it via DNS-over-HTTPS
-    and connect by IP while preserving the original Host header.
-    """
-    parsed = urlparse(url)
-    hostname = parsed.hostname
-    if not hostname:
-        return url, None
-
-    # If it's already an IP, no need to override.
-    try:
-        import socket
-        socket.inet_aton(hostname)
-        return url, None
-    except OSError:
-        pass
-
-    ip = _resolve_hostname(hostname)
-    if ip:
-        netloc = f"{ip}:{parsed.port}" if parsed.port else ip
-        replaced = parsed._replace(netloc=netloc).geturl()
-        print(f"  Resolved {hostname} -> {ip} via DoH")
-        return replaced, hostname
-    return url, None
-
-
-async def _rpc_call_single(url: str, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    """Make a single JSON-RPC call to one Casper node URL."""
-    call_url, host_override = _build_rpc_url(url)
-    headers = {"Content-Type": "application/json"}
-    if host_override:
-        headers["Host"] = host_override
-
-    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-        r = await client.post(
-            call_url,
-            headers=headers,
-            json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
-        )
-        r.raise_for_status()
-        data = r.json()
-    if "error" in data:
-        raise ValueError(data["error"].get("message", str(data["error"])))
-    return data.get("result", {})
-
-
-async def _rpc_call(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    """Make a JSON-RPC call to the Casper node, falling back to alternate endpoints."""
-    endpoints = [CASPER_RPC_URL] + CASPER_RPC_FALLBACKS
-    last_error = None
-    for url in endpoints:
-        try:
-            return await _rpc_call_single(url, method, params)
-        except Exception as e:
-            last_error = e
-            print(f"⏳ RPC fallback {url} failed: {e}")
-    raise last_error
 
 
 def _extract_execution_result(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -408,7 +293,7 @@ async def settle_agent_payment(deploy_json: Dict[str, Any], wallet: str, resourc
     exec_result = None
     for attempt in range(1, 26):
         try:
-            result = await _rpc_call("info_get_deploy", {"deploy_hash": clean_hash})
+            result = await rpc_call("info_get_deploy", {"deploy_hash": clean_hash})
             er = _extract_execution_result(result)
             if isinstance(er, dict):
                 exec_result = er
