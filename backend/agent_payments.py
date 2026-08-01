@@ -28,9 +28,16 @@ from typing import Optional, Dict, Any
 
 import httpx
 from sqlalchemy import text
+from urllib.parse import urlparse
 
 from prices import get_cspr_usd_rate
 from db import get_db_session
+
+try:
+    import dns.resolver
+    _DNS_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _DNS_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -157,11 +164,66 @@ def create_payment_response(deploy_hash: str, url: str, cost_cspr: float, cost_u
 # ---------------------------------------------------------------------------
 # On-chain verification helpers
 # ---------------------------------------------------------------------------
+def _resolve_with_google_dns(hostname: str) -> Optional[str]:
+    """Resolve a hostname using Google DNS (8.8.8.8) to bypass broken system DNS."""
+    if not _DNS_AVAILABLE:
+        return None
+    try:
+        resolver = dns.resolver.Resolver()
+        resolver.nameservers = ["8.8.8.8", "1.1.1.1"]
+        resolver.timeout = 5
+        resolver.lifetime = 5
+        answers = resolver.resolve(hostname, "A")
+        return answers[0].address
+    except Exception as e:
+        print(f"⏳ Google DNS resolution failed for {hostname}: {e}")
+        return None
+
+
+def _build_rpc_url(url: str) -> tuple[str, Optional[str]]:
+    """
+    Return the URL to use for the RPC call and an optional Host header override.
+    If the system DNS cannot resolve the hostname, we resolve it via Google DNS
+    and connect by IP while preserving the original Host header.
+    """
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        return url, None
+
+    # If it's already an IP, no need to override.
+    try:
+        import socket
+        socket.inet_aton(hostname)
+        return url, None
+    except OSError:
+        pass
+
+    # Try Google DNS override only if system resolution fails.
+    try:
+        import socket
+        socket.getaddrinfo(hostname, None)
+        return url, None
+    except OSError:
+        ip = _resolve_with_google_dns(hostname)
+        if ip:
+            netloc = f"{ip}:{parsed.port}" if parsed.port else ip
+            replaced = parsed._replace(netloc=netloc).geturl()
+            return replaced, hostname
+    return url, None
+
+
 async def _rpc_call_single(url: str, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
     """Make a single JSON-RPC call to one Casper node URL."""
+    call_url, host_override = _build_rpc_url(url)
+    headers = {"Content-Type": "application/json"}
+    if host_override:
+        headers["Host"] = host_override
+
     async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
         r = await client.post(
-            url,
+            call_url,
+            headers=headers,
             json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
         )
         r.raise_for_status()
