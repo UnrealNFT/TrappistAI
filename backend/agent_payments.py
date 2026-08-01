@@ -33,11 +33,54 @@ from urllib.parse import urlparse
 from prices import get_cspr_usd_rate
 from db import get_db_session
 
-try:
-    import dns.resolver
-    _DNS_AVAILABLE = True
-except Exception:  # pragma: no cover
-    _DNS_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
+# DNS-over-HTTPS resolver (for environments with broken UDP DNS, e.g. Render)
+# ---------------------------------------------------------------------------
+_DOH_PROVIDERS = [
+    "https://dns.google/resolve",
+    "https://cloudflare-dns.com/dns-query",
+]
+
+
+def _resolve_via_doh(hostname: str) -> Optional[str]:
+    """Resolve a hostname A record using DNS-over-HTTPS over plain HTTP."""
+    for provider in _DOH_PROVIDERS:
+        try:
+            r = httpx.get(
+                provider,
+                params={"name": hostname, "type": "A"},
+                headers={"Accept": "application/dns-json"},
+                timeout=15.0,
+                follow_redirects=True,
+            )
+            r.raise_for_status()
+            data = r.json()
+            if data.get("Status") != 0:
+                continue
+            answers = data.get("Answer", [])
+            for answer in answers:
+                if answer.get("type") == 1:
+                    return answer["data"]
+            # If no direct A record, follow the CNAME chain.
+            for answer in answers:
+                if answer.get("type") == 5:
+                    ip = _resolve_via_doh(answer["data"].rstrip("."))
+                    if ip:
+                        return ip
+        except Exception as e:
+            print(f"⏳ DoH resolver {provider} failed for {hostname}: {e}")
+    return None
+
+
+def _resolve_hostname(hostname: str) -> Optional[str]:
+    """Try system DNS, then DoH."""
+    try:
+        import socket
+        socket.getaddrinfo(hostname, None)
+        return None  # System DNS works, no IP override needed.
+    except OSError:
+        return _resolve_via_doh(hostname)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -164,26 +207,10 @@ def create_payment_response(deploy_hash: str, url: str, cost_cspr: float, cost_u
 # ---------------------------------------------------------------------------
 # On-chain verification helpers
 # ---------------------------------------------------------------------------
-def _resolve_with_google_dns(hostname: str) -> Optional[str]:
-    """Resolve a hostname using Google DNS (8.8.8.8) to bypass broken system DNS."""
-    if not _DNS_AVAILABLE:
-        return None
-    try:
-        resolver = dns.resolver.Resolver()
-        resolver.nameservers = ["8.8.8.8", "1.1.1.1"]
-        resolver.timeout = 5
-        resolver.lifetime = 5
-        answers = resolver.resolve(hostname, "A")
-        return answers[0].address
-    except Exception as e:
-        print(f"⏳ Google DNS resolution failed for {hostname}: {e}")
-        return None
-
-
 def _build_rpc_url(url: str) -> tuple[str, Optional[str]]:
     """
     Return the URL to use for the RPC call and an optional Host header override.
-    If the system DNS cannot resolve the hostname, we resolve it via Google DNS
+    If the system DNS cannot resolve the hostname, we resolve it via DNS-over-HTTPS
     and connect by IP while preserving the original Host header.
     """
     parsed = urlparse(url)
@@ -199,17 +226,12 @@ def _build_rpc_url(url: str) -> tuple[str, Optional[str]]:
     except OSError:
         pass
 
-    # Try Google DNS override only if system resolution fails.
-    try:
-        import socket
-        socket.getaddrinfo(hostname, None)
-        return url, None
-    except OSError:
-        ip = _resolve_with_google_dns(hostname)
-        if ip:
-            netloc = f"{ip}:{parsed.port}" if parsed.port else ip
-            replaced = parsed._replace(netloc=netloc).geturl()
-            return replaced, hostname
+    ip = _resolve_hostname(hostname)
+    if ip:
+        netloc = f"{ip}:{parsed.port}" if parsed.port else ip
+        replaced = parsed._replace(netloc=netloc).geturl()
+        print(f"  Resolved {hostname} -> {ip} via DoH")
+        return replaced, hostname
     return url, None
 
 
