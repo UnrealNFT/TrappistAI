@@ -129,6 +129,14 @@ class GenerateImageRequest(BaseModel):
     walletAddress: str
     prompt: str
 
+class AgentGenerateImageRequest(BaseModel):
+    prompt: str
+    wallet: str
+
+class AgentPaymentProof(BaseModel):
+    deployJson: dict
+    wallet: str
+
 class GenerateMusicRequest(BaseModel):
     walletAddress: str
     lyrics: str
@@ -1699,40 +1707,134 @@ async def buy_credits_x402_real(request: Request):
 # ============================================
 # GENERATION ENDPOINTS
 # ============================================
-        from db import process_payment_manual
-        
-        wallet = pending["wallet"]
-        credits = pending["credits"]
-        package_name = X402_PACKAGES[pending["package"]]["name"]
-        
-        await process_payment_manual(
-            wallet, 
-            data.tx_hash, 
-            data.amount, 
-            credits, 
-            package_name
-        )
-        
-        print(f"✅ x402 payment confirmed: {credits} credits → {wallet[:20]}...")
-        
-        # Clean up pending payment
-        del x402_pending_payments[data.payment_id]
-        
-        return {
-            "success": True,
-            "credits": credits,
-            "message": f"Payment confirmed! {credits} credits credited."
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ x402 webhook error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
-# ============================================
-# GENERATION ENDPOINTS
-# ============================================
+# ---------------------------------------------------------------------------
+# AGENT x402 GENERATION ENDPOINTS
+# ---------------------------------------------------------------------------
+from agent_payments import (
+    create_agent_challenge,
+    create_payment_response,
+    settle_agent_payment,
+    get_price_cspr,
+    get_resource_price,
+)
+
+@app.post("/api/v1/agent/generate/image")
+@limiter.limit("10/minute")
+async def agent_generate_image(
+    request: Request,
+    data: AgentGenerateImageRequest,
+    payment_signature: str = Header(None, alias="PAYMENT-SIGNATURE"),
+):
+    """
+    Agent-only x402 endpoint for image generation.
+
+    No proof  -> HTTP 402 + PAYMENT-REQUIRED header (price in CSPR, computed from USD).
+    With proof -> verify native CSPR transfer on mainnet, then generate image.
+    """
+    resource = "image"
+    resource_url = "/api/v1/agent/generate/image"
+    description = "Generate 1 image with FLUX Schnell-1"
+
+    # ------------------------------------------------------------------
+    # STEP 1: NO PAYMENT PROOF -> CHALLENGE
+    # ------------------------------------------------------------------
+    if not payment_signature:
+        try:
+            challenge = create_agent_challenge(resource, resource_url, description)
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Pricing unavailable: {e}")
+
+        return JSONResponse(
+            status_code=402,
+            content={
+                "error": "payment_required",
+                "message": "A native CSPR payment is required to generate this image.",
+                "resource": resource_url,
+                "costUsd": get_resource_price(resource),
+                "costCspr": get_price_cspr(resource),
+            },
+            headers={
+                "PAYMENT-REQUIRED": challenge,
+                "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # STEP 2: PARSE PROOF
+    # ------------------------------------------------------------------
+    try:
+        import base64 as _b64
+        proof_payload = json.loads(_b64.b64decode(payment_signature).decode())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid PAYMENT-SIGNATURE header: {e}")
+
+    deploy_json = proof_payload.get("deployJson") or proof_payload.get("deploy")
+    wallet = (proof_payload.get("wallet") or data.wallet).lower().strip()
+
+    if not deploy_json or not wallet:
+        raise HTTPException(status_code=400, detail="Missing deployJson or wallet in payment proof")
+
+    # ------------------------------------------------------------------
+    # STEP 3: SETTLE PAYMENT
+    # ------------------------------------------------------------------
+    try:
+        settlement = await settle_agent_payment(deploy_json, wallet, resource)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"❌ Agent payment settlement error: {e}")
+        raise HTTPException(status_code=500, detail=f"Settlement error: {e}")
+
+    # ------------------------------------------------------------------
+    # STEP 4: GENERATE IMAGE
+    # ------------------------------------------------------------------
+    try:
+        url = await asyncio.get_event_loop().run_in_executor(
+            None, wavespeed.generate_image, data.prompt
+        )
+    except Exception as gen_error:
+        print(f"❌ Agent image generation failed: {gen_error}")
+        raise HTTPException(status_code=500, detail=f"Generation failed: {gen_error}")
+
+    # ------------------------------------------------------------------
+    # STEP 5: RECORD + RETURN RECEIPT
+    # ------------------------------------------------------------------
+    try:
+        from agent_payments import _record_agent_payment
+        _record_agent_payment(
+            settlement["deploy_hash"],
+            wallet,
+            settlement["amount_cspr"],
+            settlement["amount_motes"],
+            resource,
+            settlement["cost_usd"],
+            url,
+        )
+    except Exception as rec_err:
+        # Do not fail the request; generation succeeded and payment is verified.
+        print(f"⚠️ Could not record agent payment: {rec_err}")
+
+    response_header = create_payment_response(
+        settlement["deploy_hash"], url, settlement["amount_cspr"], settlement["cost_usd"]
+    )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "url": url,
+            "costUsd": settlement["cost_usd"],
+            "costCspr": settlement["amount_cspr"],
+            "transaction": settlement["deploy_hash"],
+            "message": "Image generated successfully",
+        },
+        headers={
+            "PAYMENT-RESPONSE": response_header,
+            "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+        },
+    )
+
 
 @app.post("/api/generate/image")
 @limiter.limit("30/minute")

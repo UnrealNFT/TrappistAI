@@ -199,6 +199,43 @@ def _fmt_usd(n) -> str:
     return f"${n:.6f}".rstrip("0").rstrip(".")
 
 
+# Extended cache for CSPR/USD rate with 5-minute fallback window
+_CSPR_RATE_CACHE = {"ts": 0.0, "rate": None, "ttl_ok": 60, "ttl_fallback": 300}
+
+
+def get_cspr_usd_rate(fallback_rate: float = 0.0025) -> float:
+    """
+    Return the live CSPR/USD rate from CoinGecko.
+
+    - Uses cached value for 60 seconds.
+    - Falls back to the last known rate for up to 5 minutes if CoinGecko is down.
+    - After 5 minutes without fresh data, returns the provided fallback_rate
+      (default 0.0025 USD/CSPR) so agents are not hard-blocked.
+    """
+    now = time.time()
+    age = now - _CSPR_RATE_CACHE["ts"]
+
+    if age < _CSPR_RATE_CACHE["ttl_ok"] and _CSPR_RATE_CACHE["rate"]:
+        return _CSPR_RATE_CACHE["rate"]
+
+    try:
+        data = get_prices(["casper-network"])
+        rate = data.get("casper-network", {}).get("usd")
+        if rate:
+            _CSPR_RATE_CACHE["ts"] = now
+            _CSPR_RATE_CACHE["rate"] = float(rate)
+            return _CSPR_RATE_CACHE["rate"]
+    except Exception as e:
+        logger.warning("Could not fetch CSPR/USD rate: %s", e)
+
+    if age < _CSPR_RATE_CACHE["ttl_fallback"] and _CSPR_RATE_CACHE["rate"]:
+        logger.warning("CoinGecko stale; using last known CSPR/USD rate: %s", _CSPR_RATE_CACHE["rate"])
+        return _CSPR_RATE_CACHE["rate"]
+
+    logger.warning("CoinGecko unavailable; using fallback CSPR/USD rate: %s", fallback_rate)
+    return fallback_rate
+
+
 def _fmt_big(n) -> str:
     if n is None:
         return "?"
