@@ -15,16 +15,22 @@ from urllib.parse import urlparse
 import httpx
 
 
-# Curated public Casper mainnet RPC endpoints.  These are well-known hostnames
-# maintained by the Casper Association / ecosystem.  Avoid hard-coding IPs:
-# they go stale and stop serving the RPC path (as happened with the previous
-# 52.44.180.130 / 98.86.11.64 fallbacks).
+# Curated public Casper mainnet RPC endpoints.  Well-known hostnames are tried
+# first; when DNS is broken we fall back to DNS-over-HTTPS.  The hard-coded IPs
+# are kept as a last-resort fallback because they are known Casper mainnet nodes
+# and the previous 404 came from the wrong path, not from the IPs themselves.
 CSPR_MAINNET_RPCS = [
     "https://node.mainnet.casper.network/rpc",
     "https://rpc.mainnet.casperlabs.io/rpc",
     "https://rpc.casper.network/rpc",
     "https://casper-node.tor.us/rpc",
     "https://api.cspr.live/rpc",
+]
+
+# Hard-coded mainnet node IPs used only after hostname endpoints fail.
+CSPR_MAINNET_IP_RPCS = [
+    "https://52.44.180.130/rpc",
+    "https://98.86.11.64/rpc",
 ]
 
 CSPR_TESTNET_RPCS = [
@@ -123,7 +129,10 @@ def get_rpc_urls(network: str = "mainnet") -> List[str]:
     """Return the curated RPC list for *network* with optional env override."""
     env_var = "CASPER_RPC_URL" if network == "mainnet" else "CASPER_TESTNET_RPC"
     override = os.getenv(env_var, "").strip()
-    base = list(CSPR_MAINNET_RPCS if network == "mainnet" else CSPR_TESTNET_RPCS)
+    if network == "mainnet":
+        base = list(CSPR_MAINNET_RPCS) + list(CSPR_MAINNET_IP_RPCS)
+    else:
+        base = list(CSPR_TESTNET_RPCS)
     if override and override not in base:
         return [override] + base
     return base
