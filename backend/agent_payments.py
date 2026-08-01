@@ -30,7 +30,7 @@ from sqlalchemy import text
 
 from prices import get_cspr_usd_rate
 from db import get_db_session
-from casper_rpc import rpc_call, get_rpc_urls
+from casper_rpc import rpc_call
 
 
 # ---------------------------------------------------------------------------
@@ -43,10 +43,6 @@ TREASURY_WALLET = os.getenv(
 
 # Must be mainnet for real money.
 AGENT_CHAIN_NAME = os.getenv("AGENT_CHAIN_NAME", "casper")
-
-# Default primary RPC; the fallback list lives in casper_rpc.py so it can be
-# reused by cspr_listener and the human payment paths in main.py.
-CASPER_RPC_URL = os.getenv("CASPER_RPC_URL", "https://node.mainnet.casper.network/rpc")
 
 # Prices in USD.  They are converted to CSPR at request time using CoinGecko.
 AGENT_PRICING_USD: Dict[str, float] = {

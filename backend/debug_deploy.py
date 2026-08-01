@@ -39,7 +39,8 @@ async def check_deploy(deploy_hash: str):
                         if "Success" in exec_data:
                             print("    ✅ SUCCESS")
                             if "cost" in exec_data["Success"]:
-                                print(f"    💰 Cost: {exec_data['Success']['cost']}")
+                                cost = exec_data["Success"]["cost"]
+                                print(f"    💰 Cost: {cost}")
                         elif "Failure" in exec_data:
                             print(f"    ❌ FAILURE: {exec_data['Failure']}")
             else:
@@ -59,6 +60,7 @@ if __name__ == "__main__":
         print("Usage: python debug_deploy.py <deploy_hash>")
         sys.exit(1)
 
-    deploy_hash = sys.argv[1].lower().replace("hash-", "").replace("deploy-", "")
+    raw = sys.argv[1].lower()
+    deploy_hash = raw.replace("hash-", "").replace("deploy-", "")
 
     asyncio.run(check_deploy(deploy_hash))

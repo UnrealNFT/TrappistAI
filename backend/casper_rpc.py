@@ -16,9 +16,9 @@ import httpx
 
 
 # Curated public Casper mainnet RPC endpoints.  Well-known hostnames are tried
-# first; when DNS is broken we fall back to DNS-over-HTTPS.  The hard-coded IPs
-# are kept as a last-resort fallback because they are known Casper mainnet nodes
-# and the previous 404 came from the wrong path, not from the IPs themselves.
+# first; when DNS is broken we fall back to DNS-over-HTTPS.  The hard-coded
+# IPs are kept as a last-resort fallback because they are known Casper mainnet
+# nodes and the previous 404 came from the wrong path, not from the IPs.
 CSPR_MAINNET_RPCS = [
     "https://node.mainnet.casper.network/rpc",
     "https://rpc.mainnet.casperlabs.io/rpc",
@@ -125,9 +125,14 @@ def _build_rpc_url(url: str) -> Tuple[str, Optional[str], bool]:
     return url, None, True
 
 
+def _env_var_for_network(network: str) -> str:
+    """Return the env variable name that overrides the RPC list."""
+    return "CASPER_RPC_URL" if network == "mainnet" else "CASPER_TESTNET_RPC"
+
+
 def get_rpc_urls(network: str = "mainnet") -> List[str]:
     """Return the curated RPC list for *network* with optional env override."""
-    env_var = "CASPER_RPC_URL" if network == "mainnet" else "CASPER_TESTNET_RPC"
+    env_var = _env_var_for_network(network)
     override = os.getenv(env_var, "").strip()
     if network == "mainnet":
         base = list(CSPR_MAINNET_RPCS) + list(CSPR_MAINNET_IP_RPCS)
@@ -136,6 +141,11 @@ def get_rpc_urls(network: str = "mainnet") -> List[str]:
     if override and override not in base:
         return [override] + base
     return base
+
+
+def _json_rpc_payload(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a JSON-RPC 2.0 request payload."""
+    return {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
 
 
 async def rpc_call_single(
@@ -151,7 +161,7 @@ async def rpc_call_single(
         r = await client.post(
             call_url,
             headers=headers,
-            json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+            json=_json_rpc_payload(method, params),
         )
         r.raise_for_status()
         data = r.json()
