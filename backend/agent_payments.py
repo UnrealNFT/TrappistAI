@@ -45,6 +45,16 @@ AGENT_CHAIN_NAME = os.getenv("AGENT_CHAIN_NAME", "casper")
 
 CASPER_RPC_URL = os.getenv("CASPER_RPC_URL", "https://node.mainnet.casper.network/rpc")
 
+# Fallback endpoints tried in order if the primary RPC fails to resolve.
+# The last entry is the current IP of node.mainnet.casper.network for
+# environments where DNS resolution is broken (e.g. some Render instances).
+CASPER_RPC_FALLBACKS = [
+    "https://api.mainnet.casper.network/rpc",
+    "https://cspr.live/rpc",
+    "https://rpc.mainnet.casper.network/rpc",
+    "https://98.86.11.64/rpc",
+]
+
 # Prices in USD.  They are converted to CSPR at request time using CoinGecko.
 AGENT_PRICING_USD: Dict[str, float] = {
     "image": 0.03,
@@ -147,11 +157,11 @@ def create_payment_response(deploy_hash: str, url: str, cost_cspr: float, cost_u
 # ---------------------------------------------------------------------------
 # On-chain verification helpers
 # ---------------------------------------------------------------------------
-async def _rpc_call(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    """Make a single JSON-RPC call to the Casper node."""
+async def _rpc_call_single(url: str, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Make a single JSON-RPC call to one Casper node URL."""
     async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
         r = await client.post(
-            CASPER_RPC_URL,
+            url,
             json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
         )
         r.raise_for_status()
@@ -159,6 +169,19 @@ async def _rpc_call(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
     if "error" in data:
         raise ValueError(data["error"].get("message", str(data["error"])))
     return data.get("result", {})
+
+
+async def _rpc_call(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Make a JSON-RPC call to the Casper node, falling back to alternate endpoints."""
+    endpoints = [CASPER_RPC_URL] + CASPER_RPC_FALLBACKS
+    last_error = None
+    for url in endpoints:
+        try:
+            return await _rpc_call_single(url, method, params)
+        except Exception as e:
+            last_error = e
+            print(f"⏳ RPC fallback {url} failed: {e}")
+    raise last_error
 
 
 def _extract_execution_result(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:

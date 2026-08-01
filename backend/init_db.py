@@ -201,6 +201,22 @@ with engine.connect() as conn:
     )
     '''))
     
+    # Create agent payments table (x402 agent payments)
+    conn.execute(text(f'''
+    CREATE TABLE IF NOT EXISTS agent_payments (
+        id {id_col},
+        deploy_hash VARCHAR(128) UNIQUE NOT NULL,
+        wallet_address VARCHAR(128) NOT NULL,
+        amount_cspr NUMERIC(20, 9) NOT NULL,
+        amount_motes BIGINT NOT NULL,
+        resource VARCHAR(32) NOT NULL,
+        cost_usd NUMERIC(10, 4) NOT NULL,
+        generated_url TEXT,
+        status VARCHAR(32) NOT NULL DEFAULT 'settled',
+        created_at TIMESTAMP DEFAULT {timestamp_default}
+    )
+    '''))
+    
     conn.commit()
     
     # Create indexes for better performance
@@ -225,6 +241,10 @@ with engine.connect() as conn:
     conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transactions_buyer ON rwa_transactions(buyer_wallet)'))
     conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transactions_seller ON rwa_transactions(seller_wallet)'))
     
+    # Agent payments indexes
+    conn.execute(text('CREATE INDEX IF NOT EXISTS idx_agent_payments_wallet ON agent_payments(wallet_address)'))
+    conn.execute(text('CREATE INDEX IF NOT EXISTS idx_agent_payments_resource ON agent_payments(resource)'))
+    
     conn.commit()
 
 db_type = "PostgreSQL" if not DATABASE_URL.startswith("sqlite") else "SQLite"
@@ -239,4 +259,5 @@ print("  • rwa_tokens (AI asset NFTs)")
 print("  • rwa_listings (marketplace)")
 print("  • rwa_ownership (fractional shares)")
 print("  • rwa_transactions (trade history)")
+print("  • agent_payments (x402 agent payments)")
 print("  • indexes for performance")
