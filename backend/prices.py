@@ -399,7 +399,7 @@ def get_prices(ids: list) -> dict:
     return {}
 
 
-def _fmt_usd(n) -> str:
+def _fmt_usd(n: float | None) -> str:
     if n is None:
         return "?"
     if n >= 1:
@@ -448,7 +448,7 @@ def get_cspr_usd_rate(fallback_rate: float = 0.0025) -> float:
     return fallback_rate
 
 
-def _fmt_big(n) -> str:
+def _fmt_big(n: float | None) -> str:
     if n is None:
         return "?"
     for unit, div in (("T", 1e12), ("B", 1e9), ("M", 1e6)):
@@ -457,7 +457,7 @@ def _fmt_big(n) -> str:
     return f"${n:,.0f}"
 
 
-def format_prices(ids: list) -> str:
+def format_prices(ids: list) -> str | None:
     """Fetch + format live prices for the given CoinGecko ids. Returns None if none."""
     if not ids:
         return None
@@ -482,7 +482,7 @@ def format_prices(ids: list) -> str:
     return "LIVE PRICES (real-time):\n" + "\n".join(lines)
 
 
-def format_price_context(text: str) -> str:
+def format_price_context(text: str) -> str | None:
     """Detect coins in the text, fetch live prices, and return a context string
     ready to inject into the LLM system prompt. Returns None if nothing found."""
     return format_prices(detect_coins(text))
@@ -506,12 +506,12 @@ _STOPWORDS = {
 }
 
 
-def _coingecko_search(query: str) -> str:
+def _coingecko_search(query: str) -> str | None:
     """Resolve any coin name/ticker to a CoinGecko id via the search API (cached)."""
     key = query.lower().strip()
     if key in _SEARCH_CACHE:
         return _SEARCH_CACHE[key]
-    result = None
+    result: str | None = None
     try:
         r = requests.get(COINGECKO_SEARCH, params={"query": query}, timeout=10)
         r.raise_for_status()
@@ -525,7 +525,7 @@ def _coingecko_search(query: str) -> str:
     return result
 
 
-def _dexscreener_search(query: str) -> str:
+def _dexscreener_search(query: str) -> str | None:
     """Last-resort price for DEX-only tokens. Returns a formatted line or None."""
     try:
         r = requests.get(DEXSCREENER_SEARCH, params={"q": query}, timeout=10)
@@ -623,7 +623,7 @@ def coin_name(cid: str) -> str:
     return _ID_TO_NAME.get(cid, cid.split("-")[0])
 
 
-def news_query(text: str, ids: list = None) -> str:
+def news_query(text: str, ids: list[str] | None = None) -> str | None:
     """Build a clean keyword for full-text news search.
     Uses the detected coin name (not the raw French/English sentence, which
     poisons plainto_tsquery with non-stopwords). Returns None if nothing usable."""
@@ -709,7 +709,7 @@ def last_time_near(cid: str, target: float, tol_pct: float = 3.0, days: int = 36
     }
 
 
-def history_context(text: str, ids: list = None) -> str:
+def history_context(text: str, ids: list[str] | None = None) -> str | None:
     """If the user asks a historical price question with a target value, return a
     context block from CoinGecko history. Returns None if not applicable."""
     if not has_history_intent(text):
@@ -755,7 +755,7 @@ def find_contract_address(text: str):
     return None
 
 
-def dexscreener_by_address(address: str) -> str:
+def dexscreener_by_address(address: str) -> str | None:
     """Look up a token by contract address on DexScreener. Returns a rich context
     block with price/liquidity/FDV + official website & socials (with sources)."""
     try:
@@ -805,7 +805,7 @@ def dexscreener_by_address(address: str) -> str:
         return None
 
 
-def contract_context(text: str) -> str:
+def contract_context(text: str) -> str | None:
     """If the message contains a contract address, return a DexScreener context block."""
     addr = find_contract_address(text)
     if not addr:
@@ -819,7 +819,7 @@ COINGECKO_COIN = "https://api.coingecko.com/api/v3/coins/{id}"
 _SOCIAL_CACHE = {}  # cid -> (ts, context_str_or_None)
 
 
-def coin_socials(cid: str) -> str:
+def coin_socials(cid: str) -> str | None:
     """Official verified links (website, X, Telegram, Reddit) for a CoinGecko id.
     Cached 6h. Returns a context block or None."""
     now = time.time()
@@ -863,7 +863,7 @@ def coin_socials(cid: str) -> str:
     return ctx
 
 
-def socials_context(ids: list) -> str:
+def socials_context(ids: list) -> str | None:
     """Official links block for the first coin id, or None."""
     if not ids:
         return None

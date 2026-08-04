@@ -1719,6 +1719,7 @@ from agent_payments import (
     get_price_cspr,
     get_resource_price,
 )
+from payment_gate import create_payment_challenge, verify_payment_proof
 
 @app.post("/api/v1/agent/generate/image")
 @limiter.limit("10/minute")
@@ -1726,6 +1727,7 @@ async def agent_generate_image(
     request: Request,
     data: AgentGenerateImageRequest,
     payment_signature: str = Header(None, alias="PAYMENT-SIGNATURE"),
+    payment_challenge: str = Header(None, alias="X-PAYMENT-CHALLENGE"),
 ):
     """
     Agent-only x402 endpoint for image generation.
@@ -1740,9 +1742,15 @@ async def agent_generate_image(
     # ------------------------------------------------------------------
     # STEP 1: NO PAYMENT PROOF -> CHALLENGE
     # ------------------------------------------------------------------
-    if not payment_signature:
+    if not payment_signature and not payment_challenge:
         try:
             challenge = create_agent_challenge(resource, resource_url, description)
+            payment_gate_challenge = create_payment_challenge(
+                resource_url,
+                get_price_cspr(resource),
+                currency="CSPR",
+                ttl_seconds=300,
+            )
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Pricing unavailable: {e}")
 
@@ -1757,84 +1765,132 @@ async def agent_generate_image(
             },
             headers={
                 "PAYMENT-REQUIRED": challenge,
-                "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+                "X-PAYMENT-CHALLENGE": payment_gate_challenge,
+                "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-CHALLENGE",
             },
         )
 
     # ------------------------------------------------------------------
     # STEP 2: PARSE PROOF
     # ------------------------------------------------------------------
-    try:
-        import base64 as _b64
-        proof_payload = json.loads(_b64.b64decode(payment_signature).decode())
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid PAYMENT-SIGNATURE header: {e}")
+    if payment_signature:
+        try:
+            import base64 as _b64
+            proof_payload = json.loads(_b64.b64decode(payment_signature).decode())
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid PAYMENT-SIGNATURE header: {e}")
 
-    deploy_json = proof_payload.get("deployJson") or proof_payload.get("deploy")
-    wallet = (proof_payload.get("wallet") or data.wallet).lower().strip()
+        deploy_json = proof_payload.get("deployJson") or proof_payload.get("deploy")
+        wallet = (proof_payload.get("wallet") or data.wallet).lower().strip()
 
-    if not deploy_json or not wallet:
-        raise HTTPException(status_code=400, detail="Missing deployJson or wallet in payment proof")
+        if not deploy_json or not wallet:
+            raise HTTPException(status_code=400, detail="Missing deployJson or wallet in payment proof")
 
-    # ------------------------------------------------------------------
-    # STEP 3: SETTLE PAYMENT
-    # ------------------------------------------------------------------
-    try:
-        settlement = await settle_agent_payment(deploy_json, wallet, resource)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        print(f"❌ Agent payment settlement error: {e}")
-        raise HTTPException(status_code=500, detail=f"Settlement error: {e}")
+        # ------------------------------------------------------------------
+        # STEP 3: SETTLE PAYMENT
+        # ------------------------------------------------------------------
+        try:
+            settlement = await settle_agent_payment(deploy_json, wallet, resource)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            print(f"❌ Agent payment settlement error: {e}")
+            raise HTTPException(status_code=500, detail=f"Settlement error: {e}")
 
-    # ------------------------------------------------------------------
-    # STEP 4: GENERATE IMAGE
-    # ------------------------------------------------------------------
-    try:
-        url = await asyncio.get_event_loop().run_in_executor(
-            None, wavespeed.generate_image, data.prompt
+        # ------------------------------------------------------------------
+        # STEP 4: GENERATE IMAGE
+        # ------------------------------------------------------------------
+        try:
+            url = await asyncio.get_event_loop().run_in_executor(
+                None, wavespeed.generate_image, data.prompt
+            )
+        except Exception as gen_error:
+            print(f"❌ Agent image generation failed: {gen_error}")
+            raise HTTPException(status_code=500, detail=f"Generation failed: {gen_error}")
+
+        # ------------------------------------------------------------------
+        # STEP 5: RECORD + RETURN RECEIPT
+        # ------------------------------------------------------------------
+        try:
+            from agent_payments import _record_agent_payment
+            _record_agent_payment(
+                settlement["deploy_hash"],
+                wallet,
+                settlement["amount_cspr"],
+                settlement["amount_motes"],
+                resource,
+                settlement["cost_usd"],
+                url,
+            )
+        except Exception as rec_err:
+            # Do not fail the request; generation succeeded and payment is verified.
+            print(f"⚠️ Could not record agent payment: {rec_err}")
+
+        response_header = create_payment_response(
+            settlement["deploy_hash"], url, settlement["amount_cspr"], settlement["cost_usd"]
         )
-    except Exception as gen_error:
-        print(f"❌ Agent image generation failed: {gen_error}")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {gen_error}")
 
-    # ------------------------------------------------------------------
-    # STEP 5: RECORD + RETURN RECEIPT
-    # ------------------------------------------------------------------
-    try:
-        from agent_payments import _record_agent_payment
-        _record_agent_payment(
-            settlement["deploy_hash"],
-            wallet,
-            settlement["amount_cspr"],
-            settlement["amount_motes"],
-            resource,
-            settlement["cost_usd"],
-            url,
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "url": url,
+                "costUsd": settlement["cost_usd"],
+                "costCspr": settlement["amount_cspr"],
+                "transaction": settlement["deploy_hash"],
+                "message": "Image generated successfully",
+            },
+            headers={
+                "PAYMENT-RESPONSE": response_header,
+                "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+            },
         )
-    except Exception as rec_err:
-        # Do not fail the request; generation succeeded and payment is verified.
-        print(f"⚠️ Could not record agent payment: {rec_err}")
 
-    response_header = create_payment_response(
-        settlement["deploy_hash"], url, settlement["amount_cspr"], settlement["cost_usd"]
-    )
+    # ------------------------------------------------------------------
+    # STEP 2B: PAYMENT GATE PROOF (lightweight challenge)
+    # ------------------------------------------------------------------
+    if payment_challenge:
+        try:
+            proof_payload = json.loads(request.headers.get("x-payment-proof", "{}"))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid X-PAYMENT-PROOF header: {e}")
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "success": True,
-            "url": url,
-            "costUsd": settlement["cost_usd"],
-            "costCspr": settlement["amount_cspr"],
-            "transaction": settlement["deploy_hash"],
-            "message": "Image generated successfully",
-        },
-        headers={
-            "PAYMENT-RESPONSE": response_header,
-            "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
-        },
-    )
+        if not verify_payment_proof(payment_challenge, proof_payload):
+            raise HTTPException(status_code=402, detail="Payment proof required")
+
+        wallet = (data.wallet or "").lower().strip()
+        if not wallet:
+            raise HTTPException(status_code=400, detail="wallet is required")
+
+        try:
+            url = await asyncio.get_event_loop().run_in_executor(
+                None, wavespeed.generate_image, data.prompt
+            )
+        except Exception as gen_error:
+            print(f"❌ Agent image generation failed: {gen_error}")
+            raise HTTPException(status_code=500, detail=f"Generation failed: {gen_error}")
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "url": url,
+                "costUsd": get_resource_price(resource),
+                "costCspr": get_price_cspr(resource),
+                "message": "Image generated successfully",
+            },
+            headers={
+                "PAYMENT-RESPONSE": create_payment_response(
+                    payment_challenge[:16],
+                    url,
+                    get_price_cspr(resource),
+                    get_resource_price(resource),
+                ),
+                "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+            },
+        )
+
+    raise HTTPException(status_code=400, detail="No supported payment proof provided")
 
 
 @app.post("/api/generate/image")

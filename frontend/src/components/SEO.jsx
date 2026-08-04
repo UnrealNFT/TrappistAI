@@ -6,7 +6,7 @@ const DEFAULT = {
   description:
     'TrappistAI is a multi-modal AI generation platform powered by Casper blockchain. Create images, music, 3D models and chat with AI. Pay with CSPR tokens.',
   keywords:
-    'TrappistAI, AI generation, Casper blockchain, CSPR, generate images, generate music, 3D models, crypto AI, NFT, artificial intelligence',
+    'TrappistAI, AI generation, Casper blockchain, CSPR, generate images, generate music, 3D models, crypto AI, artificial intelligence, x402 payments',
   image: 'https://trappist.land/trappist1.png',
 }
 

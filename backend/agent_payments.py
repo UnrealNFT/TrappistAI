@@ -27,8 +27,12 @@ from decimal import Decimal
 from typing import Optional, Dict, Any
 
 import httpx
-from sqlalchemy import text
 from urllib.parse import urlparse
+
+try:
+    from sqlalchemy import text as sqlalchemy_text  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - optional dependency in some envs
+    sqlalchemy_text = None  # type: ignore[assignment]
 
 from prices import get_cspr_usd_rate
 from db import get_db_session
@@ -265,7 +269,9 @@ async def _rpc_call(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e:
             last_error = e
             print(f"⏳ RPC fallback {url} failed: {e}")
-    raise last_error
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Unable to reach the Casper RPC endpoint")
 
 
 def _extract_execution_result(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -323,10 +329,13 @@ def _extract_deploy_hash(deploy: Dict[str, Any]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 def _is_payment_used(deploy_hash: str) -> bool:
     """Check whether a deploy hash has already been used for an agent payment."""
+    if sqlalchemy_text is None:
+        return False
+
     clean_hash = deploy_hash.lower().strip().replace("hash-", "").replace("deploy-", "")
     with get_db_session() as conn:
         row = conn.execute(
-            text("SELECT id FROM agent_payments WHERE deploy_hash = :tx LIMIT 1"),
+            sqlalchemy_text("SELECT id FROM agent_payments WHERE deploy_hash = :tx LIMIT 1"),
             {"tx": clean_hash},
         ).fetchone()
         return row is not None
@@ -343,11 +352,14 @@ def _record_agent_payment(
 ) -> None:
     """Record an agent payment idempotently."""
     clean_hash = deploy_hash.lower().strip().replace("hash-", "").replace("deploy-", "")
+    if sqlalchemy_text is None:
+        return
+
     with get_db_session() as conn:
         trans = conn.begin()
         try:
             conn.execute(
-                text("""
+                sqlalchemy_text("""
                     INSERT INTO agent_payments
                         (deploy_hash, wallet_address, amount_cspr, amount_motes,
                          resource, cost_usd, generated_url, status, created_at)
@@ -407,6 +419,7 @@ async def settle_agent_payment(deploy_json: Dict[str, Any], wallet: str, resourc
 
     # 4. Verify on-chain with polling (max ~75s)
     exec_result = None
+    result: Dict[str, Any] | None = None
     for attempt in range(1, 26):
         try:
             result = await _rpc_call("info_get_deploy", {"deploy_hash": clean_hash})
