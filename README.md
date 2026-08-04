@@ -159,6 +159,8 @@ TrappistAI supports two complementary ways to buy credits:
 
 The `/api/v1/agent/generate/image` endpoint implements the [x402](https://x402.org) payment protocol. It lets API clients pay with native CSPR programmatically, without a manual transfer.
 
+> **Example endpoint**: `/api/v1/agent/generate/image` is the current x402-ready resource. The same flow can be extended to music, 3D, chat, or any other agent resource.
+
 ### Pricing
 The price is set in USD and converted to CSPR at request time using the live CSPR/USD rate. If CoinGecko is unavailable, the system automatically falls back to Kraken, CryptoCompare, or CoinMarketCap.
 
@@ -238,7 +240,7 @@ VITE_RECEIVER_WALLET=your-public-key
 - `POST /api/chat` — AI chat (free)
 
 ### x402 Agent
-- `POST /api/v1/agent/generate/image` — Generate image via x402 payment protocol (`PAYMENT-SIGNATURE` header required after the 402 challenge)
+- `POST /api/v1/agent/generate/image` — Example resource protected by the x402 payment protocol (`PAYMENT-SIGNATURE` header required after the 402 challenge). The same pattern can be applied to music, 3D, or other agent resources.
 
 ---
 
