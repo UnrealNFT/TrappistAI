@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Image, Music, Box, MessageSquare, Loader2, Upload, Send, X, Download } from 'lucide-react'
 import { generateImage, generateMusic, generate3D, chat, generateLyrics, getJobStatus, mintRWAToken, shareAsset } from '../services/api'
+import SEO from '../components/SEO'
 
 // Music styles (from PiranAI bot)
 const MUSIC_STYLES = {
@@ -824,6 +825,12 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
 
   return (
     <div className="container mx-auto px-4 py-8 h-screen flex flex-col">
+      <SEO
+        title="Generate AI Images, Music & 3D Models | TrappistAI"
+        description="Create AI-generated images, music tracks, 3D models and chat with AI on TrappistAI. Pay with CSPR tokens or via the x402 protocol."
+        keywords="AI image generator, AI music generator, AI 3D generator, generate with CSPR, x402 generation, Casper AI"
+      />
+
       <h1 className="text-4xl font-bold text-green-400 mb-4 text-center">Generate</h1>
 
       {/* Chat Messages */}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 import { CLPublicKey, DeployUtil } from 'casper-js-sdk'
+import SEO from '../components/SEO'
 
 const PACKAGES = [
   { name: 'Starter', tokens: 100, cspr: 1000, popular: true } // PRODUCTION: 1000 CSPR
@@ -221,6 +222,12 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
 
   return (
     <div className="min-h-screen bg-black p-6">
+      <SEO
+        title="Buy AI Generation Credits with CSPR | TrappistAI"
+        description="Buy credits to generate images, music, 3D models and chat with AI on TrappistAI. Pay with CSPR tokens on Casper blockchain."
+        keywords="buy AI credits, CSPR credits, AI generation credits, Casper blockchain payment"
+      />
+
       <div className="container mx-auto max-w-4xl">
         <h1 className="text-5xl font-bold text-green-400 mb-4 text-center">Buy Credits</h1>
         <p className="text-green-300/70 text-center text-lg mb-12">

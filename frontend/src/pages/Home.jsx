@@ -1,9 +1,16 @@
 import { Link } from 'react-router-dom'
 import { Image, Music, Box, MessageSquare, Sparkles } from 'lucide-react'
+import SEO from '../components/SEO'
 
 export default function Home() {
   return (
     <div className="container mx-auto px-4 py-16">
+      <SEO
+        title="TrappistAI - AI Image, Music & 3D Generator on Casper Blockchain"
+        description="Generate images, music, 3D models and chat with AI on TrappistAI. Pay with CSPR tokens on Casper blockchain or via the x402 payment protocol."
+        keywords="AI generator, image generator, music generator, 3D model generator, Casper blockchain, CSPR, crypto AI, x402, TrappistAI"
+      />
+
       {/* Hero */}
       <div className="text-center mb-16">
         <h1 className="text-6xl font-bold text-green-400 mb-4">
@@ -74,6 +81,24 @@ export default function Home() {
           </div>
         ))}
       </div>
+
+      {/* SEO / x402 section */}
+      <section className="mt-20 max-w-3xl mx-auto text-center">
+        <h2 className="text-3xl font-bold text-green-400 mb-6">
+          Programmable AI Payments with x402
+        </h2>
+        <p className="text-green-200/70 mb-6">
+          TrappistAI integrates the x402 protocol so developers can pay for AI image, music and 3D
+          generation programmatically with native CSPR. No subscription, no custody — just standard
+          HTTP 402 payments settled on the Casper blockchain.
+        </p>
+        <Link
+          to="/x402"
+          className="inline-block glass border border-green-500/30 px-8 py-3 rounded-lg text-green-300 font-semibold hover:border-green-400/50 transition"
+        >
+          Learn about x402 AI generation
+        </Link>
+      </section>
 
       {/* Package Starter Only */}
       <div className="mt-16 text-center">

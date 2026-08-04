@@ -12,6 +12,23 @@
   status = 200
   force = true
 
+# Serve prerendered static pages for SEO-critical routes.
+[[redirects]]
+  from = "/generate"
+  to = "/generate.html"
+  status = 200
+
+[[redirects]]
+  from = "/buy-credits"
+  to = "/buy-credits.html"
+  status = 200
+
+[[redirects]]
+  from = "/x402"
+  to = "/x402.html"
+  status = 200
+
+# SPA fallback for all other routes.
 [[redirects]]
   from = "/*"
   to = "/index.html"
