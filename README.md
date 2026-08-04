@@ -134,25 +134,68 @@ Services:
 
 ---
 
-## 💰 Payment System
+## 💰 Payment Systems
 
-### CSPR Packages
-- **Starter**: 100 tokens → 1000 CSPR
-- **Pro**: 500 tokens → 45 CSPR
-- **Creator**: 1000 tokens → 80 CSPR
-- **Enterprise**: 5000 tokens → 350 CSPR
+TrappistAI supports two complementary ways to buy credits:
 
-### How It Works
+1. **Direct CSPR transfer** — the user sends CSPR to `RECEIVER_WALLET`; a WebSocket listener detects the transfer on mainnet, verifies it via RPC, and credits the account automatically.
+2. **x402 protocol payments** — programmable HTTP 402 payments for agent/API use.
+
+### How Direct CSPR Payments Work
 1. User sends CSPR to `RECEIVER_WALLET`
 2. WebSocket listener detects transfer on mainnet
 3. RPC verification fetches sender public key
 4. Tokens credited automatically to user's account
 5. Frontend refreshes balance
 
-**Security**: 
+**Security**:
 - Transaction hash uniqueness enforced (no double-spend)
 - Mainnet-only (testnet blocked)
 - All secrets in `.env` (never hardcoded)
+
+---
+
+## ⚡ x402 Agent API
+
+The `/api/v1/agent/generate/image` endpoint implements the [x402](https://x402.org) payment protocol. It lets API clients pay with native CSPR programmatically, without a manual transfer.
+
+### Pricing
+The price is set in USD and converted to CSPR at request time using the live CSPR/USD rate. If CoinGecko is unavailable, the system automatically falls back to Kraken, CryptoCompare, or CoinMarketCap.
+
+| Resource | USD price | Min CSPR price | Tokens granted |
+|---|---|---|---|
+| `image` (FLUX.1-schnell) | $0.03 | 1.0 CSPR | 1 generation |
+
+### Flow
+1. **No payment proof** → the server returns `HTTP 402 Payment Required` with a `PAYMENT-REQUIRED` header.
+2. **Client signs a native CSPR transfer** on Casper mainnet.
+3. **Client resends the request** with the signed deploy in the `PAYMENT-SIGNATURE` header.
+4. **Server verifies the signature**, settles the transfer on-chain, and runs the generation.
+5. **Server returns `HTTP 200`** with the result and a `PAYMENT-RESPONSE` receipt header.
+
+### Request example
+```bash
+# Step 1: get the 402 challenge
+curl -i -X POST https://trappistai-backend.onrender.com/api/v1/agent/generate/image \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"a cyberpunk cat","wallet":"YOUR_WALLET_PUBKEY"}'
+
+# Step 2: sign a CSPR transfer with your wallet, then resend with the proof
+curl -X POST https://trappistai-backend.onrender.com/api/v1/agent/generate/image \
+  -H "Content-Type: application/json" \
+  -H "PAYMENT-SIGNATURE: BASE64_ENCODED_SIGNED_DEPLOY" \
+  -d '{"prompt":"a cyberpunk cat","wallet":"YOUR_WALLET_PUBKEY"}'
+```
+
+### Environment variables
+| Variable | Required | Description |
+|---|---|---|
+| `RECEIVER_WALLET` | yes | Public key that receives CSPR payments |
+| `RECEIVER_ACCOUNT_HASH` | yes | Account hash of the receiver (without `account-hash-` prefix) |
+| `CRYPTOCOMPARE_API_KEY` | no | Raises rate limits for CryptoCompare price fallback |
+| `COINMARKETCAP_API_KEY` | no | Enables CoinMarketCap price fallback |
+
+See [docs/API_AGENT_X402.md](docs/API_AGENT_X402.md) for the full agent x402 reference.
 
 ---
 
@@ -189,10 +232,13 @@ VITE_RECEIVER_WALLET=your-public-key
 - `POST /api/payments/verify` — Manual payment verification
 
 ### Generation
-- `POST /api/generate/image` — Generate image (1 token)
+- `POST /api/generate/image` — Generate image (1 token, balance-based)
 - `POST /api/generate/music` — Generate music (10-15 tokens)
 - `POST /api/generate/3d` — Generate 3D model (20-30 tokens)
 - `POST /api/chat` — AI chat (free)
+
+### x402 Agent
+- `POST /api/v1/agent/generate/image` — Generate image via x402 payment protocol (`PAYMENT-SIGNATURE` header required after the 402 challenge)
 
 ---
 
