@@ -104,7 +104,8 @@ CASPER_RPC_FALLBACKS = [
     "https://98.86.11.64/rpc",
 ]
 
-# Prices in USD.  They are converted to CSPR at request time using CoinGecko.
+# Prices in USD.  They are converted to CSPR at request time using the live
+# CSPR/USD rate (CoinGecko primary, with Kraken/CryptoCompare/CMC fallbacks).
 AGENT_PRICING_USD: Dict[str, float] = {
     "image": 0.03,
     "music": 1.00,
