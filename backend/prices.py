@@ -234,6 +234,9 @@ def has_price_intent(text: str) -> bool:
 
 
 def _fetch_coingecko(ids: list) -> dict:
+    global _COINGECKO_BAN_UNTIL
+    if time.time() < _COINGECKO_BAN_UNTIL:
+        raise RuntimeError("CoinGecko temporarily skipped due to recent rate-limit")
     r = requests.get(
         COINGECKO_URL,
         params={
@@ -245,6 +248,10 @@ def _fetch_coingecko(ids: list) -> dict:
         },
         timeout=10,
     )
+    # Treat 429 as a circuit-breaker trigger
+    if r.status_code == 429:
+        _COINGECKO_BAN_UNTIL = time.time() + _COINGECKO_BAN_TTL
+        r.raise_for_status()
     r.raise_for_status()
     raw = r.json()
     data = {}
@@ -377,12 +384,12 @@ def get_prices(ids: list) -> dict:
             break
         try:
             fetched = fetcher(missing)
-            for cid, v in fetched.items():
-                if v.get("usd") is not None and cid in missing:
-                    data[cid] = v
-                    missing.remove(cid)
-            if fetched:
-                logger.info("Price source %s returned %s/%s requested coins", name, len(fetched), len(ids))
+            resolved = [cid for cid, v in fetched.items() if v.get("usd") is not None and cid in missing]
+            for cid in resolved:
+                data[cid] = fetched[cid]
+                missing.remove(cid)
+            if resolved:
+                logger.warning("Price fallback used: %s resolved %s/%s requested coins (%s)", name, len(resolved), len(ids), ", ".join(resolved))
         except Exception as e:
             logger.warning("%s price fetch failed: %s", name, e)
 
@@ -402,6 +409,10 @@ def _fmt_usd(n) -> str:
 
 # Extended cache for CSPR/USD rate with 5-minute fallback window
 _CSPR_RATE_CACHE = {"ts": 0.0, "rate": None, "ttl_ok": 60, "ttl_fallback": 300}
+
+# Circuit-breaker: if CoinGecko rate-limits us, skip it for 60s to stop hammering.
+_COINGECKO_BAN_UNTIL = 0.0
+_COINGECKO_BAN_TTL = 60  # seconds
 
 
 def get_cspr_usd_rate(fallback_rate: float = 0.0025) -> float:
@@ -430,10 +441,10 @@ def get_cspr_usd_rate(fallback_rate: float = 0.0025) -> float:
         logger.warning("Could not fetch CSPR/USD rate: %s", e)
 
     if age < _CSPR_RATE_CACHE["ttl_fallback"] and _CSPR_RATE_CACHE["rate"]:
-        logger.warning("CoinGecko stale; using last known CSPR/USD rate: %s", _CSPR_RATE_CACHE["rate"])
+        logger.warning("All price sources stale; using last known CSPR/USD rate: %s", _CSPR_RATE_CACHE["rate"])
         return _CSPR_RATE_CACHE["rate"]
 
-    logger.warning("CoinGecko unavailable; using fallback CSPR/USD rate: %s", fallback_rate)
+    logger.warning("All price sources unavailable; using hardcoded fallback CSPR/USD rate: %s", fallback_rate)
     return fallback_rate
 
 
