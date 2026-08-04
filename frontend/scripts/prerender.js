@@ -72,6 +72,66 @@ const routes = {
       </ul>
     `,
   },
+  '/blog': {
+    title: 'TrappistAI Blog - AI, x402 and Casper Blockchain Guides',
+    description:
+      'Read guides about the x402 payment protocol, AI agent development, and AI generation on the Casper blockchain.',
+    content: `
+      <h1>TrappistAI Blog</h1>
+      <p>Guides and tutorials about AI generation, the x402 payment protocol and Casper blockchain. Learn how to pay for AI with CSPR, build AI agents, and generate images, music and 3D models.</p>
+    `,
+  },
+  '/blog/what-is-x402-ai-payments': {
+    title: 'What is x402 and How to Pay for AI with CSPR | TrappistAI',
+    description:
+      'Discover the x402 payment protocol and how TrappistAI uses it to let developers pay for AI image, music and 3D generation with native CSPR tokens.',
+    content: `
+      <h1>What is x402 and How to Pay for AI with CSPR</h1>
+      <p>x402 is a protocol that turns payment into a native HTTP primitive using the 402 status code. TrappistAI uses x402 so developers can pay for AI image, music and 3D generation with native CSPR tokens on the Casper blockchain.</p>
+      <h2>Why x402 matters for AI</h2>
+      <p>AI APIs are usually billed with credit cards or subscriptions. x402 lets an AI agent request a generation, pay with crypto, and receive the result in a single HTTP flow.</p>
+      <h2>Benefits</h2>
+      <ul>
+        <li>No subscription — pay per generation</li>
+        <li>No custody — you keep your wallet</li>
+        <li>Programmable — perfect for AI agents</li>
+        <li>Fast settlement on Casper</li>
+      </ul>
+    `,
+  },
+  '/blog/build-ai-agent-x402': {
+    title: 'How to Build an AI Agent with x402 Payments | TrappistAI',
+    description:
+      'A step-by-step guide to building an AI agent that requests resources, pays with CSPR, and receives generated content using the x402 protocol.',
+    content: `
+      <h1>How to Build an AI Agent with x402 Payments</h1>
+      <p>Autonomous AI agents need a way to pay for resources without human intervention. The x402 protocol lets agents negotiate prices and prove payments over standard HTTP.</p>
+      <h2>The flow</h2>
+      <ol>
+        <li>Request a generation and receive 402 Payment Required.</li>
+        <li>Decode the challenge to get the price.</li>
+        <li>Sign a CSPR transfer with the Casper JS SDK.</li>
+        <li>Resend the request with the signed deploy.</li>
+        <li>Receive the generated asset.</li>
+      </ol>
+    `,
+  },
+  '/blog/ai-generation-casper-blockchain': {
+    title: 'AI Generation on Casper Blockchain: A Complete Guide | TrappistAI',
+    description:
+      'Learn how TrappistAI combines multi-modal AI generation with Casper blockchain payments to create a decentralized creative platform.',
+    content: `
+      <h1>AI Generation on Casper Blockchain: A Complete Guide</h1>
+      <p>TrappistAI combines multi-modal AI generation with Casper blockchain payments. Generate images, music, 3D models and chat with AI, then pay with CSPR tokens.</p>
+      <h2>Payment options</h2>
+      <ul>
+        <li>Direct CSPR transfer with automatic credit</li>
+        <li>x402 protocol for agents and APIs</li>
+      </ul>
+      <h2>From generation to NFT</h2>
+      <p>TrappistAI also lets users mint AI-generated assets as RWA tokens with IPFS metadata and fractional shares.</p>
+    `,
+  },
 }
 
 for (const [route, data] of Object.entries(routes)) {
@@ -107,6 +167,7 @@ for (const [route, data] of Object.entries(routes)) {
 
   const fileName = route === '/' ? 'index.html' : `${route.slice(1)}.html`
   const outPath = path.join(dist, fileName)
+  fs.mkdirSync(path.dirname(outPath), { recursive: true })
   fs.writeFileSync(outPath, html)
   console.log(`Prerendered ${route} -> ${fileName}`)
 }

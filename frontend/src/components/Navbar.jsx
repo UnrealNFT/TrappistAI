@@ -34,6 +34,9 @@ export default function Navbar({ wallet, balance, onConnect, onDisconnect, onRef
           <Link to="/buy-credits" className="text-green-300/90 hover:text-green-400 transition">
             Buy Credits
           </Link>
+          <Link to="/blog" className="text-green-300/90 hover:text-green-400 transition">
+            Blog
+          </Link>
         </div>
 
         {/* Wallet */}

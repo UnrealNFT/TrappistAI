@@ -201,7 +201,19 @@ See [docs/API_AGENT_X402.md](docs/API_AGENT_X402.md) for the full agent x402 ref
 
 ---
 
-## 🔧 Configuration
+## � SEO & Blog
+
+The frontend includes prerendered SEO pages and a blog to improve discoverability for keywords like `x402 AI generator`, `AI image generator crypto` and `Casper blockchain AI`.
+
+- `/x402` — landing page explaining the x402 payment flow
+- `/blog` — list of guides and tutorials
+- `/blog/what-is-x402-ai-payments`
+- `/blog/build-ai-agent-x402`
+- `/blog/ai-generation-casper-blockchain`
+
+---
+
+## �🔧 Configuration
 
 ### Required Environment Variables
 

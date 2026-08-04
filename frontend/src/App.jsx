@@ -9,6 +9,8 @@ import BuyCredits from './pages/BuyCredits'
 import Community from './pages/Community'
 import Admin from './pages/Admin'
 import X402 from './pages/X402'
+import Blog from './pages/Blog'
+import BlogPost from './pages/BlogPost'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
 import { getBalance } from './services/api'
@@ -167,6 +169,8 @@ function App() {
               />
               <Route path="/marketplace" element={<Navigate to="/explore" replace />} />
               <Route path="/x402" element={<X402 />} />
+              <Route path="/blog" element={<Blog />} />
+              <Route path="/blog/:slug" element={<BlogPost />} />
               <Route path="/admin" element={<Admin />} />
             </Routes>
           </main>

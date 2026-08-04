@@ -28,6 +28,16 @@
   to = "/x402.html"
   status = 200
 
+[[redirects]]
+  from = "/blog"
+  to = "/blog.html"
+  status = 200
+
+[[redirects]]
+  from = "/blog/*"
+  to = "/blog/:splat.html"
+  status = 200
+
 # SPA fallback for all other routes.
 [[redirects]]
   from = "/*"
