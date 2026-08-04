@@ -1,6 +1,6 @@
 """
-Real-time crypto prices via CoinGecko (free, no API key).
-Used to give the TrappistAI bot live market awareness.
+Real-time crypto prices via CoinGecko (primary) with fallbacks to CryptoCompare,
+Kraken and CoinMarketCap. Used to give the TrappistAI bot live market awareness.
 
 Public API:
 - detect_coins(text)         -> list of CoinGecko ids mentioned in the text
@@ -8,6 +8,7 @@ Public API:
 - format_price_context(text) -> ready-to-inject string for the LLM (or None)
 """
 
+import os
 import re
 import time
 import logging
@@ -16,6 +17,15 @@ import requests
 logger = logging.getLogger(__name__)
 
 COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price"
+
+# Optional API keys (free tiers work without, but keys raise rate limits)
+CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY")
+COINMARKETCAP_API_KEY = os.getenv("COINMARKETCAP_API_KEY")
+
+# Alternative price sources (tried in order if CoinGecko fails or is partial)
+CRYPTOCOMPARE_URL = "https://min-api.cryptocompare.com/data/pricemultifull"
+KRAKEN_URL = "https://api.kraken.com/0/public/Ticker"
+COINMARKETCAP_URL = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
 
 # name / ticker -> CoinGecko id
 COIN_MAP = {
@@ -105,6 +115,66 @@ _DISPLAY = {
     "quant-network": "QNT",
 }
 
+# CoinGecko id -> Kraken pair (free, reliable, limited to listed pairs)
+_KRAKEN_PAIRS = {
+    "bitcoin": "XXBTZUSD",
+    "ethereum": "XETHZUSD",
+    "solana": "SOLUSD",
+    "casper-network": "CSPRUSD",
+    "cardano": "ADAUSD",
+    "ripple": "XXRPZUSD",
+    "dogecoin": "XDGUSD",
+    "polkadot": "DOTUSD",
+    "avalanche-2": "AVAXUSD",
+    "matic-network": "MATICUSD",
+    "chainlink": "LINKUSD",
+    "litecoin": "XLTCZUSD",
+    "tron": "TRXUSD",
+    "shiba-inu": "SHIBUSD",
+    "binancecoin": "BNBUSD",
+    "the-open-network": "TONUSD",
+    "sui": "SUIUSD",
+    "aptos": "APTUSD",
+    "arbitrum": "ARBUSD",
+    "optimism": "OPUSD",
+    "near": "NEARUSD",
+    "cosmos": "ATOMUSD",
+    "uniswap": "UNIUSD",
+    "monero": "XXMRZUSD",
+    "stellar": "XXLMZUSD",
+    "hedera-hashgraph": "HBARUSD",
+    "filecoin": "FILUSD",
+    "elrond-erd-2": "EGLDUSD",
+    "sei-network": "SEIUSD",
+    "injective-protocol": "INJUSD",
+    "algorand": "ALGOUSD",
+    "tezos": "XTZUSD",
+    "vechain": "VETUSD",
+    "immutable-x": "IMXUSD",
+    "kaspa": "KASUSD",
+    "ondo-finance": "ONDOUSD",
+    "jupiter-exchange-solana": "JUPUSD",
+    "worldcoin-wld": "WLDUSD",
+    "aave": "AAVEUSD",
+    "fetch-ai": "FETUSD",
+    "bonk": "BONKUSD",
+    "dogwifcoin": "WIFUSD",
+    "floki": "FLOKIUSD",
+    "the-sandbox": "SANDUSD",
+    "decentraland": "MANAUSD",
+    "axie-infinity": "AXSUSD",
+    "gala": "GALAUSD",
+    "chiliz": "CHZUSD",
+    "neo": "NEOUSD",
+    "dydx-chain": "DYDXUSD",
+    "ethena": "ENAUSD",
+    "pyth-network": "PYTHUSD",
+    "jasmycoin": "JASMYUSD",
+    "flow": "FLOWUSD",
+    "quant-network": "QNTUSD",
+    "pepe": "PEPEUSD",
+}
+
 
 def _display_symbol(cid: str) -> str:
     """Clean display symbol for a CoinGecko id (map first, else strip suffixes)."""
@@ -116,6 +186,16 @@ def _display_symbol(cid: str) -> str:
         if s.endswith(suf):
             s = s[: -len(suf)]
     return s.upper()
+
+
+def _ticker_to_id(symbol: str) -> str | None:
+    """Reverse-lookup a display symbol back to a CoinGecko id."""
+    sym = symbol.upper()
+    for cid, s in _DISPLAY.items():
+        if s == sym:
+            return cid
+    return None
+
 
 # Simple in-memory cache: {frozenset(ids): (timestamp, data)}
 _CACHE = {}
@@ -153,8 +233,129 @@ def has_price_intent(text: str) -> bool:
     return False
 
 
+def _fetch_coingecko(ids: list) -> dict:
+    r = requests.get(
+        COINGECKO_URL,
+        params={
+            "ids": ",".join(ids),
+            "vs_currencies": "usd",
+            "include_24hr_change": "true",
+            "include_market_cap": "true",
+            "include_24hr_vol": "true",
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    raw = r.json()
+    data = {}
+    for cid, v in raw.items():
+        data[cid] = {
+            "usd": v.get("usd"),
+            "change_24h": v.get("usd_24h_change"),
+            "market_cap": v.get("usd_market_cap"),
+            "volume_24h": v.get("usd_24h_vol"),
+        }
+    return data
+
+
+def _fetch_cryptocompare(ids: list) -> dict:
+    if not CRYPTOCOMPARE_API_KEY:
+        return {}
+    symbols = [_display_symbol(cid) for cid in ids if _display_symbol(cid)]
+    if not symbols:
+        return {}
+    params = {"fsyms": ",".join(symbols), "tsyms": "USD"}
+    headers = {"authorization": f"Apikey {CRYPTOCOMPARE_API_KEY}"}
+    r = requests.get(CRYPTOCOMPARE_URL, params=params, headers=headers, timeout=10)
+    r.raise_for_status()
+    raw = r.json().get("RAW", {})
+    data = {}
+    for sym, info in raw.items():
+        cid = _ticker_to_id(sym)
+        if not cid:
+            continue
+        usd = info.get("USD", {})
+        data[cid] = {
+            "usd": usd.get("PRICE"),
+            "change_24h": usd.get("CHANGEPCT24HOUR"),
+            "market_cap": usd.get("MKTCAP"),
+            "volume_24h": usd.get("VOLUME24HOURTO"),
+        }
+    return data
+
+
+def _fetch_kraken(ids: list) -> dict:
+    pairs = []
+    pair_to_cid = {}
+    for cid in ids:
+        pair = _KRAKEN_PAIRS.get(cid)
+        if pair:
+            pairs.append(pair)
+            pair_to_cid[pair] = cid
+    if not pairs:
+        return {}
+    r = requests.get(KRAKEN_URL, params={"pair": ",".join(pairs)}, timeout=10)
+    r.raise_for_status()
+    result = r.json().get("result", {})
+    data = {}
+    for pair, ticker in result.items():
+        cid = pair_to_cid.get(pair)
+        if not cid:
+            continue
+        last = ticker.get("c", [None])[0]
+        if not last:
+            continue
+        p = ticker.get("p", [None, None])
+        change = None
+        if p and p[0] and p[1] and float(p[0]) > 0:
+            change = (float(p[1]) / float(p[0]) - 1) * 100
+        vol_base = ticker.get("v", [0, 0])
+        vol_24h = None
+        try:
+            vol_24h = float(vol_base[1]) * float(last) if len(vol_base) > 1 else None
+        except (TypeError, ValueError):
+            pass
+        data[cid] = {
+            "usd": float(last),
+            "change_24h": change,
+            "market_cap": None,
+            "volume_24h": vol_24h,
+        }
+    return data
+
+
+def _fetch_coinmarketcap(ids: list) -> dict:
+    if not COINMARKETCAP_API_KEY:
+        return {}
+    symbols = [_display_symbol(cid) for cid in ids if _display_symbol(cid)]
+    if not symbols:
+        return {}
+    r = requests.get(
+        COINMARKETCAP_URL,
+        params={"symbol": ",".join(symbols), "convert": "USD"},
+        headers={"X-CMC_PRO_API_KEY": COINMARKETCAP_API_KEY},
+        timeout=10,
+    )
+    r.raise_for_status()
+    raw = r.json().get("data", {})
+    data = {}
+    for sym, coin in raw.items():
+        cid = _ticker_to_id(sym)
+        if not cid:
+            continue
+        q = coin.get("quote", {}).get("USD", {})
+        data[cid] = {
+            "usd": q.get("price"),
+            "change_24h": q.get("percent_change_24h"),
+            "market_cap": q.get("market_cap"),
+            "volume_24h": q.get("volume_24h"),
+        }
+    return data
+
+
 def get_prices(ids: list) -> dict:
-    """Fetch USD price + 24h change + market cap + volume for the given CoinGecko ids."""
+    """Fetch USD price + 24h change + market cap + volume for the given CoinGecko ids.
+    Tries CoinGecko first, then falls back to CryptoCompare, Kraken and CoinMarketCap."""
     if not ids:
         return {}
     key = frozenset(ids)
@@ -162,33 +363,33 @@ def get_prices(ids: list) -> dict:
     cached = _CACHE.get(key)
     if cached and now - cached[0] < _TTL:
         return cached[1]
-    try:
-        r = requests.get(
-            COINGECKO_URL,
-            params={
-                "ids": ",".join(ids),
-                "vs_currencies": "usd",
-                "include_24hr_change": "true",
-                "include_market_cap": "true",
-                "include_24hr_vol": "true",
-            },
-            timeout=10,
-        )
-        r.raise_for_status()
-        raw = r.json()
-        data = {}
-        for cid, v in raw.items():
-            data[cid] = {
-                "usd": v.get("usd"),
-                "change_24h": v.get("usd_24h_change"),
-                "market_cap": v.get("usd_market_cap"),
-                "volume_24h": v.get("usd_24h_vol"),
-            }
+
+    fetchers = [("CoinGecko", _fetch_coingecko), ("Kraken", _fetch_kraken)]
+    if CRYPTOCOMPARE_API_KEY:
+        fetchers.insert(1, ("CryptoCompare", _fetch_cryptocompare))
+    if COINMARKETCAP_API_KEY:
+        fetchers.append(("CoinMarketCap", _fetch_coinmarketcap))
+
+    data = {}
+    missing = list(ids)
+    for name, fetcher in fetchers:
+        if not missing:
+            break
+        try:
+            fetched = fetcher(missing)
+            for cid, v in fetched.items():
+                if v.get("usd") is not None and cid in missing:
+                    data[cid] = v
+                    missing.remove(cid)
+            if fetched:
+                logger.info("Price source %s returned %s/%s requested coins", name, len(fetched), len(ids))
+        except Exception as e:
+            logger.warning("%s price fetch failed: %s", name, e)
+
+    if data:
         _CACHE[key] = (now, data)
         return data
-    except Exception as e:
-        logger.warning("CoinGecko price fetch failed: %s", e)
-        return {}
+    return {}
 
 
 def _fmt_usd(n) -> str:
@@ -205,10 +406,10 @@ _CSPR_RATE_CACHE = {"ts": 0.0, "rate": None, "ttl_ok": 60, "ttl_fallback": 300}
 
 def get_cspr_usd_rate(fallback_rate: float = 0.0025) -> float:
     """
-    Return the live CSPR/USD rate from CoinGecko.
+    Return the live CSPR/USD rate (CoinGecko primary + fallbacks).
 
     - Uses cached value for 60 seconds.
-    - Falls back to the last known rate for up to 5 minutes if CoinGecko is down.
+    - Falls back to the last known rate for up to 5 minutes if all sources are down.
     - After 5 minutes without fresh data, returns the provided fallback_rate
       (default 0.0025 USD/CSPR) so agents are not hard-blocked.
     """
@@ -267,7 +468,7 @@ def format_prices(ids: list) -> str:
         )
     if not lines:
         return None
-    return "LIVE PRICES (CoinGecko, real-time):\n" + "\n".join(lines)
+    return "LIVE PRICES (real-time):\n" + "\n".join(lines)
 
 
 def format_price_context(text: str) -> str:

@@ -148,11 +148,12 @@ PAYMENT-RESPONSE: eyJzdGF0dXMiOiJzZXR0bGVkIiwidHJhbnNhY3Rpb25IYXNoIjoiLi4uIn0=..
 
 | Resource | USD price | CSPR price (live) |
 |---|---|---|
-| `image` | $0.03 | converted from CoinGecko CSPR/USD rate |
+| `image` | $0.03 | converted from live CSPR/USD rate |
 | `music` | $1.00 | *(reserved for future release)* |
 | `3d` | $2.00 | *(reserved for future release)* |
 
-The CSPR amount is computed at request time from the live CoinGecko rate. A
+The CSPR amount is computed at request time from the live CSPR/USD rate
+(CoinGecko primary, with Kraken / CryptoCompare / CoinMarketCap fallbacks). A
 minimum floor protects against extreme price spikes:
 
 - image: minimum 1.0 CSPR
@@ -169,7 +170,7 @@ minimum floor protects against extreme price spikes:
 | `402` | Payment required (expected first call) |
 | `429` | Rate limit exceeded (10/minute per wallet) |
 | `500` | Server error during generation or settlement |
-| `503` | Pricing temporarily unavailable (CoinGecko down and no cached rate) |
+| `503` | Pricing temporarily unavailable (all price sources down and no cached rate) |
 
 ---
 

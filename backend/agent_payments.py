@@ -133,7 +133,7 @@ def get_resource_price(resource: str) -> float:
 
 
 def usd_to_cspr(usd_amount: float) -> float:
-    """Convert USD amount to CSPR using the live CoinGecko rate."""
+    """Convert USD amount to CSPR using the live rate (CoinGecko + fallbacks)."""
     rate = get_cspr_usd_rate()
     if rate <= 0:
         raise ValueError("Invalid CSPR/USD rate")

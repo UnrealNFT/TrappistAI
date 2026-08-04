@@ -79,7 +79,7 @@ except Exception as e:
     print(f"⚠️ Web research not available: {e}")
     WEB_RESEARCH_AVAILABLE = False
 
-# Import real-time crypto prices (CoinGecko, no key needed)
+# Import real-time crypto prices (CoinGecko primary, Kraken/CryptoCompare/CMC fallbacks)
 try:
     from prices import (
         format_prices, detect_coins, has_price_intent,
@@ -2295,7 +2295,7 @@ async def on_free_message(update: Update, context) -> None:
     # Automatic news context injection for crypto-related questions
     news_context = None
 
-    # Live price context (real-time, CoinGecko) — independent of the news DB
+    # Live price context (real-time, multi-source) — independent of the news DB
     price_context = None
     turn_ids = []  # coin ids referenced this turn (shared with news search)
     if PRICES_AVAILABLE:
@@ -2323,7 +2323,7 @@ async def on_free_message(update: Update, context) -> None:
                         None, format_prices, turn_ids
                     )
                 elif should_resolve(prompt) and not generic_news and _looks_crypto(prompt):
-                    # Unknown coin (e.g. $EGLD) → dynamic search CoinGecko + DexScreener.
+                    # Unknown coin (e.g. $EGLD) → dynamic search CoinGecko/CMC + DexScreener.
                     # Gated on a real crypto signal so we never resolve junk tokens for
                     # general topics ("psg", "france paraguay", "mondial 2026"...).
                     price_context, ids = await asyncio.get_event_loop().run_in_executor(
