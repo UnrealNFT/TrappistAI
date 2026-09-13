@@ -103,10 +103,13 @@ WAVESPEED_API_KEY = os.getenv("WAVESPEED_API_KEY", "")
 OLLAMA_URL        = os.getenv("OLLAMA_URL",   "http://localhost:11434")
 OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL", "llama3.2")
 GROQ_KEY          = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL        = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
+# Groq has deprecated/removed several model IDs.  Keep a current default and
+# allow overriding via env.  The fallback list is also used when the primary
+# model returns 404 (model not found).
+GROQ_MODEL        = os.getenv("GROQ_MODEL",   "llama-3.1-70b-versatile")
 # Lighter model with MUCH higher free-tier rate limits (30k TPM vs ~12k for 70B).
-# Used as an automatic fallback when the primary model is rate-limited (429),
-# so the bot always answers instead of showing a "too many requests" error.
+# Used as an automatic fallback when the primary model is rate-limited (429)
+# or no longer available (404), so the bot always answers instead of erroring out.
 GROQ_FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant")
 # Multi-key rotation: GROQ_API_KEYS="key1,key2,key3" (falls back to GROQ_API_KEY)
 GROQ_KEYS = [k.strip() for k in os.getenv("GROQ_API_KEYS", "").split(",") if k.strip()]
@@ -538,8 +541,9 @@ def _groq_complete(messages: list, max_tokens: int = 1000, service: bool = False
     else:
         start = _groq_key_idx
         _groq_key_idx = (_groq_key_idx + 1) % n
-    # Try the primary (quality) model first; if every key is rate-limited, fall
-    # back to the lighter high-throughput model so the user still gets an answer.
+        # Try the primary model first; on 429 rotate keys, on 404 (model unknown)
+    # switch to the fallback model immediately.  This keeps the bot working
+    # when Groq removes or renames a model ID.
     models = [GROQ_MODEL]
     if GROQ_FALLBACK_MODEL and GROQ_FALLBACK_MODEL != GROQ_MODEL:
         models.append(GROQ_FALLBACK_MODEL)
@@ -550,19 +554,33 @@ def _groq_complete(messages: list, max_tokens: int = 1000, service: bool = False
                 key = keys[(start + i) % n]
                 r = req.post(
                     "https://api.groq.com/openai/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    headers={"Authorization": f"******", "Content-Type": "application/json"},
                     json={"model": model, "messages": messages, "temperature": 0.85, "max_tokens": max_tokens},
                     timeout=30,
                 )
                 if r.status_code == 429:
                     last = r
+                    logger.warning("Groq key %s/%s rate limited on model %s", i + 1, n, model)
                     continue  # this key is rate-limited → try the next one
+                if r.status_code == 404:
+                    # Model not found → stop trying this model and move to fallback.
+                    logger.warning(
+                        "Groq model %s returned 404 (model not found). Response: %s",
+                        model,
+                        r.text[:200],
+                    )
+                    last = r
+                    break  # break inner key loop → next model
                 r.raise_for_status()
                 return r.json()["choices"][0]["message"]["content"].strip()
-            # every key returned 429 this cycle → brief backoff then retry once
-            if last is not None and cycle == 0:
-                time.sleep(3)
-        # primary model fully rate-limited → loop moves to the fallback model
+            else:
+                # every key returned 429 this cycle → brief backoff then retry once
+                if last is not None and cycle == 0 and last.status_code == 429:
+                    time.sleep(3)
+                continue
+            # 404 broke the inner loop → skip retry, move to next model
+            break
+        # loop moves to the fallback model
     if last is not None:
         last.raise_for_status()
     raise RuntimeError("Groq request failed")
