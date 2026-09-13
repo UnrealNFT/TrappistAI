@@ -26,7 +26,7 @@ from db import get_db_pool
 load_dotenv()
 
 GROQ_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 # Service key pool for background summarization (falls back to chat keys / single key)
 GROQ_SERVICE_KEYS = [k.strip() for k in os.getenv("GROQ_SERVICE_KEYS", "").split(",") if k.strip()]
 if not GROQ_SERVICE_KEYS:

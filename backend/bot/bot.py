@@ -103,11 +103,11 @@ WAVESPEED_API_KEY = os.getenv("WAVESPEED_API_KEY", "")
 OLLAMA_URL        = os.getenv("OLLAMA_URL",   "http://localhost:11434")
 OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL", "llama3.2")
 GROQ_KEY          = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL        = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
+GROQ_MODEL        = os.getenv("GROQ_MODEL",   "openai/gpt-oss-120b")
 # Lighter model with MUCH higher free-tier rate limits (30k TPM vs ~12k for 70B).
 # Used as an automatic fallback when the primary model is rate-limited (429),
 # so the bot always answers instead of showing a "too many requests" error.
-GROQ_FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant")
+GROQ_FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b")
 # Multi-key rotation: GROQ_API_KEYS="key1,key2,key3" (falls back to GROQ_API_KEY)
 GROQ_KEYS = [k.strip() for k in os.getenv("GROQ_API_KEYS", "").split(",") if k.strip()]
 if not GROQ_KEYS and GROQ_KEY:
@@ -557,15 +557,26 @@ def _groq_complete(messages: list, max_tokens: int = 1000, service: bool = False
                 if r.status_code == 429:
                     last = r
                     continue  # this key is rate-limited → try the next one
-                r.raise_for_status()
+                if not r.ok:
+                    # Surface Groq's actual error body (model/key/quota issue) instead
+                    # of the generic "for url: ..." requests message, which hides the reason.
+                    raise RuntimeError(f"Groq {r.status_code}: {_groq_error_detail(r)}")
                 return r.json()["choices"][0]["message"]["content"].strip()
             # every key returned 429 this cycle → brief backoff then retry once
             if last is not None and cycle == 0:
                 time.sleep(3)
         # primary model fully rate-limited → loop moves to the fallback model
     if last is not None:
-        last.raise_for_status()
+        raise RuntimeError(f"Groq {last.status_code}: {_groq_error_detail(last)}")
     raise RuntimeError("Groq request failed")
+
+
+def _groq_error_detail(r) -> str:
+    """Extract a short, human-readable message from a Groq error response body."""
+    try:
+        return r.json().get("error", {}).get("message", r.text[:200])
+    except ValueError:
+        return r.text[:200]
 
 
 def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None) -> str:

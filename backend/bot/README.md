@@ -54,7 +54,7 @@ python bot.py
 BOT_TOKEN=your_telegram_bot_token
 WAVESPEED_API_KEY=your_wavespeed_key
 GROQ_API_KEY=your_groq_key
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=openai/gpt-oss-120b
 WEBHOOK_SECRET=your_webhook_secret
 DATABASE_URL=postgresql://... (optional, defaults to SQLite)
 ADMIN_USERNAME=your_telegram_username

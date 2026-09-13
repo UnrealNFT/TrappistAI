@@ -40,7 +40,7 @@ def get_db_connection():
 
 # Groq Configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 conversation_history = {}  # Store per-user conversation history
 
 # Jobs system for async generation (music, 3D, etc.)
@@ -204,7 +204,14 @@ def _groq_complete(messages: list, max_tokens: int = 800) -> str:
             },
             timeout=30
         )
-        response.raise_for_status()
+        if not response.ok:
+            # Surface Groq's actual error body (model/key/quota issue) instead of
+            # the generic "for url: ..." requests message, which hides the reason.
+            try:
+                detail = response.json().get("error", {}).get("message", response.text[:200])
+            except ValueError:
+                detail = response.text[:200]
+            raise ValueError(f"Groq API error {response.status_code}: {detail}")
         return response.json()["choices"][0]["message"]["content"]
     except requests.exceptions.RequestException as e:
         raise ValueError(f"Groq API error: {str(e)}")
