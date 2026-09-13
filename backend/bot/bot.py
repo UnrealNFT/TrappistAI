@@ -548,10 +548,15 @@ def _groq_complete(messages: list, max_tokens: int = 1000, service: bool = False
         for cycle in range(2):  # try all keys, then one more pass after a short pause
             for i in range(n):
                 key = keys[(start + i) % n]
+                payload = {"model": model, "messages": messages, "temperature": 0.85, "max_tokens": max_tokens}
+                if model.startswith("openai/gpt-oss"):
+                    # gpt-oss models spend part of max_tokens on internal reasoning;
+                    # "low" keeps the budget for the actual answer (else output is cut off).
+                    payload["reasoning_effort"] = "low"
                 r = req.post(
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                    json={"model": model, "messages": messages, "temperature": 0.85, "max_tokens": max_tokens},
+                    json=payload,
                     timeout=30,
                 )
                 if r.status_code == 429:
@@ -627,7 +632,7 @@ def _groq_lyrics(style_label: str, voice: str, theme: str, artists: list = None)
         "\nNOW WRITE:\n"
     )
     
-    return _groq_complete([{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}], max_tokens=1200, service=True)
+    return _groq_complete([{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}], max_tokens=2500, service=True)
 
 
 def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_context: str = None) -> str:

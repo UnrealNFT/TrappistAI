@@ -302,8 +302,11 @@ def summarize_with_groq(article: Dict) -> Optional[Dict]:
                     "model": GROQ_MODEL,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.6,
-                    "max_tokens": 400,
+                    "max_tokens": 1200,
                     "response_format": {"type": "json_object"},
+                    # gpt-oss reasoning tokens count against max_tokens; keep it low
+                    # so the JSON summary itself isn't truncated.
+                    **({"reasoning_effort": "low"} if GROQ_MODEL.startswith("openai/gpt-oss") else {}),
                 },
                 timeout=30,
             )

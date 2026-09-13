@@ -200,7 +200,10 @@ def _groq_complete(messages: list, max_tokens: int = 800) -> str:
                 "model": GROQ_MODEL,
                 "messages": messages,
                 "max_tokens": max_tokens,
-                "temperature": 0.7
+                "temperature": 0.7,
+                # gpt-oss reasoning tokens count against max_tokens; keep it low
+                # so the actual answer isn't truncated.
+                **({"reasoning_effort": "low"} if GROQ_MODEL.startswith("openai/gpt-oss") else {}),
             },
             timeout=30
         )
