@@ -719,11 +719,15 @@ def _groq_chat(user_id: int, prompt: str, news_context: str = None, price_contex
 
 
 def _ai_lyrics(style_label: str, voice: str, theme: str, artists: list = None) -> str:
-    """Try Groq first (fast + free), fallback to Ollama. Strips any style leak from the result."""
+    """Try Groq first (fast + free), fallback to Ollama / local LLM.
+    Strips any style leak from the result."""
     if GROQ_KEYS:
-        raw = _groq_lyrics(style_label, voice, theme, artists)
-    else:
-        raw = _ollama_lyrics(style_label, voice, theme)
+        try:
+            raw = _groq_lyrics(style_label, voice, theme, artists)
+            return _strip_style_leak(raw, style_label)
+        except Exception as e:
+            logger.warning("Groq lyrics failed (%s), falling back to Ollama", e)
+    raw = _ollama_lyrics(style_label, voice, theme)
     return _strip_style_leak(raw, style_label)
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
