@@ -103,8 +103,8 @@ async def lifespan(app: FastAPI):
 # FastAPI app
 app = FastAPI(
     title="TrappistAI API",
-    description="Multi-modal AI generation with CSPR payments",
-    version="1.0.0",
+    description="Multi-modal AI generation (image, music, video, 3D, TTS) with CSPR payments + x402 agent API",
+    version="1.1.0",
     lifespan=lifespan
 )
 

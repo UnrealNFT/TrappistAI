@@ -10,9 +10,13 @@ Generate images, music, 3D models, and chat with AI. Pay with CSPR tokens.
 
 - **🎨 Image Generation**: FLUX.1-schnell (1024x1024) — 1 token
 - **🎵 Music Creation**: HeartMuLa & MiniMax HD — 10-15 tokens
-- **📦 3D Models**: Hunyuan & Tripo3D — 20-30 tokens  
+- **🎬 Video Generation**: ByteDance Seedance 1.5 Pro (text→video & image→video)
+- **📦 3D Models**: Hunyuan & Tripo3D — 2-30 tokens  
+- **🎙 Text-to-Speech**: Edge TTS, FR/EN voices — 1 token
+- **🤖 Telegram Bot**: all generation features + voice notes (/tts)
 - **💬 AI Chat**: Groq LLM — Free (0 tokens)
 - **💰 CSPR Payments**: Automatic token crediting via blockchain
+- **⚡ x402 Agent API**: AI agents pay per-call in CSPR (image, TTS, music, video, 3D)
 
 ---
 
@@ -155,18 +159,21 @@ TrappistAI supports two complementary ways to buy credits:
 
 ---
 
-## ⚡ x402 Agent API (example flow)
+## ⚡ x402 Agent API
 
-> **This is an example implementation.** The `/api/v1/agent/generate/image` endpoint demonstrates how the [x402](https://x402.org) payment protocol can be integrated. The same flow can be extended to music, 3D, chat, or any other agent resource.
-
-It lets API clients pay with native CSPR programmatically, without a manual transfer.
+AI agents can pay **per-call** in native CSPR (mainnet) — no account, no credits.
+Every generation service is available:
 
 ### Pricing
 The price is set in USD and converted to CSPR at request time using the live CSPR/USD rate. If CoinGecko is unavailable, the system automatically falls back to Kraken, CryptoCompare, or CoinMarketCap.
 
-| Resource | USD price | Min CSPR price | Tokens granted |
+| Endpoint | USD price | Min CSPR | Delivery |
 |---|---|---|---|
-| `image` (FLUX.1-schnell) | $0.03 | 1.0 CSPR | 1 generation |
+| `POST /api/v1/agent/generate/image` | $0.03 | 1.0 | synchronous (URL) |
+| `POST /api/v1/agent/tts` | $0.01 | 1.0 | synchronous (base64 MP3) |
+| `POST /api/v1/agent/generate/music` | $1.00 | 10.0 | job → `GET /api/jobs/{id}` |
+| `POST /api/v1/agent/generate/video` | $1.50 | 15.0 | job → `GET /api/jobs/{id}` |
+| `POST /api/v1/agent/generate/3d` | $2.00 | 20.0 | job → `GET /api/jobs/{id}` |
 
 ### Flow
 1. **No payment proof** → the server returns `HTTP 402 Payment Required` with a `PAYMENT-REQUIRED` header.
