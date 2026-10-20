@@ -63,6 +63,15 @@ except ImportError as e:
     print(f"⚠️ MP4 converter not available: {e}")
     MP4_AVAILABLE = False
 
+# Text-to-speech (Edge TTS — free, no API key)
+try:
+    import tts as tts_module
+    TTS_AVAILABLE = tts_module.TTS_AVAILABLE
+except Exception as e:
+    print(f"⚠️ TTS not available: {e}")
+    tts_module = None
+    TTS_AVAILABLE = False
+
 # X / Twitter search (via Nitter, no API key)
 try:
     from x_search import search_x
@@ -367,7 +376,7 @@ STYLES = {
 }
 
 # Conversation states
-S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW, S_EDIT, S_3D_MENU, S_3D_IMAGE, S_3D_QUALITY, S_MP4_MENU, S_MP4_IMAGE, S_MP4_AUDIO, S_VID_MODEL, S_VID_MODE, S_VID_PROMPT, S_VID_IMAGE, S_VID_IMG_PROMPT, S_VID_END_IMAGE, S_VID_DURATION, S_VID_FORMAT, S_VID_AUDIO = range(24)
+S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW, S_EDIT, S_3D_MENU, S_3D_IMAGE, S_3D_QUALITY, S_MP4_MENU, S_MP4_IMAGE, S_MP4_AUDIO, S_VID_MODEL, S_VID_MODE, S_VID_PROMPT, S_VID_IMAGE, S_VID_IMG_PROMPT, S_VID_END_IMAGE, S_VID_DURATION, S_VID_FORMAT, S_VID_AUDIO, S_TTS_TEXT, S_TTS_VOICE = range(26)
 
 
 # ─── Keyboards ──────────────────────────────────────────────────────────────
@@ -1839,6 +1848,7 @@ async def cmd_help(update: Update, context) -> None:
         "🎵 */music* — wizard style→voice→theme→lyrics **(10 tokens)**\n"
         "🧊 */3d* — turn an image into a 3D model **(20 tokens)**\n"
         "🎬 */mp4c* — MP3 → MP4 converter **(free)**\n"
+        "🎙 */tts* `text` — text to speech voice note **(free)**\n"
         "💬 */text* `question` — Llama 3.3 AI chat **(free)**\n"
         "� */news* `[topic]` — latest crypto news **(free)**\n"
         "💰 */balance* — check your balance\n"
@@ -2668,6 +2678,7 @@ async def _post_init(app):
         BotCommand("video", "Generate a video (Seedance 1.5)"),
         BotCommand("3d", "Turn an image into a 3D model"),
         BotCommand("mp4c", "Convert MP3 to MP4"),
+        BotCommand("tts", "Text to speech (voice note)"),
         BotCommand("text", "Chat with the AI"),
         BotCommand("news", "Latest crypto news"),
         BotCommand("balance", "Check your token balance"),
@@ -2802,6 +2813,116 @@ async def on_mp4_cancel(update: Update, context) -> int:
             os.remove(p)
         except Exception:
             pass
+    context.user_data.clear()
+    await update.message.reply_text("❌ Cancelled.")
+    return ConversationHandler.END
+
+
+# ─── /tts — Text-to-speech voice notes (Edge TTS, free) ─────────────────────
+
+_TTS_VOICES = [
+    ("🤖 Auto (detect language)", "auto"),
+    ("🇫🇷 Français — Femme", "fr-female"),
+    ("🇫🇷 Français — Homme", "fr-male"),
+    ("🇬🇧 English — Female", "en-female"),
+    ("🇬🇧 English — Male", "en-male"),
+]
+
+
+def _kb_tts_voices():
+    rows = [[InlineKeyboardButton(label, callback_data=f"ttsvoice:{key}")]
+            for label, key in _TTS_VOICES]
+    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="ttsvoice:cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def cmd_tts(update: Update, context) -> int:
+    """Start the TTS flow: /tts <text> or just /tts."""
+    if not TTS_AVAILABLE:
+        await update.message.reply_text("❌ Text-to-speech is temporarily unavailable.")
+        return ConversationHandler.END
+    text = " ".join(context.args).strip() if context.args else ""
+    if text:
+        context.user_data["tts_text"] = text
+        await update.message.reply_text(
+            "🎙 *Choose a voice:*",
+            reply_markup=_kb_tts_voices(),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return S_TTS_VOICE
+    await update.message.reply_text(
+        "🎙 *Text to Speech*\n\nSend me the text to speak (max 2000 chars)\n_(or /cancel)_",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_TTS_TEXT
+
+
+async def on_tts_text(update: Update, context) -> int:
+    text = (update.message.text or "").strip()
+    if not text:
+        await update.message.reply_text("❌ Empty text. Send some text, or /cancel")
+        return S_TTS_TEXT
+    context.user_data["tts_text"] = text
+    await update.message.reply_text(
+        "🎙 *Choose a voice:*",
+        reply_markup=_kb_tts_voices(),
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return S_TTS_VOICE
+
+
+async def on_tts_voice(update: Update, context) -> int:
+    q = update.callback_query
+    await q.answer()
+    choice = q.data.split(":", 1)[1]
+    if choice == "cancel":
+        await q.edit_message_text("❌ Cancelled.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    text = (context.user_data.get("tts_text") or "").strip()
+    if not text:
+        await q.edit_message_text("❌ No text found. Start again with /tts")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    voice_key = None if choice == "auto" else choice
+    await q.edit_message_text("🎙 Generating voice note… ⏳")
+
+    mp3_path = ogg_path = None
+    try:
+        mp3_path = await tts_module.synthesize(text, voice_key)
+        ogg_path = await asyncio.get_event_loop().run_in_executor(
+            None, tts_module.mp3_to_ogg, mp3_path, None
+        )
+        with open(ogg_path, "rb") as voice_file:
+            await context.bot.send_voice(
+                chat_id=q.message.chat_id,
+                voice=voice_file,
+                caption=f"🎙 {text[:100]}{'…' if len(text) > 100 else ''}",
+            )
+        try:
+            await q.message.delete()
+        except Exception:
+            pass
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=q.message.chat_id,
+            text=f"❌ TTS failed: `{str(e)[:200]}`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    finally:
+        for p in (mp3_path, ogg_path):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+        context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def on_tts_cancel(update: Update, context) -> int:
     context.user_data.clear()
     await update.message.reply_text("❌ Cancelled.")
     return ConversationHandler.END
@@ -3297,6 +3418,18 @@ def main():
         per_chat=True,
     )
     app.add_handler(conv_video)
+
+    conv_tts = ConversationHandler(
+        entry_points=[CommandHandler("tts", cmd_tts)],
+        states={
+            S_TTS_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_tts_text),
+                         CommandHandler("cancel", on_tts_cancel)],
+            S_TTS_VOICE: [CallbackQueryHandler(on_tts_voice, pattern=r"^ttsvoice:"),
+                          CommandHandler("cancel", on_tts_cancel)],
+        },
+        fallbacks=[CommandHandler("cancel", on_tts_cancel)],
+    )
+    app.add_handler(conv_tts)
 
     # Save/Share gallery callbacks (must be before other handlers to avoid conflicts)
     app.add_handler(CallbackQueryHandler(on_save_asset, pattern=r"^save:"))

@@ -151,6 +151,7 @@ PAYMENT-RESPONSE: eyJzdGF0dXMiOiJzZXR0bGVkIiwidHJhbnNhY3Rpb25IYXNoIjoiLi4uIn0=..
 | `image` | $0.03 | converted from live CSPR/USD rate |
 | `music` | $1.00 | *(reserved for future release)* |
 | `3d` | $2.00 | *(reserved for future release)* |
+| `tts` | $0.01 | converted from live CSPR/USD rate |
 
 The CSPR amount is computed at request time from the live CSPR/USD rate
 (CoinGecko primary, with Kraken / CryptoCompare / CoinMarketCap fallbacks). A
@@ -159,6 +160,48 @@ minimum floor protects against extreme price spikes:
 - image: minimum 1.0 CSPR
 - music: minimum 10.0 CSPR
 - 3d: minimum 20.0 CSPR
+- tts: minimum 1.0 CSPR
+
+---
+
+## Text-to-Speech (`tts`)
+
+`POST /api/v1/agent/tts` follows the exact same x402 flow as
+`POST /api/v1/agent/generate/image` (402 challenge → `PAYMENT-SIGNATURE` →
+settlement → result), with request body:
+
+```json
+{
+  "text": "Bonjour le monde",
+  "voice": "fr-female",
+  "wallet": "02abc..."
+}
+```
+
+- `text` (required): up to 2000 characters.
+- `voice` (optional): `fr-female`, `fr-male`, `en-female`, `en-male`, a raw
+  edge-tts voice id (e.g. `fr-FR-DeniseNeural`), or omitted/`auto` for
+  automatic FR/EN language detection.
+- `wallet` (required): payer public key hex.
+
+On success the response contains the audio inline as base64 MP3:
+
+```json
+{
+  "success": true,
+  "audioBase64": "//uQx...",
+  "contentType": "audio/mpeg",
+  "voice": "fr-FR-DeniseNeural",
+  "costUsd": 0.01,
+  "costCspr": 1.05,
+  "transaction": "abc123...",
+  "message": "Speech synthesized successfully"
+}
+```
+
+The same voices are listed in the `402` challenge response under `voices`.
+Human users can also use the token-credit variant `POST /api/tts`
+(1 token per synthesis, body: `walletAddress`, `text`, optional `voice`).
 
 ---
 

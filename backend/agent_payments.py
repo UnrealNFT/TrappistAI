@@ -114,6 +114,7 @@ AGENT_PRICING_USD: Dict[str, float] = {
     "image": 0.03,
     "music": 1.00,
     "3d": 2.00,
+    "tts": 0.01,
 }
 
 # Minimum CSPR price to avoid microscopic amounts if CSPR moons.
@@ -121,6 +122,7 @@ MIN_CSPR_PRICE: Dict[str, float] = {
     "image": 1.0,
     "music": 10.0,
     "3d": 20.0,
+    "tts": 1.0,
 }
 
 X402_VERSION = 1

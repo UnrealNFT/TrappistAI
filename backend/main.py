@@ -27,6 +27,7 @@ from cspr_listener import listen_payments
 from db import get_db_session, get_user_balance, consume_user_tokens, get_payment_history
 import wavespeed
 import r2_storage
+import tts
 
 load_dotenv()
 
@@ -148,6 +149,16 @@ class Generate3DRequest(BaseModel):
     walletAddress: str
     imageUrl: str
     withTexture: bool = False
+
+class TTSRequest(BaseModel):
+    walletAddress: str
+    text: str
+    voice: Optional[str] = None  # fr-female, fr-male, en-female, en-male, raw voice id, or auto
+
+class AgentTTSRequest(BaseModel):
+    text: str
+    voice: Optional[str] = None
+    wallet: str
 
 class ChatRequest(BaseModel):
     walletAddress: str
@@ -2139,10 +2150,269 @@ async def _generate_3d_background(
         
         update_job(job_id, "completed", result=result)
         print(f"✅ 3D generation completed: {job_id}")
-        
+
     except Exception as e:
         print(f"❌ Background 3D generation error: {e}")
         update_job(job_id, "failed", error=str(e))
+
+# ---------------------------------------------------------------------------
+# TEXT-TO-SPEECH (Edge TTS)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/tts")
+@limiter.limit("30/minute")
+async def generate_tts(request: Request, data: TTSRequest):
+    """Text-to-speech (1 token). Returns base64-encoded MP3 audio."""
+    import base64 as _b64
+
+    if not tts.TTS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="TTS service unavailable")
+
+    text = (data.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+
+    mp3_path = None
+    try:
+        # Check balance WITHOUT consuming yet
+        current_balance = await get_user_balance(data.walletAddress)
+        if current_balance < 1:
+            raise HTTPException(status_code=402, detail="Insufficient tokens")
+
+        voice_id = tts.resolve_voice(data.voice, text)
+
+        # Synthesize FIRST
+        try:
+            mp3_path = await tts.synthesize(text, voice_id)
+        except Exception as gen_error:
+            print(f"❌ TTS synthesis failed: {gen_error}")
+            raise HTTPException(status_code=500, detail=f"TTS failed: {str(gen_error)}")
+
+        with open(mp3_path, "rb") as f:
+            audio_b64 = _b64.b64encode(f.read()).decode()
+
+        # Only consume tokens if synthesis succeeded
+        consumed = await consume_user_tokens(data.walletAddress, 1, "tts", text[:50])
+        if not consumed:
+            raise HTTPException(status_code=402, detail="Insufficient tokens")
+
+        return {
+            "success": True,
+            "audioBase64": audio_b64,
+            "contentType": "audio/mpeg",
+            "voice": voice_id,
+            "characters": len(text[:tts.MAX_CHARS]),
+            "tokensUsed": 1,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if mp3_path and os.path.exists(mp3_path):
+            try:
+                os.remove(mp3_path)
+            except Exception:
+                pass
+
+
+@app.post("/api/v1/agent/tts")
+@limiter.limit("10/minute")
+async def agent_generate_tts(
+    request: Request,
+    data: AgentTTSRequest,
+    payment_signature: str = Header(None, alias="PAYMENT-SIGNATURE"),
+    payment_challenge: str = Header(None, alias="X-PAYMENT-CHALLENGE"),
+):
+    """
+    Agent-only x402 endpoint for text-to-speech.
+
+    No proof  -> HTTP 402 + PAYMENT-REQUIRED header (price in CSPR, computed from USD).
+    With proof -> verify native CSPR transfer on mainnet, then synthesize speech.
+    """
+    import base64 as _b64
+
+    resource = "tts"
+    resource_url = "/api/v1/agent/tts"
+    description = "Text-to-speech synthesis (Edge TTS, MP3 audio)"
+
+    text = (data.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+
+    if not tts.TTS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="TTS service unavailable")
+
+    # ------------------------------------------------------------------
+    # STEP 1: NO PAYMENT PROOF -> CHALLENGE
+    # ------------------------------------------------------------------
+    if not payment_signature and not payment_challenge:
+        try:
+            challenge = create_agent_challenge(resource, resource_url, description)
+            payment_gate_challenge = create_payment_challenge(
+                resource_url,
+                get_price_cspr(resource),
+                currency="CSPR",
+                ttl_seconds=300,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Pricing unavailable: {e}")
+
+        return JSONResponse(
+            status_code=402,
+            content={
+                "error": "payment_required",
+                "message": "A native CSPR payment is required for text-to-speech.",
+                "resource": resource_url,
+                "costUsd": get_resource_price(resource),
+                "costCspr": get_price_cspr(resource),
+                "voices": tts.VOICES,
+            },
+            headers={
+                "PAYMENT-REQUIRED": challenge,
+                "X-PAYMENT-CHALLENGE": payment_gate_challenge,
+                "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-CHALLENGE",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # STEP 2: PARSE PROOF
+    # ------------------------------------------------------------------
+    if payment_signature:
+        try:
+            proof_payload = json.loads(_b64.b64decode(payment_signature).decode())
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid PAYMENT-SIGNATURE header: {e}")
+
+        deploy_json = proof_payload.get("deployJson") or proof_payload.get("deploy")
+        wallet = (proof_payload.get("wallet") or data.wallet).lower().strip()
+
+        if not deploy_json or not wallet:
+            raise HTTPException(status_code=400, detail="Missing deployJson or wallet in payment proof")
+
+        # STEP 3: SETTLE PAYMENT
+        try:
+            settlement = await settle_agent_payment(deploy_json, wallet, resource)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            print(f"❌ Agent payment settlement error: {e}")
+            raise HTTPException(status_code=500, detail=f"Settlement error: {e}")
+
+        # STEP 4: SYNTHESIZE
+        mp3_path = None
+        try:
+            voice_id = tts.resolve_voice(data.voice, text)
+            mp3_path = await tts.synthesize(text, voice_id)
+            with open(mp3_path, "rb") as f:
+                audio_b64 = _b64.b64encode(f.read()).decode()
+        except HTTPException:
+            raise
+        except Exception as gen_error:
+            print(f"❌ Agent TTS synthesis failed: {gen_error}")
+            raise HTTPException(status_code=500, detail=f"TTS failed: {gen_error}")
+        finally:
+            if mp3_path and os.path.exists(mp3_path):
+                try:
+                    os.remove(mp3_path)
+                except Exception:
+                    pass
+
+        # STEP 5: RECORD + RETURN RECEIPT
+        output_ref = f"tts://{voice_id}/{len(audio_b64)}b64"
+        try:
+            from agent_payments import _record_agent_payment
+            _record_agent_payment(
+                settlement["deploy_hash"],
+                wallet,
+                settlement["amount_cspr"],
+                settlement["amount_motes"],
+                resource,
+                settlement["cost_usd"],
+                output_ref,
+            )
+        except Exception as rec_err:
+            print(f"⚠️ Could not record agent payment: {rec_err}")
+
+        response_header = create_payment_response(
+            settlement["deploy_hash"], output_ref, settlement["amount_cspr"], settlement["cost_usd"]
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "audioBase64": audio_b64,
+                "contentType": "audio/mpeg",
+                "voice": voice_id,
+                "costUsd": settlement["cost_usd"],
+                "costCspr": settlement["amount_cspr"],
+                "transaction": settlement["deploy_hash"],
+                "message": "Speech synthesized successfully",
+            },
+            headers={
+                "PAYMENT-RESPONSE": response_header,
+                "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # STEP 2B: PAYMENT GATE PROOF (lightweight challenge)
+    # ------------------------------------------------------------------
+    if payment_challenge:
+        try:
+            proof_payload = json.loads(request.headers.get("x-payment-proof", "{}"))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid X-PAYMENT-PROOF header: {e}")
+
+        if not verify_payment_proof(payment_challenge, proof_payload):
+            raise HTTPException(status_code=402, detail="Payment proof required")
+
+        wallet = (data.wallet or "").lower().strip()
+        if not wallet:
+            raise HTTPException(status_code=400, detail="wallet is required")
+
+        mp3_path = None
+        try:
+            voice_id = tts.resolve_voice(data.voice, text)
+            mp3_path = await tts.synthesize(text, voice_id)
+            with open(mp3_path, "rb") as f:
+                audio_b64 = _b64.b64encode(f.read()).decode()
+        except Exception as gen_error:
+            print(f"❌ Agent TTS synthesis failed: {gen_error}")
+            raise HTTPException(status_code=500, detail=f"TTS failed: {gen_error}")
+        finally:
+            if mp3_path and os.path.exists(mp3_path):
+                try:
+                    os.remove(mp3_path)
+                except Exception:
+                    pass
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "audioBase64": audio_b64,
+                "contentType": "audio/mpeg",
+                "voice": voice_id,
+                "costUsd": get_resource_price(resource),
+                "costCspr": get_price_cspr(resource),
+                "message": "Speech synthesized successfully",
+            },
+            headers={
+                "PAYMENT-RESPONSE": create_payment_response(
+                    payment_challenge[:16],
+                    f"tts://{voice_id}",
+                    get_price_cspr(resource),
+                    get_resource_price(resource),
+                ),
+                "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+            },
+        )
+
+    raise HTTPException(status_code=400, detail="No supported payment proof provided")
+
 
 @app.post("/api/chat")
 @limiter.limit("50/minute")
