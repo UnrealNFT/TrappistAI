@@ -145,6 +145,69 @@ def generate_3d_with_texture(image_url: str) -> str:
     return _poll(task_id, max_wait=600)
 
 
+def generate_video_seedance_t2v(
+    prompt: str,
+    duration: int = 5,
+    aspect_ratio: str = "16:9",
+    fast: bool = True,
+    generate_audio: bool = True,
+) -> str:
+    """Text-to-video with ByteDance Seedance v1.5 Pro (WaveSpeed). Returns MP4 URL.
+
+    fast=True uses the cheaper/quicker '-fast' variant. duration in seconds (5/10...).
+    generate_audio=False is cheaper (no soundtrack generation).
+    """
+    if TEST_MODE:
+        print(f"[MOCK] Generating video (t2v): {prompt[:50]}...")
+        return "https://example.com/video.mp4"  # Mock MP4 URL
+
+    slug = "text-to-video-fast" if fast else "text-to-video"
+    task_id = _submit(f"bytedance/seedance-v1.5-pro/{slug}", {
+        "prompt": prompt,
+        "duration": duration,
+        "aspect_ratio": aspect_ratio,
+        "generate_audio": generate_audio,
+        "seed": -1,
+    })
+    return _poll(task_id, max_wait=900)
+
+
+def generate_video_seedance_i2v(
+    image_url: str,
+    prompt: str = "",
+    duration: int = 5,
+    aspect_ratio: str = "16:9",
+    camera_fixed: bool = False,
+    last_image: str = None,
+    fast: bool = True,
+    generate_audio: bool = True,
+) -> str:
+    """Image-to-video with ByteDance Seedance v1.5 Pro (WaveSpeed). Returns MP4 URL.
+
+    Animates a starting image with a motion-focused prompt. last_image optionally
+    guides the ending frame. camera_fixed locks the camera for stable framing.
+    generate_audio=False is cheaper (no soundtrack generation).
+    """
+    if TEST_MODE:
+        print(f"[MOCK] Generating video (i2v) from image...")
+        return "https://example.com/video.mp4"  # Mock MP4 URL
+
+    slug = "image-to-video-fast" if fast else "image-to-video"
+    payload = {
+        "image": image_url,
+        "prompt": prompt,
+        "duration": duration,
+        "aspect_ratio": aspect_ratio,
+        "camera_fixed": camera_fixed,
+        "generate_audio": generate_audio,
+        "seed": -1,
+    }
+    if last_image:
+        payload["last_image"] = last_image
+    task_id = _submit(f"bytedance/seedance-v1.5-pro/{slug}", payload)
+    return _poll(task_id, max_wait=900)
+
+
 if __name__ == "__main__":
     """Test WaveSpeed connection"""
     print("Testing WaveSpeed API...")

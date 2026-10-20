@@ -160,6 +160,25 @@ class AgentTTSRequest(BaseModel):
     voice: Optional[str] = None
     wallet: str
 
+class AgentGenerateMusicRequest(BaseModel):
+    lyrics: str = ""
+    tags: str = "electronic, dark, cinematic"
+    quality: str = "hm"  # hm or minimax
+    wallet: str
+
+class AgentGenerate3DRequest(BaseModel):
+    imageUrl: str
+    withTexture: bool = False
+    wallet: str
+
+class AgentGenerateVideoRequest(BaseModel):
+    prompt: str
+    imageUrl: Optional[str] = None  # if set -> image-to-video, else text-to-video
+    duration: int = 5               # seconds (5 or 10)
+    aspectRatio: str = "16:9"       # 16:9, 9:16, 1:1
+    audio: bool = True              # soundtrack generation (cheaper if False)
+    wallet: str
+
 class ChatRequest(BaseModel):
     walletAddress: str
     message: str
@@ -1912,6 +1931,350 @@ async def agent_generate_image(
         )
 
     raise HTTPException(status_code=400, detail="No supported payment proof provided")
+
+
+# ---------------------------------------------------------------------------
+# AGENT x402 — SHARED PAYWALL + LONG-RUNNING GENERATION (music / 3D / video)
+# ---------------------------------------------------------------------------
+
+async def _agent_verify_payment(
+    request: Request,
+    resource: str,
+    resource_url: str,
+    description: str,
+    payment_signature: Optional[str],
+    payment_challenge: Optional[str],
+    default_wallet: str = "",
+):
+    """Shared x402 paywall for agent endpoints.
+
+    Returns (mode, payload, wallet):
+      - ("challenge", JSONResponse, None)  -> return the response immediately (402)
+      - ("settled", settlement_dict, wallet) -> on-chain payment verified
+      - ("gate", None, wallet)             -> lightweight payment-gate proof accepted
+    Raises HTTPException on invalid/missing proof.
+    """
+    if not payment_signature and not payment_challenge:
+        try:
+            challenge = create_agent_challenge(resource, resource_url, description)
+            gate_challenge = create_payment_challenge(
+                resource_url,
+                get_price_cspr(resource),
+                currency="CSPR",
+                ttl_seconds=300,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Pricing unavailable: {e}")
+
+        return "challenge", JSONResponse(
+            status_code=402,
+            content={
+                "error": "payment_required",
+                "message": f"A native CSPR payment is required: {description}.",
+                "resource": resource_url,
+                "costUsd": get_resource_price(resource),
+                "costCspr": get_price_cspr(resource),
+            },
+            headers={
+                "PAYMENT-REQUIRED": challenge,
+                "X-PAYMENT-CHALLENGE": gate_challenge,
+                "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-CHALLENGE",
+            },
+        ), None
+
+    if payment_signature:
+        import base64 as _b64
+        try:
+            proof_payload = json.loads(_b64.b64decode(payment_signature).decode())
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid PAYMENT-SIGNATURE header: {e}")
+
+        deploy_json = proof_payload.get("deployJson") or proof_payload.get("deploy")
+        wallet = (proof_payload.get("wallet") or default_wallet).lower().strip()
+        if not deploy_json or not wallet:
+            raise HTTPException(status_code=400, detail="Missing deployJson or wallet in payment proof")
+
+        try:
+            settlement = await settle_agent_payment(deploy_json, wallet, resource)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            print(f"❌ Agent payment settlement error: {e}")
+            raise HTTPException(status_code=500, detail=f"Settlement error: {e}")
+        return "settled", settlement, wallet
+
+    # Lightweight payment-gate proof
+    try:
+        proof_payload = json.loads(request.headers.get("x-payment-proof", "{}"))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid X-PAYMENT-PROOF header: {e}")
+
+    if not verify_payment_proof(payment_challenge, proof_payload):
+        raise HTTPException(status_code=402, detail="Payment proof required")
+
+    wallet = (default_wallet or "").lower().strip()
+    if not wallet:
+        raise HTTPException(status_code=400, detail="wallet is required")
+    return "gate", None, wallet
+
+
+def _agent_paid_job_response(
+    mode: str,
+    settlement: Optional[dict],
+    payment_challenge: Optional[str],
+    resource: str,
+    job_id: str,
+    estimated_time: str,
+    extra: Optional[dict] = None,
+) -> JSONResponse:
+    """Build the 200 response for a paid long-running agent job."""
+    content = {
+        "success": True,
+        "job_id": job_id,
+        "status": "pending",
+        "pollUrl": f"/api/jobs/{job_id}",
+        "estimatedTime": estimated_time,
+        "message": f"{resource} generation started. Poll pollUrl until status=completed.",
+    }
+    if extra:
+        content.update(extra)
+
+    headers = {"Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE"}
+
+    if mode == "settled":
+        content["costUsd"] = settlement["cost_usd"]
+        content["costCspr"] = settlement["amount_cspr"]
+        content["transaction"] = settlement["deploy_hash"]
+        headers["PAYMENT-RESPONSE"] = create_payment_response(
+            settlement["deploy_hash"], f"job:{job_id}",
+            settlement["amount_cspr"], settlement["cost_usd"],
+        )
+        try:
+            from agent_payments import _record_agent_payment
+            _record_agent_payment(
+                settlement["deploy_hash"],
+                (settlement.get("wallet") or "").lower(),
+                settlement["amount_cspr"],
+                settlement["amount_motes"],
+                resource,
+                settlement["cost_usd"],
+                f"job:{job_id}",
+            )
+        except Exception as rec_err:
+            print(f"⚠️ Could not record agent payment: {rec_err}")
+    else:  # gate mode
+        content["costUsd"] = get_resource_price(resource)
+        content["costCspr"] = get_price_cspr(resource)
+        headers["PAYMENT-RESPONSE"] = create_payment_response(
+            (payment_challenge or "")[:16], f"job:{job_id}",
+            content["costCspr"], content["costUsd"],
+        )
+
+    return JSONResponse(status_code=200, content=content, headers=headers)
+
+
+async def _agent_music_background(job_id: str, lyrics: str, tags: str, quality: str):
+    """Background music generation for agent x402 (no token consumption)."""
+    try:
+        update_job(job_id, "processing")
+        try:
+            if quality == "minimax":
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None, wavespeed.generate_music_minimax, lyrics, tags
+                )
+            else:
+                try:
+                    url = await asyncio.get_event_loop().run_in_executor(
+                        None, wavespeed.generate_music, lyrics, tags
+                    )
+                except Exception as hm_error:
+                    print(f"⚠️ Agent HeartMuLa failed, falling back to MiniMax: {hm_error}")
+                    url = await asyncio.get_event_loop().run_in_executor(
+                        None, wavespeed.generate_music_minimax, lyrics, tags
+                    )
+        except Exception as gen_error:
+            print(f"❌ Agent music generation failed: {gen_error}")
+            update_job(job_id, "failed", error=f"Generation failed: {str(gen_error)}")
+            return
+        update_job(job_id, "completed", result={"url": url})
+        print(f"✅ Agent music generation completed: {job_id}")
+    except Exception as e:
+        print(f"❌ Agent music background error: {e}")
+        update_job(job_id, "failed", error=str(e))
+
+
+async def _agent_3d_background(job_id: str, image_url: str, with_texture: bool):
+    """Background 3D generation for agent x402 (no token consumption)."""
+    try:
+        update_job(job_id, "processing")
+        try:
+            if with_texture:
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None, wavespeed.generate_3d_with_texture, image_url
+                )
+            else:
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None, wavespeed.generate_3d_from_image, image_url
+                )
+        except Exception as gen_error:
+            print(f"❌ Agent 3D generation failed: {gen_error}")
+            update_job(job_id, "failed", error=f"Generation failed: {str(gen_error)}")
+            return
+        update_job(job_id, "completed", result={"url": url, "withTexture": with_texture})
+        print(f"✅ Agent 3D generation completed: {job_id}")
+    except Exception as e:
+        print(f"❌ Agent 3D background error: {e}")
+        update_job(job_id, "failed", error=str(e))
+
+
+async def _agent_video_background(
+    job_id: str,
+    prompt: str,
+    image_url: Optional[str],
+    duration: int,
+    aspect_ratio: str,
+    audio: bool,
+):
+    """Background video generation (Seedance 1.5) for agent x402."""
+    try:
+        update_job(job_id, "processing")
+        try:
+            if image_url:
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: wavespeed.generate_video_seedance_i2v(
+                        image_url, prompt=prompt, duration=duration,
+                        aspect_ratio=aspect_ratio, generate_audio=audio,
+                    ),
+                )
+            else:
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: wavespeed.generate_video_seedance_t2v(
+                        prompt, duration=duration,
+                        aspect_ratio=aspect_ratio, generate_audio=audio,
+                    ),
+                )
+        except Exception as gen_error:
+            print(f"❌ Agent video generation failed: {gen_error}")
+            update_job(job_id, "failed", error=f"Generation failed: {str(gen_error)}")
+            return
+        update_job(job_id, "completed", result={
+            "url": url,
+            "duration": duration,
+            "aspectRatio": aspect_ratio,
+            "audio": audio,
+        })
+        print(f"✅ Agent video generation completed: {job_id}")
+    except Exception as e:
+        print(f"❌ Agent video background error: {e}")
+        update_job(job_id, "failed", error=str(e))
+
+
+@app.post("/api/v1/agent/generate/music")
+@limiter.limit("10/minute")
+async def agent_generate_music(
+    request: Request,
+    data: AgentGenerateMusicRequest,
+    payment_signature: str = Header(None, alias="PAYMENT-SIGNATURE"),
+    payment_challenge: str = Header(None, alias="X-PAYMENT-CHALLENGE"),
+):
+    """
+    Agent-only x402 endpoint for music generation (HeartMuLa / MiniMax).
+
+    Long-running (2-10 min): after payment, returns a job_id immediately.
+    Poll GET /api/jobs/{job_id} until status == "completed" (result.url = MP3).
+    """
+    mode, payload, wallet = await _agent_verify_payment(
+        request, "music", "/api/v1/agent/generate/music",
+        "Generate a full song (HeartMuLa / MiniMax Music)",
+        payment_signature, payment_challenge, data.wallet,
+    )
+    if mode == "challenge":
+        return payload
+
+    job_id = create_job("music")
+    asyncio.create_task(_agent_music_background(job_id, data.lyrics, data.tags, data.quality))
+    return _agent_paid_job_response(
+        mode, payload, payment_challenge, "music", job_id, "2-10 minutes"
+    )
+
+
+@app.post("/api/v1/agent/generate/3d")
+@limiter.limit("10/minute")
+async def agent_generate_3d(
+    request: Request,
+    data: AgentGenerate3DRequest,
+    payment_signature: str = Header(None, alias="PAYMENT-SIGNATURE"),
+    payment_challenge: str = Header(None, alias="X-PAYMENT-CHALLENGE"),
+):
+    """
+    Agent-only x402 endpoint for 3D model generation (image -> GLB).
+
+    Long-running (2-10 min): after payment, returns a job_id immediately.
+    Poll GET /api/jobs/{job_id} until status == "completed" (result.url = GLB).
+    """
+    if not (data.imageUrl or "").strip():
+        raise HTTPException(status_code=400, detail="imageUrl is required")
+
+    mode, payload, wallet = await _agent_verify_payment(
+        request, "3d", "/api/v1/agent/generate/3d",
+        "Generate a 3D model (GLB) from an image",
+        payment_signature, payment_challenge, data.wallet,
+    )
+    if mode == "challenge":
+        return payload
+
+    job_id = create_job("3d")
+    asyncio.create_task(_agent_3d_background(job_id, data.imageUrl, data.withTexture))
+    return _agent_paid_job_response(
+        mode, payload, payment_challenge, "3d", job_id, "2-10 minutes",
+        extra={"withTexture": data.withTexture},
+    )
+
+
+@app.post("/api/v1/agent/generate/video")
+@limiter.limit("10/minute")
+async def agent_generate_video(
+    request: Request,
+    data: AgentGenerateVideoRequest,
+    payment_signature: str = Header(None, alias="PAYMENT-SIGNATURE"),
+    payment_challenge: str = Header(None, alias="X-PAYMENT-CHALLENGE"),
+):
+    """
+    Agent-only x402 endpoint for video generation (ByteDance Seedance 1.5 Pro).
+
+    Text-to-video by default; image-to-video when imageUrl is provided.
+    Long-running (2-10 min): after payment, returns a job_id immediately.
+    Poll GET /api/jobs/{job_id} until status == "completed" (result.url = MP4).
+    """
+    if not (data.prompt or "").strip():
+        raise HTTPException(status_code=400, detail="prompt is required")
+    if data.duration not in (5, 10):
+        raise HTTPException(status_code=400, detail="duration must be 5 or 10 seconds")
+    if data.aspectRatio not in ("16:9", "9:16", "1:1"):
+        raise HTTPException(status_code=400, detail="aspectRatio must be 16:9, 9:16 or 1:1")
+
+    mode, payload, wallet = await _agent_verify_payment(
+        request, "video", "/api/v1/agent/generate/video",
+        "Generate a video (Seedance 1.5 Pro)",
+        payment_signature, payment_challenge, data.wallet,
+    )
+    if mode == "challenge":
+        return payload
+
+    job_id = create_job("video")
+    asyncio.create_task(_agent_video_background(
+        job_id, data.prompt, data.imageUrl, data.duration, data.aspectRatio, data.audio
+    ))
+    return _agent_paid_job_response(
+        mode, payload, payment_challenge, "video", job_id, "2-10 minutes",
+        extra={
+            "mode": "image-to-video" if data.imageUrl else "text-to-video",
+            "duration": data.duration,
+            "aspectRatio": data.aspectRatio,
+        },
+    )
 
 
 @app.post("/api/generate/image")

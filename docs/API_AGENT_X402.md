@@ -11,14 +11,20 @@ endpoints below.
 
 ## Overview
 
-1. `POST /api/v1/agent/generate/image` with no payment proof.
+1. `POST /api/v1/agent/generate/image` (or `music`, `3d`, `video`, `tts`)
+   with no payment proof.
 2. Server responds `402 Payment Required` with a `PAYMENT-REQUIRED` header.
 3. Agent signs and broadcasts a **native CSPR transfer** on mainnet for the
    exact amount shown to the treasury wallet.
 4. Agent re-posts the same request with a `PAYMENT-SIGNATURE` header containing
    the signed deploy.
-5. Server verifies the payment on-chain, generates the image, and returns the
-   result URL plus a `PAYMENT-RESPONSE` receipt.
+5. Server verifies the payment on-chain, generates the asset, and returns the
+   result plus a `PAYMENT-RESPONSE` receipt. Long-running generations (music,
+   3d, video) return a `job_id` to poll on `GET /api/jobs/{job_id}` instead
+   (see below).
+
+All five resources share the exact same payment flow; only the request body
+and the delivery mode differ.
 
 ---
 
@@ -146,21 +152,98 @@ PAYMENT-RESPONSE: eyJzdGF0dXMiOiJzZXR0bGVkIiwidHJhbnNhY3Rpb25IYXNoIjoiLi4uIn0=..
 
 ## Pricing
 
-| Resource | USD price | CSPR price (live) |
-|---|---|---|
-| `image` | $0.03 | converted from live CSPR/USD rate |
-| `music` | $1.00 | *(reserved for future release)* |
-| `3d` | $2.00 | *(reserved for future release)* |
-| `tts` | $0.01 | converted from live CSPR/USD rate |
+| Resource | USD price | CSPR price (live) | Delivery |
+|---|---|---|---|
+| `image` | $0.03 | converted from live CSPR/USD rate | synchronous (`url`) |
+| `tts` | $0.01 | converted from live CSPR/USD rate | synchronous (base64 MP3) |
+| `music` | $1.00 | converted from live CSPR/USD rate | job-based (`job_id`) |
+| `video` | $1.50 | converted from live CSPR/USD rate | job-based (`job_id`) |
+| `3d` | $2.00 | converted from live CSPR/USD rate | job-based (`job_id`) |
 
 The CSPR amount is computed at request time from the live CSPR/USD rate
 (CoinGecko primary, with Kraken / CryptoCompare / CoinMarketCap fallbacks). A
 minimum floor protects against extreme price spikes:
 
 - image: minimum 1.0 CSPR
-- music: minimum 10.0 CSPR
-- 3d: minimum 20.0 CSPR
 - tts: minimum 1.0 CSPR
+- music: minimum 10.0 CSPR
+- video: minimum 15.0 CSPR
+- 3d: minimum 20.0 CSPR
+
+---
+
+## Long-running generations (music / 3d / video)
+
+Music, 3D and video take 2-10 minutes. These endpoints settle the payment,
+then return **immediately** with a `job_id` instead of the final URL:
+
+```json
+{
+  "success": true,
+  "job_id": "d3f0a1b2c3...",
+  "status": "pending",
+  "pollUrl": "/api/jobs/d3f0a1b2c3...",
+  "estimatedTime": "2-10 minutes",
+  "costUsd": 1.0,
+  "costCspr": 95.4,
+  "transaction": "abc123..."
+}
+```
+
+Poll `GET /api/jobs/{job_id}` until `status` is `completed` (the asset URL is
+in `result.url`) or `failed`. The `PAYMENT-RESPONSE` receipt header is already
+returned with the `job_id` response.
+
+> **Note:** payment is settled before the job starts. If generation fails, the
+> job shows `failed` with an `error` message — on-chain payments are not
+> automatically refunded.
+
+### `POST /api/v1/agent/generate/music`
+
+```json
+{
+  "lyrics": "[verse]\nNeon lights on the blockchain...",
+  "tags": "electronic, dark, cinematic",
+  "quality": "hm",
+  "wallet": "02abc..."
+}
+```
+
+- `lyrics`: song lyrics (empty string = instrumental)
+- `quality`: `hm` (HeartMuLa, auto-fallback to MiniMax) or `minimax`
+
+### `POST /api/v1/agent/generate/3d`
+
+```json
+{
+  "imageUrl": "https://example.com/input.png",
+  "withTexture": false,
+  "wallet": "02abc..."
+}
+```
+
+- `withTexture`: `false` = Hunyuan 3D v3.1 (monochrome), `true` = Tripo3D v2.5
+  (textured). Result is a GLB model.
+
+### `POST /api/v1/agent/generate/video`
+
+```json
+{
+  "prompt": "a drone shot over a futuristic city at dusk",
+  "imageUrl": null,
+  "duration": 5,
+  "aspectRatio": "16:9",
+  "audio": true,
+  "wallet": "02abc..."
+}
+```
+
+- `imageUrl`: when set, runs image-to-video (animates the image); otherwise
+  text-to-video
+- `duration`: `5` or `10` seconds
+- `aspectRatio`: `16:9`, `9:16` or `1:1`
+- `audio`: `false` skips soundtrack generation
+- Model: ByteDance Seedance 1.5 Pro (fast variant). Result is an MP4.
 
 ---
 
