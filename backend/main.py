@@ -150,6 +150,14 @@ class Generate3DRequest(BaseModel):
     imageUrl: str
     withTexture: bool = False
 
+class GenerateVideoRequest(BaseModel):
+    walletAddress: str
+    prompt: str
+    imageUrl: Optional[str] = None  # if set -> image-to-video, else text-to-video
+    duration: int = 5               # seconds (5 or 10)
+    aspectRatio: str = "16:9"       # 16:9, 9:16, 1:1
+    audio: bool = True              # soundtrack (same price, included)
+
 class TTSRequest(BaseModel):
     walletAddress: str
     text: str
@@ -1758,6 +1766,8 @@ from agent_payments import (
     settle_agent_payment,
     get_price_cspr,
     get_resource_price,
+    get_video_price_usd,
+    get_3d_price_usd,
 )
 from payment_gate import create_payment_challenge, verify_payment_proof
 
@@ -1945,8 +1955,13 @@ async def _agent_verify_payment(
     payment_signature: Optional[str],
     payment_challenge: Optional[str],
     default_wallet: str = "",
+    price_usd: Optional[float] = None,
 ):
     """Shared x402 paywall for agent endpoints.
+
+    price_usd overrides the flat resource price for dynamic pricing
+    (e.g. video billed per duration block). It must be provided identically
+    on the challenge AND on the paid retry.
 
     Returns (mode, payload, wallet):
       - ("challenge", JSONResponse, None)  -> return the response immediately (402)
@@ -1956,10 +1971,10 @@ async def _agent_verify_payment(
     """
     if not payment_signature and not payment_challenge:
         try:
-            challenge = create_agent_challenge(resource, resource_url, description)
+            challenge = create_agent_challenge(resource, resource_url, description, price_usd=price_usd)
             gate_challenge = create_payment_challenge(
                 resource_url,
-                get_price_cspr(resource),
+                get_price_cspr(resource, price_usd),
                 currency="CSPR",
                 ttl_seconds=300,
             )
@@ -1972,8 +1987,8 @@ async def _agent_verify_payment(
                 "error": "payment_required",
                 "message": f"A native CSPR payment is required: {description}.",
                 "resource": resource_url,
-                "costUsd": get_resource_price(resource),
-                "costCspr": get_price_cspr(resource),
+                "costUsd": price_usd if price_usd is not None else get_resource_price(resource),
+                "costCspr": get_price_cspr(resource, price_usd),
             },
             headers={
                 "PAYMENT-REQUIRED": challenge,
@@ -1995,7 +2010,7 @@ async def _agent_verify_payment(
             raise HTTPException(status_code=400, detail="Missing deployJson or wallet in payment proof")
 
         try:
-            settlement = await settle_agent_payment(deploy_json, wallet, resource)
+            settlement = await settle_agent_payment(deploy_json, wallet, resource, price_usd=price_usd)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
@@ -2026,6 +2041,7 @@ def _agent_paid_job_response(
     job_id: str,
     estimated_time: str,
     extra: Optional[dict] = None,
+    price_usd: Optional[float] = None,
 ) -> JSONResponse:
     """Build the 200 response for a paid long-running agent job."""
     content = {
@@ -2063,8 +2079,8 @@ def _agent_paid_job_response(
         except Exception as rec_err:
             print(f"⚠️ Could not record agent payment: {rec_err}")
     else:  # gate mode
-        content["costUsd"] = get_resource_price(resource)
-        content["costCspr"] = get_price_cspr(resource)
+        content["costUsd"] = price_usd if price_usd is not None else get_resource_price(resource)
+        content["costCspr"] = get_price_cspr(resource, price_usd)
         headers["PAYMENT-RESPONSE"] = create_payment_response(
             (payment_challenge or "")[:16], f"job:{job_id}",
             content["costCspr"], content["costUsd"],
@@ -2217,10 +2233,14 @@ async def agent_generate_3d(
     if not (data.imageUrl or "").strip():
         raise HTTPException(status_code=400, detail="imageUrl is required")
 
+    # Dynamic price: $0.50 without texture / $0.75 with texture (parity website)
+    td_price = get_3d_price_usd(data.withTexture)
+
     mode, payload, wallet = await _agent_verify_payment(
         request, "3d", "/api/v1/agent/generate/3d",
-        "Generate a 3D model (GLB) from an image",
+        f"Generate a 3D model (GLB) from an image ({'with' if data.withTexture else 'no'} texture)",
         payment_signature, payment_challenge, data.wallet,
+        price_usd=td_price,
     )
     if mode == "challenge":
         return payload
@@ -2229,6 +2249,7 @@ async def agent_generate_3d(
     asyncio.create_task(_agent_3d_background(job_id, data.imageUrl, data.withTexture))
     return _agent_paid_job_response(
         mode, payload, payment_challenge, "3d", job_id, "2-10 minutes",
+        price_usd=td_price,
         extra={"withTexture": data.withTexture},
     )
 
@@ -2247,6 +2268,9 @@ async def agent_generate_video(
     Text-to-video by default; image-to-video when imageUrl is provided.
     Long-running (2-10 min): after payment, returns a job_id immediately.
     Poll GET /api/jobs/{job_id} until status == "completed" (result.url = MP4).
+
+    Pricing is dynamic: $0.50 per 5-second block (5s = $0.50, 10s = $1.00),
+    same price with or without audio — mirrors the Telegram bot.
     """
     if not (data.prompt or "").strip():
         raise HTTPException(status_code=400, detail="prompt is required")
@@ -2255,10 +2279,14 @@ async def agent_generate_video(
     if data.aspectRatio not in ("16:9", "9:16", "1:1"):
         raise HTTPException(status_code=400, detail="aspectRatio must be 16:9, 9:16 or 1:1")
 
+    # Dynamic price based on duration (audio included at no extra cost)
+    video_price = get_video_price_usd(data.duration)
+
     mode, payload, wallet = await _agent_verify_payment(
         request, "video", "/api/v1/agent/generate/video",
-        "Generate a video (Seedance 1.5 Pro)",
+        f"Generate a {data.duration}s video (Seedance 1.5 Pro)",
         payment_signature, payment_challenge, data.wallet,
+        price_usd=video_price,
     )
     if mode == "challenge":
         return payload
@@ -2269,10 +2297,12 @@ async def agent_generate_video(
     ))
     return _agent_paid_job_response(
         mode, payload, payment_challenge, "video", job_id, "2-10 minutes",
+        price_usd=video_price,
         extra={
             "mode": "image-to-video" if data.imageUrl else "text-to-video",
             "duration": data.duration,
             "aspectRatio": data.aspectRatio,
+            "audio": data.audio,
         },
     )
 
@@ -2316,13 +2346,13 @@ async def generate_image(request: Request, data: GenerateImageRequest):
 @app.post("/api/generate/music")
 @limiter.limit("10/minute")
 async def generate_music(request: Request, data: GenerateMusicRequest):
-    """Generate music with HeartMuLa (14 tokens) or MiniMax (10 tokens)
+    """Generate music with HeartMuLa or MiniMax (15 tokens flat, both engines)
     
     Returns job_id immediately. Use GET /api/jobs/{job_id} to check status.
     Generation runs in background and can take 2-10 minutes.
     """
     try:
-        tokens_needed = 14 if data.quality == "hm" else 10
+        tokens_needed = 15  # flat for both engines (parity TG bot + x402 $0.35)
         
         # Check balance WITHOUT consuming yet
         current_balance = await get_user_balance(data.walletAddress)
@@ -2397,7 +2427,7 @@ async def _generate_music_background(
                             None, wavespeed.generate_music_minimax, lyrics, tags
                         )
                         fallback_used = True
-                        tokens_needed = 10  # MiniMax pricing
+                        tokens_needed = 15  # flat pricing (parity)
         except Exception as gen_error:
             # Both failed - DON'T consume tokens
             print(f"❌ Music generation failed completely: {gen_error}")
@@ -2420,7 +2450,7 @@ async def _generate_music_background(
         
         # Notify if fallback was used
         if fallback_used:
-            result["warning"] = "HeartMuLa unavailable, used MiniMax (saved 4 tokens)"
+            result["warning"] = "HeartMuLa unavailable, used MiniMax instead"
         
         update_job(job_id, "completed", result=result)
         print(f"✅ Music generation completed: {job_id}")
@@ -2432,13 +2462,13 @@ async def _generate_music_background(
 @app.post("/api/generate/3d")
 @limiter.limit("20/minute")
 async def generate_3d(request: Request, data: Generate3DRequest):
-    """Generate 3D model (2 tokens without texture, 30 with texture)
+    """Generate 3D model (25 tokens without texture, 35 with texture)
     
     Returns job_id immediately. Use GET /api/jobs/{job_id} to check status.
     Generation runs in background and can take 5-10 minutes.
     """
     try:
-        tokens_needed = 30 if data.withTexture else 2
+        tokens_needed = 35 if data.withTexture else 25
         
         # Check balance WITHOUT consuming yet
         current_balance = await get_user_balance(data.walletAddress)
@@ -2516,6 +2546,119 @@ async def _generate_3d_background(
 
     except Exception as e:
         print(f"❌ Background 3D generation error: {e}")
+        update_job(job_id, "failed", error=str(e))
+
+
+@app.post("/api/generate/video")
+@limiter.limit("20/minute")
+async def generate_video(request: Request, data: GenerateVideoRequest):
+    """Generate video with Seedance 1.5 Pro (25 tokens / 5s, 50 tokens / 10s).
+
+    Text-to-video by default; image-to-video when imageUrl is provided.
+    Audio soundtrack included at no extra cost (parity TG bot + x402).
+    Returns job_id immediately. Use GET /api/jobs/{job_id} to check status.
+    """
+    try:
+        if not (data.prompt or "").strip():
+            raise HTTPException(status_code=400, detail="prompt is required")
+        if data.duration not in (5, 10):
+            raise HTTPException(status_code=400, detail="duration must be 5 or 10 seconds")
+        if data.aspectRatio not in ("16:9", "9:16", "1:1"):
+            raise HTTPException(status_code=400, detail="aspectRatio must be 16:9, 9:16 or 1:1")
+
+        tokens_needed = 25 if data.duration <= 5 else 50
+
+        # Check balance WITHOUT consuming yet
+        current_balance = await get_user_balance(data.walletAddress)
+        if current_balance < tokens_needed:
+            raise HTTPException(status_code=402, detail="Insufficient tokens")
+
+        # Create job and return immediately
+        job_id = create_job("video")
+
+        asyncio.create_task(_generate_video_background(
+            job_id,
+            data.walletAddress,
+            data.prompt,
+            data.imageUrl,
+            data.duration,
+            data.aspectRatio,
+            data.audio,
+            tokens_needed,
+        ))
+
+        return {
+            "success": True,
+            "job_id": job_id,
+            "status": "pending",
+            "message": "Video generation started. Use GET /api/jobs/{job_id} to check status.",
+            "estimatedTime": "2-10 minutes"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _generate_video_background(
+    job_id: str,
+    wallet_address: str,
+    prompt: str,
+    image_url: Optional[str],
+    duration: int,
+    aspect_ratio: str,
+    audio: bool,
+    tokens_needed: int
+):
+    """Background task for video generation"""
+    try:
+        update_job(job_id, "processing")
+
+        try:
+            if image_url:
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: wavespeed.generate_video_seedance_i2v(
+                        image_url, prompt=prompt, duration=duration,
+                        aspect_ratio=aspect_ratio, generate_audio=audio,
+                    ),
+                )
+            else:
+                url = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: wavespeed.generate_video_seedance_t2v(
+                        prompt, duration=duration,
+                        aspect_ratio=aspect_ratio, generate_audio=audio,
+                    ),
+                )
+        except Exception as gen_error:
+            # Generation failed - DON'T consume tokens
+            print(f"❌ Video generation failed: {gen_error}")
+            update_job(job_id, "failed", error=f"Generation failed: {str(gen_error)}")
+            return
+
+        # Only consume tokens if generation succeeded
+        consumed = await consume_user_tokens(
+            wallet_address, tokens_needed, "video", f"{duration}s {aspect_ratio} audio={audio}"
+        )
+        if not consumed:
+            update_job(job_id, "failed", error="Insufficient tokens (balance changed)")
+            return
+
+        result = {
+            "url": url,
+            "duration": duration,
+            "aspectRatio": aspect_ratio,
+            "audio": audio,
+            "tokensUsed": tokens_needed
+        }
+
+        update_job(job_id, "completed", result=result)
+        print(f"✅ Video generation completed: {job_id}")
+
+    except Exception as e:
+        print(f"❌ Background video generation error: {e}")
         update_job(job_id, "failed", error=str(e))
 
 # ---------------------------------------------------------------------------
@@ -2856,7 +2999,7 @@ async def generate_lyrics(request: Request, data: GenerateLyricsRequest):
 
 class MintRWARequest(BaseModel):
     walletAddress: str
-    assetType: str  # 'image', 'music', '3d'
+    assetType: str  # 'image', 'music', '3d', 'video'
     assetUrl: str
     ipfsHash: str = ""  # Will be added later
     prompt: str = ""
@@ -2903,7 +3046,7 @@ async def mint_rwa_token(request: Request, data: MintRWARequest):
             raise HTTPException(status_code=400, detail="Invalid wallet address")
         
         # Validate asset type
-        if data.assetType not in ['image', 'music', '3d']:
+        if data.assetType not in ['image', 'music', '3d', 'video']:
             raise HTTPException(status_code=400, detail="Invalid asset type")
         
         # Persist the asset to Cloudflare R2 so the URL never expires.

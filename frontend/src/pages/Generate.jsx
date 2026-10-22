@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Image, Music, Box, MessageSquare, Loader2, Upload, Send, X, Download } from 'lucide-react'
-import { generateImage, generateMusic, generate3D, chat, generateLyrics, getJobStatus, mintRWAToken, shareAsset } from '../services/api'
+import { generateImage, generateMusic, generate3D, generateVideo, generateTTS, chat, generateLyrics, getJobStatus, mintRWAToken, shareAsset } from '../services/api'
 import SEO from '../components/SEO'
 
 // Music styles (from PiranAI bot)
@@ -12,6 +12,10 @@ const MUSIC_STYLES = {
   rock: { emoji: '🎸', label: 'Rock' },
   afrobeat: { emoji: '🌍', label: 'Afrobeat' }
 }
+
+// Display labels for background job types
+const JOB_TYPE_LABELS = { music: 'Music', '3d': '3D Model', video: 'Video' }
+const jobLabel = (t) => JOB_TYPE_LABELS[t] || t
 
 export default function Generate({ wallet, balance, onBalanceUpdate }) {
   const [loading, setLoading] = useState(false)
@@ -96,7 +100,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
               msg.id === messageId
                 ? {
                     ...msg,
-                    content: `✅ **${jobType === 'music' ? 'Music' : '3D Model'} Generated!**`,
+                    content: `✅ **${jobLabel(jobType)} Generated!**`,
                     result: {
                       type: jobType,
                       url: job.result.url,
@@ -149,6 +153,22 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
               ]
             }
             
+            // Add save/share buttons for video
+            if (jobType === 'video') {
+              return [...updated, 
+                {
+                  id: Date.now(),
+                  role: 'assistant',
+                  content: '💾 **Save your video:**',
+                  buttons: [
+                    { label: '💾 Save to Gallery (Private)', action: `save_video:${job.result.url}` },
+                    { label: '📤 Save & Share (Public)', action: `share_video:${job.result.url}` }
+                  ],
+                  result: null
+                }
+              ]
+            }
+            
             return updated
           })
           
@@ -179,7 +199,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
             msg.id === messageId
               ? { 
                   ...msg, 
-                  content: `⏳ **Generating ${jobType === 'music' ? 'music' : '3D model'}...**\n_Time elapsed: ${timeStr}_\n\n💡 **You can close this page!** Generation continues in background. Come back anytime to check.` 
+                  content: `⏳ **Generating ${jobLabel(jobType).toLowerCase()}...**\n_Time elapsed: ${timeStr}_\n\n💡 **You can close this page!** Generation continues in background. Come back anytime to check.` 
                 }
               : msg
           ))
@@ -542,6 +562,88 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
         return
       }
 
+      // ===== VIDEO FLOW =====
+      if (action.startsWith('video_duration_')) {
+        const duration = parseInt(action.replace('video_duration_', ''))
+        setFlowData({ ...flowData, videoDuration: duration })
+        addMessage('assistant', '📐 **Choose the format:**', [
+          { label: '🖥 16:9', action: 'video_aspect_16:9' },
+          { label: '📱 9:16', action: 'video_aspect_9:16' },
+          { label: '⬛ 1:1', action: 'video_aspect_1:1' }
+        ])
+        setLoading(false)
+        return
+      }
+
+      if (action.startsWith('video_aspect_')) {
+        const aspect = action.replace('video_aspect_', '')
+        setFlowData({ ...flowData, videoAspect: aspect })
+        addMessage('assistant', '🔊 **Audio?**\n\nSame price for you — with or without soundtrack.', [
+          { label: '🔊 With audio', action: 'video_audio_on' },
+          { label: '🔇 No audio', action: 'video_audio_off' }
+        ])
+        setLoading(false)
+        return
+      }
+
+      if (action === 'video_audio_on' || action === 'video_audio_off') {
+        await handleVideoGeneration(action === 'video_audio_on')
+        return
+      }
+
+      // ===== TTS FLOW =====
+      if (action.startsWith('tts_voice_')) {
+        const voice = action.replace('tts_voice_', '')
+        await handleTTSGeneration(voice === 'auto' ? null : voice)
+        return
+      }
+
+      // Save/Share video handlers
+      if (action.startsWith('save_video:')) {
+        const videoUrl = action.replace('save_video:', '')
+        const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+        try {
+          await mintRWAToken(
+            walletToUse,
+            'video',
+            videoUrl,
+            flowData.videoPrompt || 'Video generation',
+            'Seedance 1.5 Pro',
+            { duration: flowData.videoDuration, aspectRatio: flowData.videoAspect },
+            false // Private
+          )
+          addMessage('assistant', '💾 **Saved to your private gallery!**\n\n_Check your profile to see all your creations._')
+        } catch (err) {
+          const errorMsg = err.response?.data?.detail || err.message
+          addMessage('assistant', `❌ Save error: ${errorMsg}`)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+
+      if (action.startsWith('share_video:')) {
+        const videoUrl = action.replace('share_video:', '')
+        const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+        try {
+          await shareAsset(
+            walletToUse,
+            'video',
+            videoUrl,
+            flowData.videoPrompt || 'Video generation',
+            'Seedance 1.5 Pro',
+            { duration: flowData.videoDuration, aspectRatio: flowData.videoAspect }
+          )
+          addMessage('assistant', '📤 **Shared publicly!**\n\n_Your video is now visible in the community feed._')
+        } catch (err) {
+          const errorMsg = err.response?.data?.detail || err.message
+          addMessage('assistant', `❌ Share error: ${errorMsg}`)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+
       // ===== 3D FLOW =====
       if (action === '3d_from_image') {
         setShowUploadPrompt(true)
@@ -585,18 +687,74 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       setShowUploadPrompt(false)
       
       // NO user message for upload (like Telegram - inline action)
-      addMessage('assistant', '🎨 **Choose 3D Quality:**\n\n⚡ **Sans texture** — 2 tokens (~5 min)\n   └ Géométrie pure, monochrome\n\n🎨 **Avec texture** — 30 tokens (~10 min)\n   └ Couleurs et textures complètes', [
-        { label: '⚡ Sans texture (2 tokens)', action: '3d_quality_notex' },
-        { label: '🎨 Avec texture (30 tokens)', action: '3d_quality_tex' }
+      addMessage('assistant', '🎨 **Choose 3D Quality:**\n\n⚡ **Sans texture** — 25 tokens (~5 min)\n   └ Géométrie pure, monochrome\n\n🎨 **Avec texture** — 35 tokens (~10 min)\n   └ Couleurs et textures complètes', [
+        { label: '⚡ Sans texture (25 tokens)', action: '3d_quality_notex' },
+        { label: '🎨 Avec texture (35 tokens)', action: '3d_quality_tex' }
       ])
     }
     reader.readAsDataURL(file)
   }
 
+  // Handle video generation (Seedance 1.5, job-based like music/3D)
+  const handleVideoGeneration = async (audio) => {
+    const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+    const duration = flowData.videoDuration || 5
+    const aspect = flowData.videoAspect || '16:9'
+    const cost = duration <= 5 ? 25 : 50
+
+    setLoading(true)
+    addMessage('assistant', `🎬 **Starting video generation...**\n_Seedance 1.5 · ${duration}s · ${aspect} · ${audio ? 'audio' : 'no audio'}_\n_Cost: ${cost} tokens_\n⏳ Estimated time: 2-10 minutes\n\n💡 **You can close this page!** Generation continues in background.`)
+
+    try {
+      const res = await generateVideo(walletToUse, flowData.videoPrompt, null, duration, aspect, audio)
+
+      // Start job polling
+      const lastMessage = messages[messages.length - 1]
+      startJobPolling(res.job_id, lastMessage.id, 'video')
+
+      setCurrentFlow('chat')
+    } catch (err) {
+      addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Handle TTS generation (Edge TTS, synchronous, 1 token)
+  const handleTTSGeneration = async (voice) => {
+    const walletToUse = wallet || 'test_wallet_01234567890abcdef'
+    const text = flowData.ttsText || ''
+
+    if (!text) {
+      addMessage('assistant', '❌ No text found. Use `/tts <your text>`')
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    addMessage('assistant', '🎙 **Generating voice note...**\n_Cost: 1 token_')
+
+    try {
+      const res = await generateTTS(walletToUse, text, voice)
+      addMessage('assistant', '✅ **Voice note ready!**', null, {
+        type: 'tts',
+        url: `data:audio/mpeg;base64,${res.audioBase64}`,
+        tokensUsed: res.tokensUsed
+      })
+      setFlowData({})
+      setCurrentFlow('chat')
+      await onBalanceUpdate()
+    } catch (err) {
+      addMessage('assistant', `❌ Error: ${err.response?.data?.detail || err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Handle 3D generation
   const handle3DGeneration = async (withTexture) => {
     const walletToUse = wallet || 'test_wallet_01234567890abcdef'
-    const cost = withTexture ? 30 : 2
+    const cost = withTexture ? 35 : 25
     
     setLoading(true)
     // NO user message for inline button click (like Telegram)
@@ -630,7 +788,7 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
   const handleMusicGeneration = async () => {
     const walletToUse = wallet || 'test_wallet_01234567890abcdef'
     const quality = flowData.musicQuality
-    const cost = quality === 'hm' ? 14 : 10
+    const cost = 15  // flat price, both engines (parity TG bot + x402)
     const lyrics = flowData.musicLyrics || ''
     const styleLabel = MUSIC_STYLES[flowData.musicStyle]?.label || flowData.musicStyle
     
@@ -715,9 +873,53 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       if (command === '/music') {
         addMessage('user', userMessage)
         addMessage('assistant', '🎵 **Music Generation**\n\nChoose quality:', [
-          { label: '🎵 HeartMuLa (14 tokens)', action: 'music_hm' },
-          { label: '🎶 MiniMax HD (10 tokens)', action: 'music_minimax' }
+          { label: '🎵 HeartMuLa (15 tokens)', action: 'music_hm' },
+          { label: '🎶 MiniMax HD (15 tokens)', action: 'music_minimax' }
         ])
+        return
+      }
+
+      // /video
+      if (command === '/video') {
+        addMessage('user', userMessage)
+        if (args) {
+          setFlowData({ ...flowData, videoPrompt: args })
+          addMessage('assistant', '🎬 **Video Generation — Seedance 1.5**\n\nChoose the duration:', [
+            { label: '⏱ 5 sec (25 tokens)', action: 'video_duration_5' },
+            { label: '⏱ 10 sec (50 tokens)', action: 'video_duration_10' }
+          ])
+        } else {
+          setCurrentFlow('video_prompt')
+          addMessage('assistant', '🎬 **Video Generation — Seedance 1.5**\n\n📝 Describe the video you want:\n_(or /cancel)_')
+        }
+        return
+      }
+
+      // /tts
+      if (command === '/tts') {
+        addMessage('user', userMessage)
+        if (args) {
+          setFlowData({ ...flowData, ttsText: args })
+          addMessage('assistant', '🎙 **Text to Speech** (1 token)\n\nChoose a voice:', [
+            { label: '🤖 Auto (detect language)', action: 'tts_voice_auto' },
+            { label: '🇫🇷 Français — Femme', action: 'tts_voice_fr-female' },
+            { label: '🇫🇷 Français — Homme', action: 'tts_voice_fr-male' },
+            { label: '🇬🇧 English — Female', action: 'tts_voice_en-female' },
+            { label: '🇬🇧 English — Male', action: 'tts_voice_en-male' }
+          ])
+        } else {
+          setCurrentFlow('tts_text')
+          addMessage('assistant', '🎙 **Text to Speech** (1 token)\n\nSend me the text to speak (max 2000 chars):\n_(or /cancel)_')
+        }
+        return
+      }
+
+      // /cancel
+      if (command === '/cancel') {
+        addMessage('user', userMessage)
+        setCurrentFlow('chat')
+        setFlowData({})
+        addMessage('assistant', '❌ Cancelled.')
         return
       }
 
@@ -732,6 +934,35 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
       }
 
       // Unknown command - treat as chat
+    }
+
+    // ===== VIDEO / TTS FLOW INPUTS =====
+
+    // Video prompt input
+    if (currentFlow === 'video_prompt') {
+      addMessage('user', userMessage)
+      setFlowData({ ...flowData, videoPrompt: userMessage })
+      setCurrentFlow('chat')
+      addMessage('assistant', '🎬 **Choose the duration:**', [
+        { label: '⏱ 5 sec (25 tokens)', action: 'video_duration_5' },
+        { label: '⏱ 10 sec (50 tokens)', action: 'video_duration_10' }
+      ])
+      return
+    }
+
+    // TTS text input
+    if (currentFlow === 'tts_text') {
+      addMessage('user', userMessage)
+      setFlowData({ ...flowData, ttsText: userMessage })
+      setCurrentFlow('chat')
+      addMessage('assistant', '🎙 **Choose a voice:**', [
+        { label: '🤖 Auto (detect language)', action: 'tts_voice_auto' },
+        { label: '🇫🇷 Français — Femme', action: 'tts_voice_fr-female' },
+        { label: '🇫🇷 Français — Homme', action: 'tts_voice_fr-male' },
+        { label: '🇬🇧 English — Female', action: 'tts_voice_en-female' },
+        { label: '🇬🇧 English — Male', action: 'tts_voice_en-male' }
+      ])
+      return
     }
 
     // ===== MUSIC FLOW INPUTS =====
@@ -917,6 +1148,41 @@ export default function Generate({ wallet, balance, onBalanceUpdate }) {
                             <Download className="w-4 h-4" />
                             <span>Download GLB</span>
                           </a>
+                        </div>
+                      </div>
+                    )}
+
+                    {msg.result.type === 'video' && (
+                      <div>
+                        <video
+                          controls
+                          className="w-full rounded-lg border border-green-500/30"
+                          src={msg.result.url}
+                        />
+                        <div className="mt-2 flex items-center justify-between text-sm">
+                          <span className="text-green-400">Tokens used: {msg.result.tokensUsed}</span>
+                          <a
+                            href={msg.result.url}
+                            download
+                            className="flex items-center space-x-1 text-green-400 hover:text-green-300"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>Download MP4</span>
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
+                    {msg.result.type === 'tts' && (
+                      <div>
+                        <audio
+                          controls
+                          className="w-full mt-2"
+                          style={{ filter: 'hue-rotate(120deg)' }}
+                          src={msg.result.url}
+                        />
+                        <div className="mt-2 text-sm">
+                          <span className="text-green-400">Tokens used: {msg.result.tokensUsed}</span>
                         </div>
                       </div>
                     )}

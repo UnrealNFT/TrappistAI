@@ -383,8 +383,8 @@ S_QUALITY, S_STYLE, S_VOICE, S_DESC, S_CHOICE, S_LYRICS_CHOICE, S_OWN, S_PREVIEW
 
 def _kb_quality():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("� HeartMuLa — 14 tokens", callback_data="ms_quality:hm")],
-        [InlineKeyboardButton("💎 MiniMax 2.5 — 10 tokens", callback_data="ms_quality:hd")],
+        [InlineKeyboardButton("� HeartMuLa — 15 tokens", callback_data="ms_quality:hm")],
+        [InlineKeyboardButton("💎 MiniMax 2.5 — 15 tokens", callback_data="ms_quality:hd")],
         [InlineKeyboardButton("❌ Cancel", callback_data="ms_cancel")],
     ])
 
@@ -920,9 +920,9 @@ async def _generate_and_send(update: Update, context) -> int:
     ud  = context.user_data
     uid = update.effective_user.id
     
-    # Determine model and tokens based on quality choice
+    # Flat price for both engines (parity website + x402 $0.35)
     quality = ud.get("quality", "hm")  # Default to HeartMuLa if not set
-    tokens_needed = 14 if quality == "hm" else 10
+    tokens_needed = 15
     model_name = "HeartMuLa" if quality == "hm" else "MiniMax 2.5 HD"
     
     if not consume_tokens(uid, tokens_needed, update.effective_user.username or ""):
@@ -1105,8 +1105,8 @@ async def cmd_music(update: Update, context) -> int:
     context.user_data.clear()
     await update.message.reply_text(
         "� *Step 1/4 — Choose your model:*\n\n"
-        "🎙 *HeartMuLa* — Great quality/price ratio · 14 tokens\n"
-        "💎 *MiniMax 2.5* — High fidelity, humanized voices · 10 tokens",
+        "🎙 *HeartMuLa* — Great quality/price ratio · 15 tokens\n"
+        "💎 *MiniMax 2.5* — High fidelity, humanized voices · 15 tokens",
         reply_markup=_kb_quality(),
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -1119,7 +1119,7 @@ async def on_quality_choice(update: Update, context) -> int:
     context.user_data["quality"] = quality  # "hm" or "hd"
     
     model_name = "HeartMuLa" if quality == "hm" else "MiniMax 2.5 HD"
-    tokens_needed = 14 if quality == "hm" else 10
+    tokens_needed = 15  # flat price, both engines
     await q.edit_message_text(
         f"✅ *{model_name}* selected ({tokens_needed} tokens)\n\n"
         "🥁 *Step 2/4 — Pick a genre* — or *type your own beat*:\n"
@@ -1435,15 +1435,15 @@ async def on_3d_image(update: Update, context) -> int:
     
     # Show quality menu
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚡ Without texture (20 tokens)", callback_data="3dq:notex")],
-        [InlineKeyboardButton("🎨 With texture (30 tokens)", callback_data="3dq:tex")],
+        [InlineKeyboardButton("⚡ Without texture (25 tokens)", callback_data="3dq:notex")],
+        [InlineKeyboardButton("🎨 With texture (35 tokens)", callback_data="3dq:tex")],
         [InlineKeyboardButton("❌ Cancel", callback_data="3dq:cancel")],
     ])
     await update.message.reply_text(
         "🎨 *Choose 3D model quality:*\n\n"
-        "⚡ *Without texture* — 20 tokens (~2 min)\n"
+        "⚡ *Without texture* — 25 tokens (~2 min)\n"
         "   └ Pure geometry, monochrome\n\n"
-        "🎨 *With texture* — 30 tokens (~5 min)\n"
+        "🎨 *With texture* — 35 tokens (~5 min)\n"
         "   └ Full colors and textures",
         reply_markup=keyboard,
         parse_mode=ParseMode.MARKDOWN,
@@ -1471,13 +1471,13 @@ async def on_3d_quality(update: Update, context) -> int:
         context.user_data.clear()
         return ConversationHandler.END
     
-    # Determine model and cost
+    # Determine model and cost (parity website + x402)
     if choice == "notex":
-        cost = 20
+        cost = 25
         model_name = "Hunyuan-3D V3.1"
         use_texture = False
     else:  # tex
-        cost = 30
+        cost = 35
         model_name = "Tripo3D v2.5"
         use_texture = True
     
@@ -1845,10 +1845,11 @@ async def cmd_help(update: Update, context) -> None:
     await update.message.reply_text(
         "📖 *TrappistAI Help*\n\n"
         "🖼 */image* `prompt` — FLUX.1 image **(1 token)**\n"
-        "🎵 */music* — wizard style→voice→theme→lyrics **(10 tokens)**\n"
-        "🧊 */3d* — turn an image into a 3D model **(20 tokens)**\n"
+        "🎵 */music* — wizard style→voice→theme→lyrics **(15 tokens)**\n"
+        "🧊 */3d* — turn an image into a 3D model **(25-35 tokens)**\n"
+        "🎬 */video* — Seedance 1.5 video **(25-50 tokens)**\n"
         "🎬 */mp4c* — MP3 → MP4 converter **(free)**\n"
-        "🎙 */tts* `text` — text to speech voice note **(free)**\n"
+        "🎙 */tts* `text` — text to speech voice note **(1 token)**\n"
         "💬 */text* `question` — Llama 3.3 AI chat **(free)**\n"
         "� */news* `[topic]` — latest crypto news **(free)**\n"
         "💰 */balance* — check your balance\n"
@@ -2818,7 +2819,7 @@ async def on_mp4_cancel(update: Update, context) -> int:
     return ConversationHandler.END
 
 
-# ─── /tts — Text-to-speech voice notes (Edge TTS, free) ─────────────────────
+# ─── /tts — Text-to-speech voice notes (Edge TTS, 1 token) ───────────────────
 
 _TTS_VOICES = [
     ("🤖 Auto (detect language)", "auto"),
@@ -2887,7 +2888,15 @@ async def on_tts_voice(update: Update, context) -> int:
         return ConversationHandler.END
 
     voice_key = None if choice == "auto" else choice
-    await q.edit_message_text("🎙 Generating voice note… ⏳")
+
+    # Charge 1 token (parity website /api/tts + x402 $0.005)
+    uid = update.effective_user.id
+    if not consume_tokens(uid, 1, update.effective_user.username or ""):
+        bal = get_tokens(uid)
+        await q.answer(f"❌ 1 token required (balance: {bal}) — use /topup", show_alert=True)
+        return S_TTS_VOICE
+
+    await q.edit_message_text("🎙 Generating voice note… ⏳ _(1 token)_", parse_mode=ParseMode.MARKDOWN)
 
     mp3_path = ogg_path = None
     try:
@@ -2906,9 +2915,14 @@ async def on_tts_voice(update: Update, context) -> int:
         except Exception:
             pass
     except Exception as e:
+        # Refund the token on failure
+        try:
+            add_tokens(uid, 1)
+        except Exception:
+            pass
         await context.bot.send_message(
             chat_id=q.message.chat_id,
-            text=f"❌ TTS failed: `{str(e)[:200]}`",
+            text=f"❌ TTS failed: `{str(e)[:200]}`\n(token refunded)",
             parse_mode=ParseMode.MARKDOWN,
         )
     finally:
@@ -2930,7 +2944,10 @@ async def on_tts_cancel(update: Update, context) -> int:
 
 # ─── /video — Seedance 1.5 video generation (text→video or image→video) ──────
 def _vid_cost(duration: int) -> int:
-    return 15 if int(duration) <= 5 else 30
+    # 1 token = 10 CSPR (~$0.021). Aligned with x402 agent pricing:
+    # $0.50 per 5s block -> 25 tokens, audio included at no extra cost.
+    # Covers Seedance cost (~$0.36 / 5s+audio, ~$0.72 / 10s+audio) with ~40% margin.
+    return 25 if int(duration) <= 5 else 50
 
 
 def _crop_to_ratio_bytes(raw: bytes, ratio_str: str) -> bytes:
@@ -2997,8 +3014,8 @@ def _kb_vid_mode():
 
 def _kb_vid_duration():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⏱ 5 sec (15 tokens)", callback_data="viddur:5"),
-         InlineKeyboardButton("⏱ 10 sec (30 tokens)", callback_data="viddur:10")],
+        [InlineKeyboardButton("⏱ 5 sec (25 tokens)", callback_data="viddur:5"),
+         InlineKeyboardButton("⏱ 10 sec (50 tokens)", callback_data="viddur:10")],
         [InlineKeyboardButton("❌ Cancel", callback_data="viddur:cancel")],
     ])
 

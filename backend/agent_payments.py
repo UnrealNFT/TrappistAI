@@ -110,21 +110,31 @@ CASPER_RPC_FALLBACKS = [
 
 # Prices in USD.  They are converted to CSPR at request time using the live
 # CSPR/USD rate (CoinGecko primary, with Kraken/CryptoCompare/CMC fallbacks).
+#
+# Real WaveSpeed costs (verified Oct 2026):
+#   image : FLUX Schnell              -> $0.003/run
+#   tts   : Edge-TTS (Microsoft)      -> free (infra only)
+#   music : HeartMuLa / MiniMax 2.5   -> $0.10 / $0.15 per run
+#   3d    : Hunyuan v3.1 / Tripo v2.5 -> $0.10-0.27 / $0.36 per run
+#   video : Seedance v1.5 Pro fast    -> ~$0.36 (5s) up to $0.72 (10s+audio)
+#
+# Target margin: ~x2-3.5 on cost (reasonable for agent API resale).
 AGENT_PRICING_USD: Dict[str, float] = {
-    "image": 0.03,
-    "music": 1.00,
-    "3d": 2.00,
-    "video": 1.50,
-    "tts": 0.01,
+    "image": 0.01,
+    "music": 0.35,
+    "3d": 0.75,
+    "video": 0.50,  # base 5s block — actual price is dynamic, see get_video_price_usd()
+    "tts": 0.005,
 }
 
 # Minimum CSPR price to avoid microscopic amounts if CSPR moons.
+# (~50% of the CSPR value at the time of pricing, CSPR ~ $0.0021)
 MIN_CSPR_PRICE: Dict[str, float] = {
     "image": 1.0,
-    "music": 10.0,
-    "3d": 20.0,
-    "video": 15.0,
-    "tts": 1.0,
+    "music": 80.0,
+    "3d": 150.0,
+    "video": 200.0,
+    "tts": 0.5,
 }
 
 X402_VERSION = 1
@@ -149,11 +159,34 @@ def usd_to_cspr(usd_amount: float) -> float:
     return usd_amount / rate
 
 
-def get_price_cspr(resource: str) -> float:
-    """Return the final CSPR price for a resource, floored by MIN_CSPR_PRICE."""
-    usd = get_resource_price(resource)
+def get_price_cspr(resource: str, price_usd: Optional[float] = None) -> float:
+    """Return the final CSPR price for a resource, floored by MIN_CSPR_PRICE.
+
+    price_usd overrides the flat AGENT_PRICING_USD price (dynamic pricing,
+    e.g. video billed per duration block).
+    """
+    usd = price_usd if price_usd is not None else get_resource_price(resource)
     cspr = usd_to_cspr(usd)
     return max(cspr, MIN_CSPR_PRICE.get(resource, 0.0))
+
+
+def get_video_price_usd(duration: int) -> float:
+    """Dynamic video price: $0.50 per 5-second block, SAME price with or
+    without audio — mirrors the Telegram bot (25 tokens / 5s, 50 / 10s).
+
+    Cost (Seedance v1.5 Pro fast): ~$0.36 (5s+audio) up to ~$0.72 (10s+audio)
+    -> ~39% margin even on the worst-case configuration.
+    """
+    blocks = max(1, int(duration) // 5)
+    return round(0.50 * blocks, 4)
+
+
+def get_3d_price_usd(with_texture: bool) -> float:
+    """Dynamic 3D price: $0.50 without texture (Hunyuan v3.1, cost ~$0.10-0.27),
+    $0.75 with texture (Tripo3D v2.5, cost $0.36).
+    Parity with the website/TG bot: 25 / 35 tokens.
+    """
+    return 0.75 if with_texture else 0.50
 
 
 def cspr_to_motes(cs: float) -> str:
@@ -164,9 +197,18 @@ def cspr_to_motes(cs: float) -> str:
 # ---------------------------------------------------------------------------
 # x402 challenge
 # ---------------------------------------------------------------------------
-def create_agent_challenge(resource: str, resource_url: str, description: str) -> str:
-    """Build the base64-encoded PAYMENT-REQUIRED header for an agent request."""
-    cspr = get_price_cspr(resource)
+def create_agent_challenge(
+    resource: str,
+    resource_url: str,
+    description: str,
+    price_usd: Optional[float] = None,
+) -> str:
+    """Build the base64-encoded PAYMENT-REQUIRED header for an agent request.
+
+    price_usd overrides the flat resource price (dynamic pricing, e.g. video).
+    """
+    usd = price_usd if price_usd is not None else get_resource_price(resource)
+    cspr = get_price_cspr(resource, price_usd)
     amount_motes = cspr_to_motes(cspr)
 
     payload = {
@@ -189,7 +231,7 @@ def create_agent_challenge(resource: str, resource_url: str, description: str) -
                 "extra": {
                     "symbol": "CSPR",
                     "decimals": "9",
-                    "usdPrice": str(get_resource_price(resource)),
+                    "usdPrice": str(usd),
                     "csprPrice": f"{cspr:.6f}",
                     "memo": f"{X402_MEMO_PREFIX}: {description}",
                 },
@@ -390,11 +432,18 @@ def _record_agent_payment(
 # ---------------------------------------------------------------------------
 # Main settle function
 # ---------------------------------------------------------------------------
-async def settle_agent_payment(deploy_json: Dict[str, Any], wallet: str, resource: str) -> Dict[str, Any]:
+async def settle_agent_payment(
+    deploy_json: Dict[str, Any],
+    wallet: str,
+    resource: str,
+    price_usd: Optional[float] = None,
+) -> Dict[str, Any]:
     """
     Verify a native CSPR transfer on mainnet and return settlement metadata.
 
-    Raises ValueError with a human-readable message if validation fails.
+    price_usd must match the price shown in the challenge for dynamic-priced
+    resources (e.g. video). Raises ValueError with a human-readable message
+    if validation fails.
     """
     if not deploy_json or not wallet or not resource:
         raise ValueError("Missing deployJson, wallet, or resource")
@@ -418,7 +467,7 @@ async def settle_agent_payment(deploy_json: Dict[str, Any], wallet: str, resourc
         raise ValueError("Deploy hash already used")
 
     # 3. Expected amount
-    required_cspr = get_price_cspr(resource)
+    required_cspr = get_price_cspr(resource, price_usd)
     required_motes = int(Decimal(str(required_cspr)) * Decimal("1_000_000_000"))
 
     # 4. Verify on-chain with polling (max ~75s)
@@ -478,7 +527,7 @@ async def settle_agent_payment(deploy_json: Dict[str, Any], wallet: str, resourc
         # For mainnet we currently require the exact treasury public key as target.
         raise ValueError(f"Invalid recipient: expected treasury wallet, got {target}")
 
-    cost_usd = get_resource_price(resource)
+    cost_usd = price_usd if price_usd is not None else get_resource_price(resource)
     return {
         "deploy_hash": clean_hash,
         "amount_motes": amount_motes,

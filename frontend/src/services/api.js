@@ -61,6 +61,27 @@ export const generate3D = async (walletAddress, imageUrl, withTexture = false) =
   return data
 }
 
+export const generateVideo = async (walletAddress, prompt, imageUrl = null, duration = 5, aspectRatio = '16:9', audio = true) => {
+  const { data } = await api.post('/api/generate/video', {
+    walletAddress,
+    prompt,
+    imageUrl,
+    duration,
+    aspectRatio,
+    audio
+  })
+  return data
+}
+
+export const generateTTS = async (walletAddress, text, voice = null) => {
+  const { data } = await api.post('/api/tts', {
+    walletAddress,
+    text,
+    voice
+  })
+  return data
+}
+
 export const chat = async (walletAddress, message) => {
   const { data } = await api.post('/api/chat', {
     walletAddress,

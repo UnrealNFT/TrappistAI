@@ -154,21 +154,25 @@ PAYMENT-RESPONSE: eyJzdGF0dXMiOiJzZXR0bGVkIiwidHJhbnNhY3Rpb25IYXNoIjoiLi4uIn0=..
 
 | Resource | USD price | CSPR price (live) | Delivery |
 |---|---|---|---|
-| `image` | $0.03 | converted from live CSPR/USD rate | synchronous (`url`) |
-| `tts` | $0.01 | converted from live CSPR/USD rate | synchronous (base64 MP3) |
-| `music` | $1.00 | converted from live CSPR/USD rate | job-based (`job_id`) |
-| `video` | $1.50 | converted from live CSPR/USD rate | job-based (`job_id`) |
-| `3d` | $2.00 | converted from live CSPR/USD rate | job-based (`job_id`) |
+| `image` | $0.01 | converted from live CSPR/USD rate | synchronous (`url`) |
+| `tts` | $0.005 | converted from live CSPR/USD rate | synchronous (base64 MP3) |
+| `music` | $0.35 | converted from live CSPR/USD rate | job-based (`job_id`) |
+| `video` | $0.50 per 5s block (5s = $0.50, 10s = $1.00) | converted from live CSPR/USD rate | job-based (`job_id`) |
+| `3d` | $0.75 | converted from live CSPR/USD rate | job-based (`job_id`) |
+
+Video is priced **dynamically per duration** — the 402 challenge shows the
+exact price for the requested `duration`. Audio (soundtrack) is included at
+no extra cost, same as the Telegram bot.
 
 The CSPR amount is computed at request time from the live CSPR/USD rate
 (CoinGecko primary, with Kraken / CryptoCompare / CoinMarketCap fallbacks). A
 minimum floor protects against extreme price spikes:
 
 - image: minimum 1.0 CSPR
-- tts: minimum 1.0 CSPR
-- music: minimum 10.0 CSPR
-- video: minimum 15.0 CSPR
-- 3d: minimum 20.0 CSPR
+- tts: minimum 0.5 CSPR
+- music: minimum 80.0 CSPR
+- video: minimum 200.0 CSPR
+- 3d: minimum 150.0 CSPR
 
 ---
 
