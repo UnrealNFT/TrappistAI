@@ -9,14 +9,35 @@ Generate images, music, 3D models, and chat with AI. Pay with CSPR tokens.
 ## 🚀 Features
 
 - **🎨 Image Generation**: FLUX.1-schnell (1024x1024) — 1 token
-- **🎵 Music Creation**: HeartMuLa & MiniMax HD — 10-15 tokens
-- **🎬 Video Generation**: ByteDance Seedance 1.5 Pro (text→video & image→video)
-- **📦 3D Models**: Hunyuan & Tripo3D — 2-30 tokens  
+- **🎵 Music Creation**: HeartMuLa & MiniMax 2.5 HD — 15 tokens
+- **🎬 Video Generation**: ByteDance Seedance 1.5 Pro (text→video & image→video) — 25-50 tokens
+- **📦 3D Models**: Hunyuan 3D & Tripo3D — 25-35 tokens  
 - **🎙 Text-to-Speech**: Edge TTS, FR/EN voices — 1 token
 - **🤖 Telegram Bot**: all generation features + voice notes (/tts)
 - **💬 AI Chat**: Groq LLM — Free (0 tokens)
 - **💰 CSPR Payments**: Automatic token crediting via blockchain
 - **⚡ x402 Agent API**: AI agents pay per-call in CSPR (image, TTS, music, video, 3D)
+
+---
+
+## 💎 Pricing
+
+**100 tokens = 1,000 CSPR** · Pay with CSPR on Casper · No subscription, credits never expire
+
+| Feature | 🌐 Website | 🤖 Telegram Bot | 🤝 Agent API (x402) |
+|---|---|---|---|
+| **Image** (FLUX) | 1 token | 1 token | $0.01 |
+| **Text-to-Speech** (FR/EN voices) | 1 token | 1 token | $0.005 |
+| **Music** (HeartMuLa or MiniMax 2.5) | 15 tokens | 15 tokens | $0.35 |
+| **3D Model** (no texture) | 25 tokens | 25 tokens | $0.50 |
+| **3D Model** (with texture) | 35 tokens | 35 tokens | $0.75 |
+| **Video 5s** (Seedance 1.5) | 25 tokens | 25 tokens | $0.50 |
+| **Video 10s** (Seedance 1.5) | 50 tokens | 50 tokens | $1.00 |
+
+- 🔊 Soundtrack always **included** on videos — no extra charge
+- 🖼️→🎬 Image-to-video available at the same price
+- 🤖 x402 agent payments are converted to CSPR at the live rate — you always pay the exact USD price shown
+- 🎁 Failed generations are **automatically refunded**
 
 ---
 

@@ -1,10 +1,20 @@
 import { useState } from 'react'
-import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
+import { Wallet, Loader2, CheckCircle, XCircle, AlertCircle, ChevronDown } from 'lucide-react'
 import { CLPublicKey, DeployUtil } from 'casper-js-sdk'
 import SEO from '../components/SEO'
 
 const PACKAGES = [
   { name: 'Starter', tokens: 100, cspr: 1000, popular: true } // PRODUCTION: 1000 CSPR
+]
+
+const PRICING = [
+  { emoji: '🎨', name: 'Image (FLUX)', tokens: 1, x402: '$0.01' },
+  { emoji: '🎙️', name: 'Text-to-Speech (FR/EN)', tokens: 1, x402: '$0.005' },
+  { emoji: '🎵', name: 'Music (HeartMuLa / MiniMax 2.5)', tokens: 15, x402: '$0.35' },
+  { emoji: '🧊', name: '3D Model (no texture)', tokens: 25, x402: '$0.50' },
+  { emoji: '🎨', name: '3D Model (with texture)', tokens: 35, x402: '$0.75' },
+  { emoji: '🎬', name: 'Video 5s (Seedance 1.5)', tokens: 25, x402: '$0.50' },
+  { emoji: '🎬', name: 'Video 10s (Seedance 1.5)', tokens: 50, x402: '$1.00' },
 ]
 
 const CASPER_CONFIG = {
@@ -20,6 +30,7 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [txHash, setTxHash] = useState('')
+  const [showPricing, setShowPricing] = useState(false)
 
   const handlePayWithWallet = async () => {
     if (!wallet) {
@@ -258,6 +269,64 @@ export default function BuyCredits({ wallet, balance, provider, onPurchaseComple
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Pricing table - collapsible */}
+        <div className="glass rounded-2xl border border-green-500/30 mb-12 overflow-hidden">
+          <button
+            onClick={() => setShowPricing(!showPricing)}
+            className="w-full flex items-center justify-between p-6 hover:bg-green-500/10 transition"
+          >
+            <span className="text-green-400 font-bold text-lg md:text-xl">
+              💎 What can I generate with my tokens?
+            </span>
+            <ChevronDown
+              className={`w-6 h-6 text-green-400 transition-transform duration-300 ${
+                showPricing ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+
+          {showPricing && (
+            <div className="px-4 md:px-6 pb-6">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-green-500/30">
+                    <th className="py-3 text-green-300/70 font-semibold text-sm">Feature</th>
+                    <th className="py-3 text-green-300/70 font-semibold text-sm text-right">Tokens</th>
+                    <th className="py-3 text-green-300/70 font-semibold text-sm text-right hidden sm:table-cell">
+                      Agent API (x402)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PRICING.map((item) => (
+                    <tr
+                      key={item.name}
+                      className="border-b border-green-500/10 hover:bg-green-500/5 transition"
+                    >
+                      <td className="py-3 text-green-300 text-sm md:text-base">
+                        {item.emoji} {item.name}
+                      </td>
+                      <td className="py-3 text-green-400 font-bold text-right text-sm md:text-base">
+                        {item.tokens}
+                      </td>
+                      <td className="py-3 text-green-300/70 text-right text-sm hidden sm:table-cell">
+                        {item.x402}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="mt-4 space-y-1 text-xs md:text-sm text-green-300/60">
+                <p>🔊 Soundtrack always included on videos — no extra charge</p>
+                <p>🖼️→🎬 Image-to-video available at the same price</p>
+                <p>🎁 Failed generations are automatically refunded</p>
+                <p>💬 AI Chat is free — 0 tokens</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {selected && (
