@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { RefreshCw, Coins, Wallet, LogOut } from 'lucide-react'
+import { FaXTwitter, FaTelegram } from 'react-icons/fa6'
 
 export default function Navbar({ wallet, balance, onConnect, onDisconnect, onRefreshBalance }) {
   return (
@@ -39,8 +40,30 @@ export default function Navbar({ wallet, balance, onConnect, onDisconnect, onRef
           </Link>
         </div>
 
-        {/* Wallet */}
+        {/* Social links + Wallet */}
         <div className="flex items-center space-x-2 md:space-x-3">
+          {/* Socials */}
+          <div className="flex items-center space-x-1 md:space-x-2">
+            <a
+              href="https://x.com/trappistland"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 md:p-2 glass border border-green-500/30 rounded-lg text-green-300/90 hover:text-green-400 hover:border-green-500/60 transition"
+              title="Follow us on X"
+            >
+              <FaXTwitter className="w-4 h-4 md:w-5 md:h-5" />
+            </a>
+            <a
+              href="https://t.me/TrappistAI"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 md:p-2 glass border border-green-500/30 rounded-lg text-green-300/90 hover:text-green-400 hover:border-green-500/60 transition"
+              title="Join us on Telegram"
+            >
+              <FaTelegram className="w-4 h-4 md:w-5 md:h-5" />
+            </a>
+          </div>
+
           {wallet ? (
             <>
               {/* Balance */}
