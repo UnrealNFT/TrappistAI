@@ -35,8 +35,11 @@ import wavespeed
 router = APIRouter()
 
 # ============================== FUSION IA (cartes d'arène du jeu) ==============================
-
-FUSION_COST_TOKENS = 1  # 1 token = 1 image, parité avec /api/generate/image
+# Tarification alignée sur les coûts WaveSpeed réels (marge protégée) :
+#   fusion de base (rang 1)  -> 1 token, FLUX.1-schnell (~$0.003) — marge ~86% à 10 CSPR/token
+#   re-fusion (rang 2+)      -> 2 tokens, FLUX.1-dev (~$0.025, art épique pour les hauts rangs) — marge ~40%
+FUSION_COST_TOKENS = 1
+REFUSION_COST_TOKENS = 2
 
 # descriptions de base des espèces (reprises du pipeline de génération du jeu)
 _SPECIES = {
@@ -101,8 +104,9 @@ async def game_fuse(data: FuseIn):
         raise HTTPException(status_code=400, detail="Espèce inconnue")
     tier = max(1, min(10, int(data.tier or 1)))
 
+    tokens_needed = REFUSION_COST_TOKENS if tier >= 2 else FUSION_COST_TOKENS
     balance = await get_user_balance(w)
-    if balance < FUSION_COST_TOKENS:
+    if balance < tokens_needed:
         raise HTTPException(status_code=402, detail="Insufficient tokens")
 
     base_desc, disp = _SPECIES[data.species]
@@ -121,12 +125,13 @@ async def game_fuse(data: FuseIn):
     prompt = ", ".join(parts)
 
     try:
-        url = await asyncio.get_event_loop().run_in_executor(None, wavespeed.generate_image, prompt)
+        gen_fn = wavespeed.generate_image_hd if tier >= 2 else wavespeed.generate_image
+        url = await asyncio.get_event_loop().run_in_executor(None, gen_fn, prompt)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
 
     # débit APRÈS succès (comme /api/generate/image)
-    if not await consume_user_tokens(w, FUSION_COST_TOKENS, "image", f"[nebula-fusion] {prompt[:180]}"):
+    if not await consume_user_tokens(w, tokens_needed, "image", f"[nebula-fusion t{tier}] {prompt[:180]}"):
         raise HTTPException(status_code=402, detail="Insufficient tokens")
 
     sp_name = f"{disp} {suffix}" + (f" {_ROMAN[tier - 2]}" if tier > 1 else "")
@@ -137,7 +142,7 @@ async def game_fuse(data: FuseIn):
         "color": color,
         "tier": tier,
         "themeIdx": theme_idx,
-        "balance": balance - FUSION_COST_TOKENS,
+        "balance": balance - tokens_needed,
     }
 
 

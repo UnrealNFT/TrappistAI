@@ -71,6 +71,19 @@ def generate_image(prompt: str) -> str:
     return _poll(task_id, max_wait=60)
 
 
+def generate_image_hd(prompt: str) -> str:
+    """Generate image with FLUX.1-dev (more detail, ~8x schnell cost). Returns URL."""
+    if TEST_MODE:
+        print(f"[MOCK] Generating HD image: {prompt[:50]}...")
+        return "https://picsum.photos/1024/1024"  # Mock image URL
+
+    task_id = _submit("wavespeed-ai/flux-dev", {
+        "prompt": prompt,
+        "size": "1024*1024",
+    })
+    return _poll(task_id, max_wait=180)
+
+
 def generate_music(lyrics: str, tags: str = "electronic, dark, cinematic") -> str:
     """Generate music with HeartMuLa. Returns URL.
 
