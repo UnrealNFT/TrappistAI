@@ -28,6 +28,7 @@ from db import get_db_session, get_user_balance, consume_user_tokens, get_paymen
 import wavespeed
 import r2_storage
 import tts
+import nebula_game  # Trappist Legend : NÉBULA — fusion payante (/api/game/fuse) + arène JcJ (/api/arena/*)
 
 load_dotenv()
 
@@ -112,8 +113,11 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Trappist Legend : NÉBULA — routes du jeu (fusion de cartes + arène en ligne)
+app.include_router(nebula_game.router)
+
 # CORS
-ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")]
+ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,https://trappsitland.netlify.app,https://play.trappist.land,https://trappist.land").split(",")]
 print(f"🌐 CORS allowed origins: {ALLOWED_ORIGINS}")
 app.add_middleware(
     CORSMiddleware,
