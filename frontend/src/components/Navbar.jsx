@@ -20,6 +20,14 @@ export default function Navbar({ wallet, balance, onConnect, onDisconnect, onRef
 
         {/* Navigation - Hidden on mobile, visible on desktop */}
         <div className="hidden md:flex items-center space-x-6">
+          <a
+  href="https://trappsitland.netlify.app/nebula.html"
+  target="_blank"
+  rel="noopener noreferrer"
+  className="text-green-300/90 hover:text-green-400 transition font-semibold"
+>
+  🎮 Game
+</a>
           <Link to="/" className="text-green-300/90 hover:text-green-400 transition">
             Home
           </Link>
