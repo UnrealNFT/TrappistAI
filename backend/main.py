@@ -2318,7 +2318,7 @@ class PartnerImageRequest(BaseModel):
 
 # Clé API → wallet (remplace par le vrai wallet de SkyLaws)
 PARTNER_WALLETS = {
-    "skylaws-pilot": "METTRE_LE_WALLET_ICI",
+    "skylaws-pilot": "0203b465d88a255b374b3fa04c9ef306bd0bf6cc02d9562adb0e061ad01750825059",
 }
 
 @app.post("/api/partner/generate/image")
