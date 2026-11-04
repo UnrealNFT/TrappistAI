@@ -2315,7 +2315,7 @@ from fastapi import Header
 
 class PartnerImageRequest(BaseModel):
     prompt: str
-    model: str = "schnell"
+    model: str = "schnell"  # "schnell" ou "dev"
 
 PARTNER_WALLETS = {
     "skylaws-pilot": "0203b465d88a255b374b3fa04c9ef306bd0bf6cc02d9562adb0e061ad01750825059",
@@ -2332,9 +2332,35 @@ async def partner_generate_image(
     if not wallet:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
-    # Réutilise exactement la même logique que le site
-    req = GenerateImageRequest(walletAddress=wallet, prompt=data.prompt)
-    return await generate_image(request, req)
+    tokens_needed = 1 if data.model == "schnell" else 2
+
+    current_balance = await get_user_balance(wallet)
+    if current_balance < tokens_needed:
+        raise HTTPException(status_code=402, detail="Insufficient tokens")
+
+    try:
+        if data.model == "dev":
+            url = await asyncio.get_event_loop().run_in_executor(
+                None, wavespeed.generate_image_hd, data.prompt
+            )
+        else:
+            url = await asyncio.get_event_loop().run_in_executor(
+                None, wavespeed.generate_image, data.prompt
+            )
+
+        consumed = await consume_user_tokens(wallet, tokens_needed, "image", data.prompt)
+        if not consumed:
+            raise HTTPException(status_code=402, detail="Insufficient tokens")
+
+        return {
+            "success": True,
+            "url": url,
+            "model": data.model,
+            "tokensUsed": tokens_needed,
+            "remainingBalance": current_balance - tokens_needed,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/generate/image")
 @limiter.limit("30/minute")
