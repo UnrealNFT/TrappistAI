@@ -82,7 +82,19 @@ def generate_image_hd(prompt: str) -> str:
         "size": "1024*1024",
     })
     return _poll(task_id, max_wait=180)
-
+def generate_image_kontext(image_url: str, prompt: str) -> str:
+    """Edit image with FLUX Kontext Dev. Returns URL."""
+    if TEST_MODE:
+        print(f"[MOCK] Kontext edit: {prompt[:50]}...")
+        return "https://picsum.photos/1024/1024"
+    
+    task_id = _submit("wavespeed-ai/flux-kontext-dev", {
+        "image": image_url,
+        "prompt": prompt,
+        "num_inference_steps": 28,
+        "guidance_scale": 2.5,
+    })
+    return _poll(task_id, max_wait=180)
 
 def generate_music(lyrics: str, tags: str = "electronic, dark, cinematic") -> str:
     """Generate music with HeartMuLa. Returns URL.
