@@ -2310,57 +2310,41 @@ async def agent_generate_video(
         },
     )
 # ========== PARTNER API (SkyLaws) ==========
-# ========== PARTNER API (SkyLaws) ==========
-from fastapi import Header
-
-class PartnerImageRequest(BaseModel):
-    prompt: str
-    model: str = "schnell"  # "schnell" ou "dev"
-
-PARTNER_WALLETS = {
-    "skylaws-pilot": "0203b465d88a255b374b3fa04c9ef306bd0bf6cc02d9562adb0e061ad01750825059",
-}
-
-@app.post("/api/partner/generate/image")
-@limiter.limit("30/minute")
+@router.post("/api/partner/generate/image")
 async def partner_generate_image(
-    request: Request,
-    data: PartnerImageRequest,
-    x_api_key: str = Header(..., alias="X-API-Key")
+    prompt: str,
+    model: str = "schnell",
+    image_url: str = None,
+    api_key: str = Header(..., alias="X-API-Key")
 ):
-    wallet = PARTNER_WALLETS.get(x_api_key)
-    if not wallet:
+    partner = PARTNERS.get(api_key)
+    if not partner:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
-    tokens_needed = 1 if data.model == "schnell" else 2
+    cost = 2 if model in ("dev", "kontext") else 1
 
-    current_balance = await get_user_balance(wallet)
-    if current_balance < tokens_needed:
-        raise HTTPException(status_code=402, detail="Insufficient tokens")
+    if partner["balance"] < cost:
+        raise HTTPException(status_code=402, detail="Insufficient balance")
 
-    try:
-        if data.model == "dev":
-            url = await asyncio.get_event_loop().run_in_executor(
-                None, wavespeed.generate_image_hd, data.prompt
-            )
-        else:
-            url = await asyncio.get_event_loop().run_in_executor(
-                None, wavespeed.generate_image, data.prompt
-            )
+    if model == "kontext":
+        if not image_url:
+            raise HTTPException(status_code=400, detail="image_url required")
+        url = wavespeed.generate_image_kontext(image_url, prompt)
+    elif model == "dev":
+        url = wavespeed.generate_image_hd(prompt)
+    else:
+        url = wavespeed.generate_image(prompt)
 
-        consumed = await consume_user_tokens(wallet, tokens_needed, "image", data.prompt)
-        if not consumed:
-            raise HTTPException(status_code=402, detail="Insufficient tokens")
+    partner["balance"] -= cost
 
-        return {
-            "success": True,
-            "url": url,
-            "model": data.model,
-            "tokensUsed": tokens_needed,
-            "remainingBalance": current_balance - tokens_needed,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "success": True,
+        "url": url,
+        "model": model,
+        "cost": cost,
+        "remaining_balance": partner["balance"]
+    }
+# ========== finish PARTNER API (SkyLaws) ==========
 
 @app.post("/api/generate/image")
 @limiter.limit("30/minute")
