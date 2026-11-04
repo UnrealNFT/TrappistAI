@@ -2310,7 +2310,7 @@ async def agent_generate_video(
         },
     )
 # ========== PARTNER API (SkyLaws) ==========
-@router.post("/api/partner/generate/image")
+@app.post("/api/partner/generate/image")
 async def partner_generate_image(
     prompt: str,
     model: str = "schnell",
