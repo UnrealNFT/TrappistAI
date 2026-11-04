@@ -2346,7 +2346,7 @@ async def partner_generate_image(
     }
 # ========== finish PARTNER API (SkyLaws) ==========
 
-@app.post("/api/generate/image")
+@app.post("/api/partner/generate/image")
 @limiter.limit("30/minute")
 async def generate_image(request: Request, data: GenerateImageRequest):
     """Generate image with FLUX.1-schnell (1 token)"""
