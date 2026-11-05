@@ -2310,6 +2310,50 @@ async def agent_generate_video(
         },
     )
 # ========== PARTNER API (SkyLaws) ==========
+PARTNERS = {
+    "skylaws-pilot": {"name": "SkyLaws", "balance": 100.0},  # solde de départ
+}
+
+class PartnerImageRequest(BaseModel):
+    prompt: str
+    model: str = "schnell"
+    image_url: str = None
+
+@app.post("/api/partner/generate/image")
+async def partner_generate_image(
+    data: PartnerImageRequest,
+    api_key: str = Header(..., alias="X-API-Key")
+):
+    partner = PARTNERS.get(api_key)
+    if not partner:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    cost = 2 if data.model in ("dev", "kontext") else 1
+
+    if partner["balance"] < cost:
+        raise HTTPException(status_code=402, detail="Insufficient balance")
+
+    if data.model == "kontext":
+        if not data.image_url:
+            raise HTTPException(status_code=400, detail="image_url required")
+        url = wavespeed.generate_image_kontext(data.image_url, data.prompt)
+    elif data.model == "dev":
+        url = wavespeed.generate_image_hd(data.prompt)
+    else:
+        url = wavespeed.generate_image(data.prompt)
+
+    partner["balance"] -= cost
+
+    return {
+        "success": True,
+        "url": url,
+        "model": data.model,
+        "cost": cost,
+        "remaining_balance": partner["balance"]
+    }
+# ========== finish PARTNER API (SkyLaws) ==========
+
+# ========== PARTNER API (SkyLaws) ==========
 class PartnerImageRequest(BaseModel):
     prompt: str
     model: str = "schnell"
