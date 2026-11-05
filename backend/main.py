@@ -2316,7 +2316,7 @@ class PartnerImageRequest(BaseModel):
     image_url: str = None
 
 PARTNER_WALLETS = {
-    "skylaws-pilot": "0203b465d88a255b374b3fa04c9ef306bd0bf6cc02d9562adb0e061ad01750825059",
+    os.getenv("SKYLAWS_API_KEY"): os.getenv("SKYLAWS_WALLET"),
 }
 
 @app.post("/api/partner/generate/image")
@@ -2327,13 +2327,10 @@ async def partner_generate_image(
     wallet = PARTNER_WALLETS.get(api_key)
     if not wallet:
         raise HTTPException(status_code=401, detail="Invalid API key")
-
     tokens_needed = 2 if data.model in ("dev", "kontext") else 1
-
     current_balance = await get_user_balance(wallet)
     if current_balance < tokens_needed:
         raise HTTPException(status_code=402, detail="Insufficient tokens")
-
     try:
         if data.model == "kontext":
             if not data.image_url:
@@ -2343,11 +2340,9 @@ async def partner_generate_image(
             url = wavespeed.generate_image_hd(data.prompt)
         else:
             url = wavespeed.generate_image(data.prompt)
-
         consumed = await consume_user_tokens(wallet, tokens_needed, "image", data.prompt)
         if not consumed:
             raise HTTPException(status_code=402, detail="Insufficient tokens")
-
         return {
             "success": True,
             "url": url,
