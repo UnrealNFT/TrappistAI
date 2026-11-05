@@ -2310,87 +2310,53 @@ async def agent_generate_video(
         },
     )
 # ========== PARTNER API (SkyLaws) ==========
-PARTNERS = {
-    "skylaws-pilot": {"name": "SkyLaws", "balance": 100.0},  # solde de départ
+class PartnerImageRequest(BaseModel):
+    prompt: str
+    model: str = "schnell"
+    image_url: str = None
+
+PARTNER_WALLETS = {
+    "skylaws-pilot": "0203b465d88a255b374b3fa04c9ef306bd0bf6cc02d9562adb0e061ad01750825059",
 }
 
-class PartnerImageRequest(BaseModel):
-    prompt: str
-    model: str = "schnell"
-    image_url: str = None
-
 @app.post("/api/partner/generate/image")
 async def partner_generate_image(
     data: PartnerImageRequest,
     api_key: str = Header(..., alias="X-API-Key")
 ):
-    partner = PARTNERS.get(api_key)
-    if not partner:
+    wallet = PARTNER_WALLETS.get(api_key)
+    if not wallet:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
-    cost = 2 if data.model in ("dev", "kontext") else 1
+    tokens_needed = 2 if data.model in ("dev", "kontext") else 1
 
-    if partner["balance"] < cost:
-        raise HTTPException(status_code=402, detail="Insufficient balance")
+    current_balance = await get_user_balance(wallet)
+    if current_balance < tokens_needed:
+        raise HTTPException(status_code=402, detail="Insufficient tokens")
 
-    if data.model == "kontext":
-        if not data.image_url:
-            raise HTTPException(status_code=400, detail="image_url required")
-        url = wavespeed.generate_image_kontext(data.image_url, data.prompt)
-    elif data.model == "dev":
-        url = wavespeed.generate_image_hd(data.prompt)
-    else:
-        url = wavespeed.generate_image(data.prompt)
+    try:
+        if data.model == "kontext":
+            if not data.image_url:
+                raise HTTPException(status_code=400, detail="image_url required")
+            url = wavespeed.generate_image_kontext(data.image_url, data.prompt)
+        elif data.model == "dev":
+            url = wavespeed.generate_image_hd(data.prompt)
+        else:
+            url = wavespeed.generate_image(data.prompt)
 
-    partner["balance"] -= cost
+        consumed = await consume_user_tokens(wallet, tokens_needed, "image", data.prompt)
+        if not consumed:
+            raise HTTPException(status_code=402, detail="Insufficient tokens")
 
-    return {
-        "success": True,
-        "url": url,
-        "model": data.model,
-        "cost": cost,
-        "remaining_balance": partner["balance"]
-    }
-# ========== finish PARTNER API (SkyLaws) ==========
-
-# ========== PARTNER API (SkyLaws) ==========
-class PartnerImageRequest(BaseModel):
-    prompt: str
-    model: str = "schnell"
-    image_url: str = None
-
-@app.post("/api/partner/generate/image")
-async def partner_generate_image(
-    data: PartnerImageRequest,
-    api_key: str = Header(..., alias="X-API-Key")
-):
-    partner = PARTNERS.get(api_key)
-    if not partner:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-    cost = 2 if data.model in ("dev", "kontext") else 1
-
-    if partner["balance"] < cost:
-        raise HTTPException(status_code=402, detail="Insufficient balance")
-
-    if data.model == "kontext":
-        if not data.image_url:
-            raise HTTPException(status_code=400, detail="image_url required")
-        url = wavespeed.generate_image_kontext(data.image_url, data.prompt)
-    elif data.model == "dev":
-        url = wavespeed.generate_image_hd(data.prompt)
-    else:
-        url = wavespeed.generate_image(data.prompt)
-
-    partner["balance"] -= cost
-
-    return {
-        "success": True,
-        "url": url,
-        "model": data.model,
-        "cost": cost,
-        "remaining_balance": partner["balance"]
-    }
+        return {
+            "success": True,
+            "url": url,
+            "model": data.model,
+            "tokensUsed": tokens_needed,
+            "remainingBalance": current_balance - tokens_needed,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # ========== finish PARTNER API (SkyLaws) ==========
 
 @app.post("/api/generate/image")
